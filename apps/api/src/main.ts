@@ -13,7 +13,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.enableCors({ origin: true, credentials: true });
   app.use(cookieParser());
-  app.use(json({ limit: '8mb' }));
+  app.use(json({ limit: '16mb' }));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

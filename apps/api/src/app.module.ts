@@ -8,6 +8,7 @@ import { PhotosModule } from './modules/photos/photos.module';
 import { TripDaysModule } from './modules/trip-days/trip-days.module';
 import { TripExpensesModule } from './modules/trip-expenses/trip-expenses.module';
 import { TripPlacesModule } from './modules/trip-places/trip-places.module';
+import { TravelDocumentsModule } from './modules/travel-documents/travel-documents.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -27,6 +28,7 @@ import { UsersModule } from './modules/users/users.module';
     TripPlacesModule,
     TripExpensesModule,
     PhotosModule,
+    TravelDocumentsModule,
   ],
 })
 export class AppModule {}

@@ -5,6 +5,7 @@ import { RecentPhotoList } from '../features/dashboard/components/RecentPhotoLis
 import { RecentTripList } from '../features/dashboard/components/RecentTripList';
 import { StatCard } from '../features/dashboard/components/StatCard';
 import { UpcomingTripList } from '../features/dashboard/components/UpcomingTripList';
+import { UpcomingDocumentList } from '../features/dashboard/components/UpcomingDocumentList';
 import { useDashboard } from '../features/dashboard/hooks/useDashboard';
 
 export function HomePage() {
@@ -66,6 +67,7 @@ export function HomePage() {
         <UpcomingTripList trips={data.upcomingTrips} />
         <RecentExpenseList expenses={data.recentExpenses} />
         <RecentPhotoList photos={data.recentPhotos} />
+        <UpcomingDocumentList documents={data.upcomingDocuments} />
       </section>
     </main>
   );

@@ -30,6 +30,15 @@ export type DashboardPhoto = {
   alt: string;
 };
 
+export type DashboardDocument = {
+  id: string;
+  tripId: string;
+  tripTitle: string;
+  type: 'passport' | 'visa' | 'flight' | 'hotel' | 'ticket' | 'insurance' | 'other';
+  title: string;
+  expiredAt: string;
+};
+
 export type DashboardStats = {
   tripCount: number;
   totalExpenseAmount: string;
@@ -42,4 +51,5 @@ export type DashboardData = {
   upcomingTrips: DashboardTrip[];
   recentExpenses: DashboardExpense[];
   recentPhotos: DashboardPhoto[];
+  upcomingDocuments: DashboardDocument[];
 };

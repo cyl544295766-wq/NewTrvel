@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Photo, Trip, TripExpense } from '@prisma/client';
+import { Photo, TravelDocument, Trip, TripExpense } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { createPhotoThumbnail } from '../photos/photo-thumbnail';
 import { PhotosRepository } from '../photos/photos.repository';
 import { TripExpensesRepository } from '../trip-expenses/trip-expenses.repository';
+import { TravelDocumentsRepository } from '../travel-documents/travel-documents.repository';
 import { TripsRepository } from '../trips/trips.repository';
 
 type DashboardTrip = {
@@ -38,29 +39,45 @@ type DashboardPhoto = {
   alt: string;
 };
 
+type DashboardDocument = {
+  id: string;
+  tripId: string;
+  tripTitle: string;
+  type: string;
+  title: string;
+  expiredAt: Date;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly tripsRepository: TripsRepository,
     private readonly tripExpensesRepository: TripExpensesRepository,
     private readonly photosRepository: PhotosRepository,
+    private readonly travelDocumentsRepository: TravelDocumentsRepository,
   ) {}
 
   async findOne(currentUser: AuthenticatedUser) {
     const today = this.startOfToday();
+    const reminderWindowEnd = this.endOfReminderWindow(today);
     const [memberships, recentTrips, upcomingTrips] = await Promise.all([
       this.tripsRepository.findDashboardTripsForUser(currentUser.id),
       this.tripsRepository.findRecentTripsForUser(currentUser.id, 3),
       this.tripsRepository.findUpcomingTripsForUser(currentUser.id, today, 3),
     ]);
     const tripIds = memberships.map((membership) => membership.trip.id);
-    const [expenses, recentExpenses, recentPhotos] =
+    const [expenses, recentExpenses, recentPhotos, upcomingDocuments] =
       tripIds.length === 0
-        ? [[], [], []]
+        ? [[], [], [], []]
         : await Promise.all([
             this.tripExpensesRepository.findExpensesForTrips(tripIds),
             this.tripExpensesRepository.findRecentExpensesForTrips(tripIds, 5),
             this.photosRepository.findRecentPhotosForTrips(tripIds, 6),
+            this.travelDocumentsRepository.findUpcomingDocumentsForTrips(
+              tripIds,
+              today,
+              reminderWindowEnd,
+            ),
           ]);
     const dashboardPhotos = await Promise.all(
       recentPhotos.map((photo) => this.toDashboardPhoto(photo)),
@@ -80,6 +97,7 @@ export class DashboardService {
       upcomingTrips: upcomingTrips.map((membership) => this.toDashboardTrip(membership.trip)),
       recentExpenses: recentExpenses.map((expense) => this.toDashboardExpense(expense)),
       recentPhotos: dashboardPhotos,
+      upcomingDocuments: upcomingDocuments.map((document) => this.toDashboardDocument(document)),
     };
   }
 
@@ -125,6 +143,19 @@ export class DashboardService {
     };
   }
 
+  private toDashboardDocument(
+    document: TravelDocument & { trip: { title: string } },
+  ): DashboardDocument {
+    return {
+      id: document.id,
+      tripId: document.tripId,
+      tripTitle: document.trip.title,
+      type: document.type,
+      title: document.title,
+      expiredAt: document.expiredAt!,
+    };
+  }
+
   private sumExpenses(expenses: TripExpense[]) {
     const cents = expenses.reduce(
       (total, expense) => total + Math.round(Number(expense.amount) * 100),
@@ -150,6 +181,13 @@ export class DashboardService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return today;
+  }
+
+  private endOfReminderWindow(today: Date) {
+    const end = new Date(today);
+    end.setDate(end.getDate() + 30);
+    end.setHours(23, 59, 59, 999);
+    return end;
   }
 
   private toUtcDate(value: Date) {

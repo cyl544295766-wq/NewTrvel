@@ -4,6 +4,7 @@ import { ExpensesPage } from '../features/expenses';
 import { ItineraryPage } from '../features/itinerary';
 import { MapPage } from '../features/map';
 import { PhotosPage } from '../features/photos';
+import { TravelDocumentsPage } from '../features/travel-documents';
 import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
 import { HomePage } from '../pages/HomePage';
 
@@ -73,6 +74,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <PhotosPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/documents"
+          element={
+            <ProtectedRoute>
+              <TravelDocumentsPage />
             </ProtectedRoute>
           }
         />
