@@ -3,6 +3,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { CreateTripPlaceDto } from './dto/create-trip-place.dto';
+import { MoveTripPlaceDto } from './dto/move-trip-place.dto';
 import { ReorderTripPlacesDto } from './dto/reorder-trip-places.dto';
 import { UpdateTripPlaceDto } from './dto/update-trip-place.dto';
 import { TripPlacesService } from './trip-places.service';
@@ -29,6 +30,16 @@ export class TripPlacesController {
     @Body() dto: UpdateTripPlaceDto,
   ) {
     return this.tripPlacesService.update(tripId, placeId, user.id, dto);
+  }
+
+  @Patch('places/:placeId/move')
+  move(
+    @Param('tripId') tripId: string,
+    @Param('placeId') placeId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: MoveTripPlaceDto,
+  ) {
+    return this.tripPlacesService.move(tripId, placeId, user.id, dto.tripDayId);
   }
 
   @Delete('places/:placeId')

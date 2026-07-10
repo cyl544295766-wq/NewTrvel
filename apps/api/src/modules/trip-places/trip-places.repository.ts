@@ -26,6 +26,16 @@ export class TripPlacesRepository {
     return this.prisma.tripPlace.update({ where: { id: placeId }, data });
   }
 
+  moveToDay(placeId: string, tripDayId: string, sortOrder: number) {
+    return this.prisma.tripPlace.update({
+      where: { id: placeId },
+      data: {
+        tripDayId,
+        sortOrder,
+      },
+    });
+  }
+
   delete(placeId: string) {
     return this.prisma.tripPlace.delete({ where: { id: placeId } });
   }

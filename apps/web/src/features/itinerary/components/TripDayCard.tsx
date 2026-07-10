@@ -1,5 +1,6 @@
+import { useDroppable } from '@dnd-kit/core';
 import { FormEvent, useState } from 'react';
-import { TripDay, TripPlaceInput } from '../types/itinerary.types';
+import { TripDay, TripPlace, TripPlaceInput } from '../types/itinerary.types';
 import { TripPlaceForm } from './TripPlaceForm';
 import { TripPlaceList } from './TripPlaceList';
 
@@ -9,6 +10,7 @@ type Props = {
   onUpdateDay: (dayId: string, title: string, summary: string) => Promise<void>;
   onCreatePlace: (input: TripPlaceInput) => Promise<void>;
   onDeletePlace: (placeId: string) => void;
+  onTogglePlaceCompleted: (place: TripPlace) => void;
   isCreatingPlace: boolean;
 };
 
@@ -18,10 +20,15 @@ export function TripDayCard({
   onUpdateDay,
   onCreatePlace,
   onDeletePlace,
+  onTogglePlaceCompleted,
   isCreatingPlace,
 }: Props) {
   const [title, setTitle] = useState(day.title ?? '');
   const [summary, setSummary] = useState(day.summary ?? '');
+  const { isOver, setNodeRef } = useDroppable({
+    id: `day:${day.id}`,
+    data: { dayId: day.id },
+  });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,7 +36,7 @@ export function TripDayCard({
   }
 
   return (
-    <section className="day-card">
+    <section className={isOver ? 'day-card drag-over' : 'day-card'} ref={setNodeRef}>
       <div className="day-heading">
         <div>
           <p className="eyebrow">第 {day.dayIndex} 天</p>
@@ -60,7 +67,13 @@ export function TripDayCard({
           {day.title || '暂无当天标题'} {day.summary || ''}
         </p>
       )}
-      <TripPlaceList canEdit={canEdit} onDelete={onDeletePlace} places={day.places} />
+      <TripPlaceList
+        canEdit={canEdit}
+        dayId={day.id}
+        onDelete={onDeletePlace}
+        onToggleCompleted={onTogglePlaceCompleted}
+        places={day.places}
+      />
       {canEdit ? (
         <TripPlaceForm isSubmitting={isCreatingPlace} onSubmit={onCreatePlace} tripDayId={day.id} />
       ) : null}

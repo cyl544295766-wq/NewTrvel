@@ -34,6 +34,20 @@ export function updateTripPlace(tripId: string, placeId: string, input: Partial<
   });
 }
 
+export function movePlace(tripId: string, placeId: string, tripDayId: string) {
+  return request<{ place: TripPlace }>(`/trips/${tripId}/places/${placeId}/move`, {
+    method: 'PATCH',
+    body: JSON.stringify({ tripDayId }),
+  });
+}
+
+export function reorderTripPlaces(tripId: string, dayId: string, placeIds: string[]) {
+  return request<{ places: TripPlace[] }>(`/trips/${tripId}/days/${dayId}/places/reorder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ placeIds }),
+  });
+}
+
 export function deleteTripPlace(tripId: string, placeId: string) {
   return request<{ success: true }>(`/trips/${tripId}/places/${placeId}`, { method: 'DELETE' });
 }

@@ -34,6 +34,7 @@ export class TripPlacesService {
         startTime: dto.startTime ? new Date(dto.startTime) : null,
         endTime: dto.endTime ? new Date(dto.endTime) : null,
         notes: this.toNullable(dto.notes),
+        isCompleted: dto.isCompleted ?? false,
         sortOrder,
       }),
     };
@@ -62,8 +63,19 @@ export class TripPlacesService {
         endTime: dto.endTime === undefined ? undefined : new Date(dto.endTime),
         notes: dto.notes === undefined ? undefined : this.toNullable(dto.notes),
         sortOrder: dto.sortOrder,
+        isCompleted: dto.isCompleted,
       }),
     };
+  }
+
+  async move(tripId: string, placeId: string, userId: string, tripDayId: string) {
+    await this.tripMembersService.requireTripRole(tripId, userId, editRoles);
+    const place = await this.tripPlacesRepository.findPlace(placeId);
+    if (!place || place.tripId !== tripId) throw new NotFoundException('地点不存在');
+    await this.ensureDayBelongsToTrip(tripDayId, tripId);
+    const sortOrder = await this.tripPlacesRepository.countPlacesInDay(tripDayId);
+
+    return { place: await this.tripPlacesRepository.moveToDay(placeId, tripDayId, sortOrder) };
   }
 
   async delete(tripId: string, placeId: string, userId: string) {

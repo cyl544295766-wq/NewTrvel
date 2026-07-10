@@ -14,6 +14,7 @@ export type TripPlace = {
   endTime: string | null;
   notes: string | null;
   sortOrder: number;
+  isCompleted: boolean;
 };
 
 export type TripDay = {
@@ -31,7 +32,10 @@ export type TripPlaceInput = {
   name: string;
   type?: TripPlaceType;
   address?: string;
+  latitude?: string;
+  longitude?: string;
   startTime?: string;
   endTime?: string;
   notes?: string;
+  isCompleted?: boolean;
 };

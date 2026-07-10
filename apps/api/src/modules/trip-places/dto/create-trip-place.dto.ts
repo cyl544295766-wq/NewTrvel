@@ -2,6 +2,7 @@ import { TripPlaceType } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -48,4 +49,8 @@ export class CreateTripPlaceDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
 }

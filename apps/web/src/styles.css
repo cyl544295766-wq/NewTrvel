@@ -432,6 +432,59 @@ p {
   padding-top: 12px;
 }
 
+.place-item.dragging {
+  opacity: 0.72;
+  position: relative;
+  z-index: 2;
+}
+
+.day-card.drag-over {
+  border-color: #8da48f;
+  background: #fbfcf8;
+}
+
+.place-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.place-content.completed strong {
+  color: #666b65;
+  text-decoration: line-through;
+}
+
+.place-title-row,
+.place-actions,
+.inline-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.place-type-badge {
+  border: 1px solid #dedbd2;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  color: #334138;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+.place-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.compact-empty {
+  margin-top: 0;
+}
+
 .muted-text {
   color: #777a75;
 }
@@ -808,7 +861,9 @@ dd {
   .expense-actions,
   .form-actions,
   .inline-budget-form,
-  .member-actions {
+  .member-actions,
+  .place-actions {
     flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }

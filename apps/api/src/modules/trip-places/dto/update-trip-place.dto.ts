@@ -2,6 +2,7 @@ import { TripPlaceType } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -53,4 +54,8 @@ export class UpdateTripPlaceDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
 }

@@ -4,7 +4,10 @@ import {
   deleteTripPlace,
   generateTripDays,
   getTripDays,
+  movePlace,
+  reorderTripPlaces,
   updateTripDay,
+  updateTripPlace,
 } from '../api/itinerary.api';
 import { TripPlaceInput } from '../types/itinerary.types';
 
@@ -39,6 +42,33 @@ export function useCreateTripPlace(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: TripPlaceInput) => createTripPlace(tripId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+  });
+}
+
+export function useUpdateTripPlace(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ placeId, input }: { placeId: string; input: Partial<TripPlaceInput> }) =>
+      updateTripPlace(tripId, placeId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+  });
+}
+
+export function useMoveTripPlace(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ placeId, tripDayId }: { placeId: string; tripDayId: string }) =>
+      movePlace(tripId, placeId, tripDayId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+  });
+}
+
+export function useReorderTripPlaces(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dayId, placeIds }: { dayId: string; placeIds: string[] }) =>
+      reorderTripPlaces(tripId, dayId, placeIds),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
   });
 }
