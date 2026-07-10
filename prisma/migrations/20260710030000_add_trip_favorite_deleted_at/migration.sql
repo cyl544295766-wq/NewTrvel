@@ -1,0 +1,2 @@
+ALTER TABLE "trips" ADD COLUMN "is_favorite" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "trips" ADD COLUMN "deleted_at" TIMESTAMP(3);

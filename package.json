@@ -1,0 +1,37 @@
+{
+  "name": "travel-os",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Travel OS project foundation.",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "corepack pnpm --parallel dev:web dev:api",
+    "dev:web": "corepack pnpm --filter @travel-os/web dev",
+    "dev:api": "corepack pnpm --filter @travel-os/api start:dev",
+    "build": "corepack pnpm --recursive run build",
+    "build:web": "corepack pnpm --filter @travel-os/web build",
+    "build:api": "corepack pnpm --filter @travel-os/api build",
+    "lint": "corepack pnpm --recursive run lint",
+    "format": "prettier --write .",
+    "typecheck": "corepack pnpm --recursive run typecheck",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "dotenv": "^17.4.2"
+  }
+}

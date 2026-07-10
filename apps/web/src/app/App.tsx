@@ -1,0 +1,64 @@
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { LoginPage, ProtectedRoute } from '../features/auth';
+import { ExpensesPage } from '../features/expenses';
+import { ItineraryPage } from '../features/itinerary';
+import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
+import { HomePage } from '../pages/HomePage';
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <HomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/new"
+          element={
+            <ProtectedRoute>
+              <NewTripPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId"
+          element={
+            <ProtectedRoute>
+              <TripDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/edit"
+          element={
+            <ProtectedRoute>
+              <EditTripPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/itinerary"
+          element={
+            <ProtectedRoute>
+              <ItineraryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/expenses"
+          element={
+            <ProtectedRoute>
+              <ExpensesPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+}
