@@ -17,6 +17,17 @@ export class TripMembersRepository {
     });
   }
 
+  findMemberById(memberId: string) {
+    return this.prisma.tripMember.findUnique({
+      where: { id: memberId },
+      include: { user: true },
+    });
+  }
+
+  findMemberByUserId(tripId: string, userId: string) {
+    return this.findMembership(tripId, userId);
+  }
+
   createOwner(tripId: string, userId: string) {
     return this.prisma.tripMember.create({
       data: {
@@ -33,5 +44,26 @@ export class TripMembersRepository {
       include: { user: true },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  createMember(tripId: string, userId: string, role: TripMemberRole) {
+    return this.prisma.tripMember.create({
+      data: {
+        tripId,
+        userId,
+        role,
+      },
+    });
+  }
+
+  updateRole(memberId: string, role: TripMemberRole) {
+    return this.prisma.tripMember.update({
+      where: { id: memberId },
+      data: { role },
+    });
+  }
+
+  deleteMember(memberId: string) {
+    return this.prisma.tripMember.delete({ where: { id: memberId } });
   }
 }

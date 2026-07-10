@@ -436,6 +436,59 @@ p {
   color: #777a75;
 }
 
+.members-panel,
+.member-list {
+  display: grid;
+  gap: 14px;
+}
+
+.members-panel {
+  border-top: 1px solid #e3e0d8;
+  margin-top: 8px;
+  padding-top: 18px;
+}
+
+.member-invite-form {
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  align-items: end;
+}
+
+.member-item {
+  border: 1px solid #dedbd2;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+}
+
+.member-item p {
+  color: #666b65;
+  font-size: 13px;
+}
+
+.member-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-actions span {
+  color: #666b65;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.member-actions select {
+  min-width: 120px;
+  height: 40px;
+  border: 1px solid #cfcfc7;
+  border-radius: 6px;
+  color: #161616;
+  padding: 0 10px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -716,7 +769,8 @@ dd {
   .trip-list-item,
   .trip-list-link,
   .day-heading,
-  .place-item {
+  .place-item,
+  .member-item {
     display: grid;
   }
 
@@ -729,6 +783,7 @@ dd {
   .detail-grid,
   .summary-grid,
   .wallet-summary,
+  .member-invite-form,
   .dashboard-stats-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -752,7 +807,8 @@ dd {
 
   .expense-actions,
   .form-actions,
-  .inline-budget-form {
+  .inline-budget-form,
+  .member-actions {
     flex-wrap: wrap;
   }
 }
