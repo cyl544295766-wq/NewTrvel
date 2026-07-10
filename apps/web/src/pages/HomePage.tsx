@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../features/auth';
 import { RecentExpenseList } from '../features/dashboard/components/RecentExpenseList';
+import { RecentPhotoList } from '../features/dashboard/components/RecentPhotoList';
 import { RecentTripList } from '../features/dashboard/components/RecentTripList';
 import { StatCard } from '../features/dashboard/components/StatCard';
 import { UpcomingTripList } from '../features/dashboard/components/UpcomingTripList';
@@ -33,17 +34,24 @@ export function HomePage() {
             新建旅行
           </Link>
           {firstTripId ? (
-            <Link className="secondary-button" to={`/trips/${firstTripId}/expenses`}>
-              查看费用
-            </Link>
+            <>
+              <Link className="secondary-button" to={`/trips/${firstTripId}/expenses`}>
+                查看费用
+              </Link>
+              <Link className="secondary-button" to={`/trips/${firstTripId}/map`}>
+                查看地图
+              </Link>
+            </>
           ) : (
-            <button className="secondary-button" disabled type="button">
-              查看费用
-            </button>
+            <>
+              <button className="secondary-button" disabled type="button">
+                查看费用
+              </button>
+              <button className="secondary-button" disabled type="button">
+                查看地图
+              </button>
+            </>
           )}
-          <button className="secondary-button" disabled type="button">
-            查看地图
-          </button>
         </div>
       </header>
 
@@ -57,20 +65,7 @@ export function HomePage() {
         <RecentTripList trips={data.recentTrips} />
         <UpcomingTripList trips={data.upcomingTrips} />
         <RecentExpenseList expenses={data.recentExpenses} />
-        <section className="content-panel dashboard-card">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">照片</p>
-              <h2>最近照片</h2>
-            </div>
-          </div>
-          <div className="photo-placeholder-grid" aria-label="最近照片占位">
-            {Array.from({ length: 6 }, (_, index) => (
-              <div aria-hidden="true" className="photo-placeholder" key={index} />
-            ))}
-          </div>
-          <p className="empty-state">照片模块尚未启用</p>
-        </section>
+        <RecentPhotoList photos={data.recentPhotos} />
       </section>
     </main>
   );

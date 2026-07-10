@@ -97,6 +97,7 @@ model Trip {
   days          TripDay[]
   places        TripPlace[]
   expenses      TripExpense[]
+  photos        Photo[]
 
   @@map("trips")
 }
@@ -112,6 +113,7 @@ model TripDay {
   updatedAt DateTime    @updatedAt @map("updated_at")
   trip      Trip        @relation(fields: [tripId], references: [id])
   places    TripPlace[]
+  photos    Photo[]
 
   @@unique([tripId, date])
   @@unique([tripId, dayIndex])
@@ -136,10 +138,33 @@ model TripPlace {
   updatedAt   DateTime      @updatedAt @map("updated_at")
   trip        Trip          @relation(fields: [tripId], references: [id])
   tripDay     TripDay?      @relation(fields: [tripDayId], references: [id])
+  photos      Photo[]
 
   @@index([tripId])
   @@index([tripDayId])
   @@map("trip_places")
+}
+
+model Photo {
+  id          String    @id @default(cuid())
+  tripId      String    @map("trip_id")
+  tripDayId   String?   @map("trip_day_id")
+  tripPlaceId String?   @map("trip_place_id")
+  url         String
+  caption     String?
+  shotAt      DateTime? @map("shot_at")
+  isCover     Boolean   @default(false) @map("is_cover")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  trip      Trip       @relation(fields: [tripId], references: [id])
+  tripDay   TripDay?   @relation(fields: [tripDayId], references: [id])
+  tripPlace TripPlace? @relation(fields: [tripPlaceId], references: [id])
+
+  @@index([tripId])
+  @@index([tripDayId])
+  @@index([tripPlaceId])
+  @@map("photos")
 }
 
 model TripExpense {

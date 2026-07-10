@@ -24,6 +24,8 @@ export type DashboardExpense = {
 
 export type DashboardPhoto = {
   id: string;
+  tripId: string;
+  tripTitle: string;
   thumbnailUrl: string;
   alt: string;
 };

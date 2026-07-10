@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { Trip, TripExpense } from '@prisma/client';
+import { Photo, Trip, TripExpense } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { createPhotoThumbnail } from '../photos/photo-thumbnail';
+import { PhotosRepository } from '../photos/photos.repository';
 import { TripExpensesRepository } from '../trip-expenses/trip-expenses.repository';
 import { TripsRepository } from '../trips/trips.repository';
 
@@ -28,11 +30,20 @@ type DashboardExpense = {
   payerDisplayName: string;
 };
 
+type DashboardPhoto = {
+  id: string;
+  tripId: string;
+  tripTitle: string;
+  thumbnailUrl: string;
+  alt: string;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly tripsRepository: TripsRepository,
     private readonly tripExpensesRepository: TripExpensesRepository,
+    private readonly photosRepository: PhotosRepository,
   ) {}
 
   async findOne(currentUser: AuthenticatedUser) {
@@ -43,13 +54,17 @@ export class DashboardService {
       this.tripsRepository.findUpcomingTripsForUser(currentUser.id, today, 3),
     ]);
     const tripIds = memberships.map((membership) => membership.trip.id);
-    const [expenses, recentExpenses] =
+    const [expenses, recentExpenses, recentPhotos] =
       tripIds.length === 0
-        ? [[], []]
+        ? [[], [], []]
         : await Promise.all([
             this.tripExpensesRepository.findExpensesForTrips(tripIds),
             this.tripExpensesRepository.findRecentExpensesForTrips(tripIds, 5),
+            this.photosRepository.findRecentPhotosForTrips(tripIds, 6),
           ]);
+    const dashboardPhotos = await Promise.all(
+      recentPhotos.map((photo) => this.toDashboardPhoto(photo)),
+    );
 
     return {
       user: {
@@ -64,7 +79,7 @@ export class DashboardService {
       recentTrips: recentTrips.map((membership) => this.toDashboardTrip(membership.trip)),
       upcomingTrips: upcomingTrips.map((membership) => this.toDashboardTrip(membership.trip)),
       recentExpenses: recentExpenses.map((expense) => this.toDashboardExpense(expense)),
-      recentPhotos: [],
+      recentPhotos: dashboardPhotos,
     };
   }
 
@@ -95,6 +110,18 @@ export class DashboardService {
       spentAt: expense.spentAt,
       createdAt: expense.createdAt,
       payerDisplayName: expense.payer.displayName,
+    };
+  }
+
+  private async toDashboardPhoto(
+    photo: Photo & { trip: { title: string } },
+  ): Promise<DashboardPhoto> {
+    return {
+      id: photo.id,
+      tripId: photo.tripId,
+      tripTitle: photo.trip.title,
+      thumbnailUrl: await createPhotoThumbnail(photo.url),
+      alt: photo.caption ?? photo.trip.title,
     };
   }
 

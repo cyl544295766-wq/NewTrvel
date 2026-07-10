@@ -26,6 +26,20 @@ export class TripsRepository {
     return this.prisma.trip.findFirst({ where: { id, deletedAt: null } });
   }
 
+  findCoverPhoto(tripId: string) {
+    return this.prisma.photo.findFirst({
+      where: { tripId, isCover: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  findCoverPhotosForTrips(tripIds: string[]) {
+    return this.prisma.photo.findMany({
+      where: { tripId: { in: tripIds }, isCover: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   findTripsForUser(userId: string) {
     return this.prisma.tripMember.findMany({
       where: {

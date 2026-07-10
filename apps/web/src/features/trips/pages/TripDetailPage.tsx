@@ -111,6 +111,9 @@ export function TripDetailPage() {
           <Link className="button-link" to={`/trips/${data.id}/expenses`}>
             费用
           </Link>
+          <Link className="button-link" to={`/trips/${data.id}/photos`}>
+            照片
+          </Link>
           <Link className="button-link" to={`/trips/${data.id}/map`}>
             地图
           </Link>

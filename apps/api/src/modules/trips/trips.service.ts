@@ -36,21 +36,34 @@ export class TripsService {
 
   async findAll(currentUser: AuthenticatedUser) {
     const memberships = await this.tripsRepository.findTripsForUser(currentUser.id);
+    const coverPhotos = await this.tripsRepository.findCoverPhotosForTrips(
+      memberships.map((membership) => membership.trip.id),
+    );
+    const coverPhotoByTripId = new Map(coverPhotos.map((photo) => [photo.tripId, photo.url]));
 
     return {
-      trips: memberships.map((membership) => this.toTripResponse(membership.trip, membership.role)),
+      trips: memberships.map((membership) =>
+        this.toTripResponse(
+          membership.trip,
+          membership.role,
+          coverPhotoByTripId.get(membership.trip.id),
+        ),
+      ),
     };
   }
 
   async findOne(tripId: string, currentUser: AuthenticatedUser) {
     const membership = await this.tripMembersService.requireTripMember(tripId, currentUser.id);
-    const trip = await this.tripsRepository.findById(tripId);
+    const [trip, coverPhoto] = await Promise.all([
+      this.tripsRepository.findById(tripId),
+      this.tripsRepository.findCoverPhoto(tripId),
+    ]);
 
     if (!trip) {
       throw new NotFoundException('Trip not found');
     }
 
-    return { trip: this.toTripResponse(trip, membership.role) };
+    return { trip: this.toTripResponse(trip, membership.role, coverPhoto?.url) };
   }
 
   async getRoute(tripId: string, currentUser: AuthenticatedUser) {
@@ -162,7 +175,11 @@ export class TripsService {
     return this.tripMembersService.requireTripRole(tripId, userId, editableTripRoles);
   }
 
-  private toTripResponse(trip: Trip, currentUserRole: TripMemberRole): TripResponse {
+  private toTripResponse(
+    trip: Trip,
+    currentUserRole: TripMemberRole,
+    coverPhotoUrl?: string,
+  ): TripResponse {
     return {
       id: trip.id,
       title: trip.title,
@@ -171,7 +188,7 @@ export class TripsService {
       startDate: trip.startDate,
       endDate: trip.endDate,
       status: trip.status,
-      coverImageUrl: trip.coverImageUrl,
+      coverImageUrl: coverPhotoUrl ?? trip.coverImageUrl,
       budget: trip.budget?.toFixed(2) ?? null,
       ownerId: trip.ownerId,
       currentUserRole,
