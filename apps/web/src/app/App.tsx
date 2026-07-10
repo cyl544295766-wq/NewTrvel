@@ -9,6 +9,7 @@ import { TravelDocumentsPage } from '../features/travel-documents';
 import { JournalDetailPage, TripJournalsPage } from '../features/trip-journals';
 import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
 import { HomePage } from '../pages/HomePage';
+import { NotFoundPage } from '../pages/NotFoundPage';
 
 export function App() {
   return (
@@ -108,6 +109,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <JournalDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <NotFoundPage />
             </ProtectedRoute>
           }
         />

@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { CircleDollarSign, PiggyBank, ReceiptText, WalletCards } from 'lucide-react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useCurrentUser } from '../../auth';
 import { useTrip, useUpdateTrip } from '../../trips/hooks/useTrips';
@@ -30,10 +31,22 @@ export function ExpensesPage() {
   const [budget, setBudget] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const formSectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setBudget(trip.data?.trip.budget ?? '');
   }, [trip.data?.trip.budget]);
+
+  useEffect(() => {
+    if (!showForm) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      formSectionRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [showForm, editingExpense]);
 
   if (!tripId) return <Navigate replace to="/" />;
   const currentTrip = trip.data?.trip;
@@ -64,6 +77,11 @@ export function ExpensesPage() {
     setShowForm(true);
   }
 
+  function handleCreate() {
+    setEditingExpense(null);
+    setShowForm(true);
+  }
+
   function handleCancel() {
     setEditingExpense(null);
     setShowForm(false);
@@ -74,22 +92,45 @@ export function ExpensesPage() {
       <Link className="text-link" to={`/trips/${safeTripId}`}>
         返回旅行详情
       </Link>
-      <section className="content-panel itinerary-panel">
+      <section className="content-panel itinerary-panel wallet-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">费用</p>
             <h1>旅行钱包</h1>
           </div>
           {canEdit ? (
-            <button onClick={() => setShowForm(true)} type="button">
+            <button onClick={handleCreate} type="button">
+              <ReceiptText size={17} />
               记一笔
             </button>
           ) : null}
         </div>
 
-        <section className="summary-grid">
-          <div className="summary-card">
-            <span>预算</span>
+        {showForm && canEdit ? (
+          <section className="expense-entry-panel" ref={formSectionRef}>
+            <div className="expense-entry-heading">
+              <div>
+                <p className="eyebrow">{editingExpense ? '编辑记录' : '新增记录'}</p>
+                <h2>{editingExpense ? '修改消费' : '记一笔消费'}</h2>
+              </div>
+            </div>
+            <ExpenseForm
+              currentUserId={currentUser.data?.user.id}
+              initialExpense={editingExpense}
+              isSubmitting={createExpense.isPending || updateExpense.isPending}
+              members={members.data?.members ?? []}
+              onCancel={handleCancel}
+              onSubmit={handleSubmit}
+            />
+          </section>
+        ) : null}
+
+        <section className="summary-grid wallet-kpi-grid">
+          <div className="summary-card wallet-kpi-card">
+            <div className="wallet-kpi-heading">
+              <span>预算</span>
+              <PiggyBank aria-hidden="true" size={20} />
+            </div>
             <strong>{walletSummary?.budget ? walletSummary.budget : '未设置预算'}</strong>
             {canEdit ? (
               <form className="inline-budget-form" onSubmit={handleBudgetSubmit}>
@@ -107,28 +148,29 @@ export function ExpensesPage() {
               </form>
             ) : null}
           </div>
-          <div className="summary-card">
-            <span>已消费</span>
+          <div className="summary-card wallet-kpi-card">
+            <div className="wallet-kpi-heading">
+              <span>已消费</span>
+              <CircleDollarSign aria-hidden="true" size={20} />
+            </div>
             <strong>{walletSummary?.totalExpenseAmount ?? '0.00'}</strong>
           </div>
-          <div className={remainingBudget < 0 ? 'summary-card danger-card' : 'summary-card'}>
-            <span>剩余预算</span>
+          <div
+            className={
+              remainingBudget < 0
+                ? 'summary-card wallet-kpi-card danger-card'
+                : 'summary-card wallet-kpi-card'
+            }
+          >
+            <div className="wallet-kpi-heading">
+              <span>剩余预算</span>
+              <WalletCards aria-hidden="true" size={20} />
+            </div>
             <strong>{walletSummary?.budget ? walletSummary.remainingBudget : '未设置预算'}</strong>
           </div>
         </section>
 
         {walletSummary ? <ExpenseSummary summary={walletSummary} /> : null}
-
-        {showForm && canEdit ? (
-          <ExpenseForm
-            currentUserId={currentUser.data?.user.id}
-            initialExpense={editingExpense}
-            isSubmitting={createExpense.isPending || updateExpense.isPending}
-            members={members.data?.members ?? []}
-            onCancel={handleCancel}
-            onSubmit={handleSubmit}
-          />
-        ) : null}
 
         <ExpenseList
           canEdit={canEdit}

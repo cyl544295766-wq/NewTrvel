@@ -29,7 +29,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: currentUserQueryKey });
+      queryClient.removeQueries();
     },
   });
 }

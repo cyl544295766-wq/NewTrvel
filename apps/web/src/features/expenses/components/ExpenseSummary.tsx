@@ -1,3 +1,4 @@
+import { ChartNoAxesColumn, Scale, UsersRound, WalletCards } from 'lucide-react';
 import { ExpenseSummary as Summary } from '../types/expense.types';
 
 type Props = { summary: Summary };
@@ -10,7 +11,10 @@ export function ExpenseSummary({ summary }: Props) {
   return (
     <section className="wallet-summary">
       <div className="summary-card wallet-progress-card">
-        <span>预算进度</span>
+        <div className="wallet-summary-heading">
+          <span>预算进度</span>
+          <WalletCards aria-hidden="true" size={18} />
+        </div>
         <strong>
           {summary.budget ? `${summary.totalExpenseAmount} / ${summary.budget}` : '未设置预算'}
         </strong>
@@ -19,7 +23,10 @@ export function ExpenseSummary({ summary }: Props) {
         </div>
       </div>
       <div className="summary-card">
-        <span>分类统计</span>
+        <div className="wallet-summary-heading">
+          <span>分类统计</span>
+          <ChartNoAxesColumn aria-hidden="true" size={18} />
+        </div>
         <div className="summary-list">
           {summary.categoryBreakdown.map((item) => (
             <p key={item.category}>
@@ -30,7 +37,10 @@ export function ExpenseSummary({ summary }: Props) {
         </div>
       </div>
       <div className="summary-card">
-        <span>付款人汇总</span>
+        <div className="wallet-summary-heading">
+          <span>付款人汇总</span>
+          <UsersRound aria-hidden="true" size={18} />
+        </div>
         <div className="summary-list">
           {summary.payerBreakdown.length === 0 ? (
             <p>暂无付款记录</p>
@@ -45,7 +55,10 @@ export function ExpenseSummary({ summary }: Props) {
         </div>
       </div>
       <div className="summary-card">
-        <span>成员结算清单</span>
+        <div className="wallet-summary-heading">
+          <span>成员结算清单</span>
+          <Scale aria-hidden="true" size={18} />
+        </div>
         <div className="summary-list">
           {summary.memberBalances.map((item) => (
             <p key={item.displayName}>

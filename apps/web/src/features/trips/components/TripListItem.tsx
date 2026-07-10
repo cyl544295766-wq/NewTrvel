@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
+import { ExportPdfButton } from '../../trip-pdf';
 import { TripStatusBadge } from './TripStatusBadge';
 import {
   useArchiveTrip,
@@ -81,6 +82,7 @@ export function TripListItem({ trip }: TripListItemProps) {
           <span>{trip.currentUserRole}</span>
         </div>
       </Link>
+      <ExportPdfButton compact tripId={trip.id} />
       <select
         aria-label={`More actions for ${trip.title}`}
         className="trip-action-menu"

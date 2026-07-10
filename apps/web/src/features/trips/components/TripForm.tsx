@@ -17,7 +17,6 @@ export function TripForm({ trip, includeStatus = false, isSubmitting, onSubmit }
   const [startDate, setStartDate] = useState(toDateInput(trip?.startDate));
   const [endDate, setEndDate] = useState(toDateInput(trip?.endDate));
   const [status, setStatus] = useState<TripStatus>(trip?.status ?? 'draft');
-  const [coverImageUrl, setCoverImageUrl] = useState(trip?.coverImageUrl ?? '');
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,7 +28,6 @@ export function TripForm({ trip, includeStatus = false, isSubmitting, onSubmit }
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       status: includeStatus ? status : undefined,
-      coverImageUrl: coverImageUrl || undefined,
     });
   }
 
@@ -83,14 +81,6 @@ export function TripForm({ trip, includeStatus = false, isSubmitting, onSubmit }
           </select>
         </label>
       ) : null}
-      <label>
-        <span>封面图地址</span>
-        <input
-          onChange={(event) => setCoverImageUrl(event.target.value)}
-          type="url"
-          value={coverImageUrl}
-        />
-      </label>
       <label>
         <span>描述</span>
         <textarea

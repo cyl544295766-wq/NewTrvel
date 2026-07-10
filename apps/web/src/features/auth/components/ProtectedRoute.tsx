@@ -1,4 +1,5 @@
 import { Navigate } from 'react-router-dom';
+import { AppShell } from '../../../components/AppShell';
 import { useCurrentUser } from '../hooks/useAuth';
 
 type ProtectedRouteProps = {
@@ -16,5 +17,5 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate replace to="/login" />;
   }
 
-  return children;
+  return <AppShell>{children}</AppShell>;
 }

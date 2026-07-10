@@ -42,7 +42,7 @@ export function ExpenseForm({
   const [category, setCategory] = useState<ExpenseCategory>('other');
   const [payerUserId, setPayerUserId] = useState('');
   const [shares, setShares] = useState<ExpenseShareInput[]>([]);
-  const [spentAt, setSpentAt] = useState(new Date().toISOString().slice(0, 16));
+  const [spentAt, setSpentAt] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
@@ -61,7 +61,7 @@ export function ExpenseForm({
           return { userId: member.userId, shareAmount: share?.shareAmount ?? '0.00' };
         }),
       );
-      setSpentAt(new Date(initialExpense.spentAt).toISOString().slice(0, 16));
+      setSpentAt(new Date(initialExpense.spentAt).toISOString().slice(0, 10));
       setNotes(initialExpense.notes ?? '');
       setError('');
       return;
@@ -107,7 +107,7 @@ export function ExpenseForm({
       category,
       payerUserId,
       shares: activeShares,
-      spentAt: new Date(spentAt).toISOString(),
+      spentAt: new Date(`${spentAt}T00:00:00`).toISOString(),
       notes: notes || undefined,
     });
     setTitle('');
@@ -194,9 +194,9 @@ export function ExpenseForm({
           </select>
         </label>
         <label>
-          <span>支出时间</span>
+          <span>支出日期</span>
           <input
-            type="datetime-local"
+            type="date"
             value={spentAt}
             onChange={(e) => setSpentAt(e.target.value)}
           />
@@ -223,7 +223,6 @@ export function ExpenseForm({
       <button className="secondary-button" onClick={autoSplit} type="button">
         自动均摊
       </button>
-      <div className="receipt-placeholder">小票上传功能开发中</div>
       <label>
         <span>备注</span>
         <textarea

@@ -1,6 +1,8 @@
+import { Archive, Camera, Copy, PenLine, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
+import { ExportPdfButton } from '../../trip-pdf';
 import { TripMembers } from '../components/TripMembers';
 import { TripStatusBadge } from '../components/TripStatusBadge';
 import {
@@ -80,6 +82,22 @@ export function TripDetailPage() {
           </div>
           <TripStatusBadge status={data.status} />
         </div>
+        {data.coverImageUrl ? (
+          <div className="trip-detail-cover">
+            <img alt={`${data.title} 封面`} src={data.coverImageUrl} />
+          </div>
+        ) : (
+          <div className="trip-detail-cover-empty">
+            <Camera aria-hidden="true" size={28} strokeWidth={1.8} />
+            <div>
+              <strong>暂未设置旅行封面</strong>
+              <span>从照片中心选择一张照片作为封面</span>
+            </div>
+            <Link className="secondary-button" to={`/trips/${data.id}/photos`}>
+              前往照片中心
+            </Link>
+          </div>
+        )}
         <dl className="detail-grid">
           <div>
             <dt>目的地</dt>
@@ -99,38 +117,20 @@ export function TripDetailPage() {
           </div>
         </dl>
         <p>{data.description || '暂无描述'}</p>
-        <div className="detail-actions">
+        <div className="detail-actions trip-management-actions">
+          <ExportPdfButton tripId={data.id} />
           {canManage ? (
             <Link className="button-link" to={`/trips/${data.id}/edit`}>
+              <PenLine size={16} />
               编辑
             </Link>
           ) : null}
-          <Link className="button-link" to={`/trips/${data.id}/itinerary`}>
-            行程
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/expenses`}>
-            费用
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/photos`}>
-            照片
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/documents`}>
-            文档
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/packing-lists`}>
-            打包
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/journals`}>
-            游记
-          </Link>
-          <Link className="button-link" to={`/trips/${data.id}/map`}>
-            地图
-          </Link>
           <button
             className="secondary-button"
             onClick={() => setIsMembersOpen((current) => !current)}
             type="button"
           >
+            <Users size={16} />
             成员
           </button>
           {canManage ? (
@@ -143,6 +143,7 @@ export function TripDetailPage() {
                 }}
                 type="button"
               >
+                <Copy size={16} />
                 复制
               </button>
               <button
@@ -154,6 +155,7 @@ export function TripDetailPage() {
                 }}
                 type="button"
               >
+                <Archive size={16} />
                 归档
               </button>
               <button
@@ -162,6 +164,7 @@ export function TripDetailPage() {
                 onClick={() => setIsDeleteDialogOpen(true)}
                 type="button"
               >
+                <Trash2 size={16} />
                 删除
               </button>
             </>
