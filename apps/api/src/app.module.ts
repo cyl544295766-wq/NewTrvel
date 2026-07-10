@@ -4,6 +4,7 @@ import { DatabaseModule } from './database/database.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PackingListsModule } from './modules/packing-lists/packing-lists.module';
 import { PhotosModule } from './modules/photos/photos.module';
 import { TripDaysModule } from './modules/trip-days/trip-days.module';
@@ -25,6 +26,7 @@ import { UsersModule } from './modules/users/users.module';
     HealthModule,
     UsersModule,
     AuthModule,
+    NotificationsModule,
     DashboardModule,
     TripsModule,
     TripDaysModule,

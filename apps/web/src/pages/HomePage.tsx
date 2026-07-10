@@ -1,4 +1,4 @@
-import { CalendarRange, Luggage, MapPinned, Plus, WalletCards } from 'lucide-react';
+import { BellRing, CalendarRange, Luggage, MapPinned, Plus, WalletCards } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../features/auth';
 import { RecentExpenseList } from '../features/dashboard/components/RecentExpenseList';
@@ -49,6 +49,19 @@ export function HomePage() {
           <StatCard icon={Luggage} label="待打包" value={`${data.stats.pendingPackingItemCount} 件`} />
         </div>
       </section>
+
+      {data.stats.unreadNotificationCount > 0 ? (
+        <Link className="dashboard-notification-card" to="/notifications">
+          <span aria-hidden="true">
+            <BellRing size={20} />
+          </span>
+          <div>
+            <strong>你有 {data.stats.unreadNotificationCount} 条未读通知</strong>
+            <p>查看行程、文档和打包提醒</p>
+          </div>
+          <b>查看通知</b>
+        </Link>
+      ) : null}
 
       <div className="dashboard-section-heading">
         <div>

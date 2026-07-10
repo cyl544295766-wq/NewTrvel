@@ -67,6 +67,21 @@ enum PackingListCategory {
   other
 }
 
+enum NotificationType {
+  trip_upcoming
+  document_expiring
+  packing_pending
+  member_invited
+  role_changed
+  system
+}
+
+enum NotificationPriority {
+  low
+  normal
+  high
+}
+
 model SystemSetting {
   id        String   @id @default(cuid())
   key       String   @unique
@@ -91,8 +106,31 @@ model User {
   tripMembers   TripMember[]
   paidExpenses  TripExpense[]      @relation("ExpensePayer")
   expenseShares TripExpenseShare[]
+  notifications Notification[]
 
   @@map("users")
+}
+
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String               @map("user_id")
+  type      NotificationType
+  title     String
+  content   String
+  link      String?
+  metadata  Json?
+  isRead    Boolean              @default(false) @map("is_read")
+  priority  NotificationPriority @default(normal)
+  readAt    DateTime?            @map("read_at")
+  createdAt DateTime             @default(now()) @map("created_at")
+  expiresAt DateTime?            @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }
 
 model Trip {

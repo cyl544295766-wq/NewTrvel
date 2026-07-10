@@ -3,6 +3,7 @@ import { LoginPage, ProtectedRoute } from '../features/auth';
 import { ExpensesPage } from '../features/expenses';
 import { ItineraryPage } from '../features/itinerary';
 import { MapPage } from '../features/map';
+import { NotificationsPage } from '../features/notifications';
 import { PackingListsPage } from '../features/packing-lists';
 import { PhotosPage } from '../features/photos';
 import { TravelDocumentsPage } from '../features/travel-documents';
@@ -21,6 +22,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <HomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
             </ProtectedRoute>
           }
         />

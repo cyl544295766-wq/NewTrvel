@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useCurrentUser, useLogout } from '../features/auth';
+import { NotificationBell } from '../features/notifications';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export function AppShell({ children }: AppShellProps) {
           </nav>
 
           <div className="app-account">
+            <NotificationBell />
             <span className="app-avatar" aria-hidden="true">
               {displayName.slice(0, 1).toUpperCase()}
             </span>

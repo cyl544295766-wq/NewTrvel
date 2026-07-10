@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Photo, TravelDocument, Trip, TripExpense, TripJournal } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { NotificationsRepository } from '../notifications/notifications.repository';
 import { PackingListsRepository } from '../packing-lists/packing-lists.repository';
 import { createPhotoThumbnail } from '../photos/photo-thumbnail';
 import { PhotosRepository } from '../photos/photos.repository';
@@ -68,15 +69,17 @@ export class DashboardService {
     private readonly packingListsRepository: PackingListsRepository,
     private readonly photosRepository: PhotosRepository,
     private readonly travelDocumentsRepository: TravelDocumentsRepository,
+    private readonly notificationsRepository: NotificationsRepository,
   ) {}
 
   async findOne(currentUser: AuthenticatedUser) {
     const today = this.startOfToday();
     const reminderWindowEnd = this.endOfReminderWindow(today);
-    const [memberships, recentTrips, upcomingTrips] = await Promise.all([
+    const [memberships, recentTrips, upcomingTrips, unreadNotificationCount] = await Promise.all([
       this.tripsRepository.findDashboardTripsForUser(currentUser.id),
       this.tripsRepository.findRecentTripsForUser(currentUser.id, 3),
       this.tripsRepository.findUpcomingTripsForUser(currentUser.id, today, 3),
+      this.notificationsRepository.countUnread(currentUser.id, new Date()),
     ]);
     const tripIds = memberships.map((membership) => membership.trip.id);
     const pendingPackingItemCountPromise =
@@ -112,6 +115,7 @@ export class DashboardService {
         totalExpenseAmount: this.sumExpenses(expenses),
         totalDays: this.sumTripDays(memberships.map((membership) => membership.trip)),
         pendingPackingItemCount,
+        unreadNotificationCount,
       },
       recentTrips: recentTrips.map((membership) => this.toDashboardTrip(membership.trip)),
       upcomingTrips: upcomingTrips.map((membership) => this.toDashboardTrip(membership.trip)),

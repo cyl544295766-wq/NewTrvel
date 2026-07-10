@@ -53,6 +53,7 @@ export type DashboardStats = {
   totalExpenseAmount: string;
   totalDays: number;
   pendingPackingItemCount: number;
+  unreadNotificationCount: number;
 };
 
 export type DashboardData = {

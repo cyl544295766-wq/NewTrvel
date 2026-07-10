@@ -18,6 +18,10 @@ vi.mock('../features/auth', () => ({
   }),
 }));
 
+vi.mock('../features/notifications', () => ({
+  NotificationBell: () => <button type="button">通知</button>,
+}));
+
 describe('AppShell', () => {
   beforeEach(() => {
     mutate.mockClear();

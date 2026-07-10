@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TripMemberRole, UserStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { InviteTripMemberDto } from './dto/invite-trip-member.dto';
 import { TripMembersRepository } from './trip-members.repository';
@@ -15,6 +16,7 @@ export class TripMembersService {
   constructor(
     private readonly tripMembersRepository: TripMembersRepository,
     private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   createOwner(tripId: string, userId: string) {
@@ -74,6 +76,10 @@ export class TripMembersService {
     }
 
     await this.tripMembersRepository.createMember(tripId, user.id, role);
+    const trip = await this.tripMembersRepository.findTripSummary(tripId);
+    if (trip) {
+      await this.notificationsService.createMemberInvited(user.id, tripId, trip.title, role);
+    }
     return this.toMembersResponse(tripId);
   }
 
@@ -88,6 +94,15 @@ export class TripMembersService {
     }
 
     await this.tripMembersRepository.updateRole(memberId, role);
+    const trip = await this.tripMembersRepository.findTripSummary(tripId);
+    if (trip) {
+      await this.notificationsService.createRoleChanged(
+        targetMember.userId,
+        tripId,
+        trip.title,
+        role,
+      );
+    }
     return this.toMembersResponse(tripId);
   }
 
