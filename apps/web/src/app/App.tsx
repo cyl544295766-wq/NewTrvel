@@ -3,6 +3,7 @@ import { LoginPage, ProtectedRoute } from '../features/auth';
 import { ExpensesPage } from '../features/expenses';
 import { ItineraryPage } from '../features/itinerary';
 import { MapPage } from '../features/map';
+import { PackingListsPage } from '../features/packing-lists';
 import { PhotosPage } from '../features/photos';
 import { TravelDocumentsPage } from '../features/travel-documents';
 import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
@@ -82,6 +83,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <TravelDocumentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/packing-lists"
+          element={
+            <ProtectedRoute>
+              <PackingListsPage />
             </ProtectedRoute>
           }
         />

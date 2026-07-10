@@ -60,6 +60,7 @@ export function HomePage() {
         <StatCard label="旅行次数" value={`${data.stats.tripCount} 次`} />
         <StatCard label="总花费" value={`人民币 ${data.stats.totalExpenseAmount}`} />
         <StatCard label="总天数" value={`${data.stats.totalDays} 天`} />
+        <StatCard label="待打包物品" value={`${data.stats.pendingPackingItemCount} 件`} />
       </section>
 
       <section className="dashboard-grid">

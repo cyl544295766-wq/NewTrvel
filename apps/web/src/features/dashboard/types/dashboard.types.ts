@@ -43,6 +43,7 @@ export type DashboardStats = {
   tripCount: number;
   totalExpenseAmount: string;
   totalDays: number;
+  pendingPackingItemCount: number;
 };
 
 export type DashboardData = {

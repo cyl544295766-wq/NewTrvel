@@ -58,6 +58,15 @@ enum TravelDocumentType {
   other
 }
 
+enum PackingListCategory {
+  clothing
+  toiletries
+  electronics
+  medicine
+  documents
+  other
+}
+
 model SystemSetting {
   id        String   @id @default(cuid())
   key       String   @unique
@@ -109,6 +118,7 @@ model Trip {
   expenses        TripExpense[]
   photos          Photo[]
   travelDocuments TravelDocument[]
+  packingLists    PackingList[]
 
   @@map("trips")
 }
@@ -203,6 +213,36 @@ model TravelDocument {
   @@index([tripPlaceId])
   @@index([isReminder, expiredAt])
   @@map("travel_documents")
+}
+
+model PackingList {
+  id        String              @id @default(cuid())
+  tripId    String              @map("trip_id")
+  name      String
+  category  PackingListCategory
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  trip  Trip          @relation(fields: [tripId], references: [id])
+  items PackingItem[]
+
+  @@index([tripId])
+  @@map("packing_lists")
+}
+
+model PackingItem {
+  id            String  @id @default(cuid())
+  packingListId String  @map("packing_list_id")
+  name          String
+  quantity      Int     @default(1)
+  isPacked      Boolean @default(false) @map("is_packed")
+  notes         String?
+  orderIndex    Int     @default(0) @map("order_index")
+
+  packingList PackingList @relation(fields: [packingListId], references: [id])
+
+  @@index([packingListId])
+  @@map("packing_items")
 }
 
 model TripExpense {

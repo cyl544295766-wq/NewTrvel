@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { PackingListsModule } from '../packing-lists/packing-lists.module';
 import { PhotosModule } from '../photos/photos.module';
 import { TripExpensesModule } from '../trip-expenses/trip-expenses.module';
 import { TravelDocumentsModule } from '../travel-documents/travel-documents.module';
@@ -12,6 +13,7 @@ import { DashboardService } from './dashboard.service';
     JwtModule.register({}),
     TripsModule,
     TripExpensesModule,
+    PackingListsModule,
     PhotosModule,
     TravelDocumentsModule,
   ],

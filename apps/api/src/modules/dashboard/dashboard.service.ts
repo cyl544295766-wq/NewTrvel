@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Photo, TravelDocument, Trip, TripExpense } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { PackingListsRepository } from '../packing-lists/packing-lists.repository';
 import { createPhotoThumbnail } from '../photos/photo-thumbnail';
 import { PhotosRepository } from '../photos/photos.repository';
 import { TripExpensesRepository } from '../trip-expenses/trip-expenses.repository';
@@ -53,6 +54,7 @@ export class DashboardService {
   constructor(
     private readonly tripsRepository: TripsRepository,
     private readonly tripExpensesRepository: TripExpensesRepository,
+    private readonly packingListsRepository: PackingListsRepository,
     private readonly photosRepository: PhotosRepository,
     private readonly travelDocumentsRepository: TravelDocumentsRepository,
   ) {}
@@ -66,6 +68,10 @@ export class DashboardService {
       this.tripsRepository.findUpcomingTripsForUser(currentUser.id, today, 3),
     ]);
     const tripIds = memberships.map((membership) => membership.trip.id);
+    const pendingPackingItemCountPromise =
+      tripIds.length === 0
+        ? Promise.resolve(0)
+        : this.packingListsRepository.countPendingItemsForTrips(tripIds);
     const [expenses, recentExpenses, recentPhotos, upcomingDocuments] =
       tripIds.length === 0
         ? [[], [], [], []]
@@ -79,6 +85,7 @@ export class DashboardService {
               reminderWindowEnd,
             ),
           ]);
+    const pendingPackingItemCount = await pendingPackingItemCountPromise;
     const dashboardPhotos = await Promise.all(
       recentPhotos.map((photo) => this.toDashboardPhoto(photo)),
     );
@@ -92,6 +99,7 @@ export class DashboardService {
         tripCount: memberships.length,
         totalExpenseAmount: this.sumExpenses(expenses),
         totalDays: this.sumTripDays(memberships.map((membership) => membership.trip)),
+        pendingPackingItemCount,
       },
       recentTrips: recentTrips.map((membership) => this.toDashboardTrip(membership.trip)),
       upcomingTrips: upcomingTrips.map((membership) => this.toDashboardTrip(membership.trip)),
