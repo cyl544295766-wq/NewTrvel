@@ -16,6 +16,11 @@ export class TripExpensesController {
     return this.tripExpensesService.findAll(tripId, user.id);
   }
 
+  @Get('summary')
+  getSummary(@Param('tripId') tripId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.tripExpensesService.getSummary(tripId, user.id);
+  }
+
   @Post()
   create(
     @Param('tripId') tripId: string,

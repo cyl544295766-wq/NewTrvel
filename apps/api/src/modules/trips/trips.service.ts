@@ -70,6 +70,7 @@ export class TripsService {
       endDate: this.toOptionalNullableDate(updateTripDto.endDate),
       status: updateTripDto.status,
       coverImageUrl: this.toOptionalNullableString(updateTripDto.coverImageUrl),
+      budget: this.toOptionalNullableDecimal(updateTripDto.budget),
     });
 
     return { trip: this.toTripResponse(trip, membership.role) };
@@ -150,6 +151,7 @@ export class TripsService {
       endDate: trip.endDate,
       status: trip.status,
       coverImageUrl: trip.coverImageUrl,
+      budget: trip.budget?.toFixed(2) ?? null,
       ownerId: trip.ownerId,
       currentUserRole,
       isFavorite: trip.isFavorite,
@@ -186,5 +188,26 @@ export class TripsService {
 
   private toOptionalNullableString(value?: string): string | null | undefined {
     return value === undefined ? undefined : this.toNullableString(value);
+  }
+
+  private toOptionalNullableDecimal(value?: string | null): string | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null) {
+      return null;
+    }
+
+    if (value.trim() === '') {
+      return null;
+    }
+
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new BadRequestException('预算金额不能小于 0');
+    }
+
+    return value;
   }
 }

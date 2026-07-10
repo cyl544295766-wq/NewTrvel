@@ -1,6 +1,6 @@
 import { TripExpenseCategory } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
-  ArrayNotEmpty,
   IsArray,
   IsDateString,
   IsEnum,
@@ -9,7 +9,16 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+
+export class TripExpenseShareInputDto {
+  @IsString()
+  userId!: string;
+
+  @IsNumberString()
+  shareAmount!: string;
+}
 
 export class CreateTripExpenseDto {
   @IsString()
@@ -32,10 +41,16 @@ export class CreateTripExpenseDto {
   @IsString()
   payerUserId!: string;
 
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsString({ each: true })
-  shareUserIds!: string[];
+  shareUserIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TripExpenseShareInputDto)
+  shares?: TripExpenseShareInputDto[];
 
   @IsDateString()
   spentAt!: string;

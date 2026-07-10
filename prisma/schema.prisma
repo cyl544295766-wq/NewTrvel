@@ -41,7 +41,9 @@ enum TripExpenseCategory {
   hotel
   food
   ticket
+  parking
   shopping
+  maintenance
   activity
   other
 }
@@ -83,6 +85,7 @@ model Trip {
   endDate       DateTime?    @map("end_date")
   status        TripStatus   @default(draft)
   coverImageUrl String?      @map("cover_image_url")
+  budget        Decimal?     @map("budget")
   ownerId       String       @map("owner_id")
   isFavorite    Boolean      @default(false) @map("is_favorite")
   archivedAt    DateTime?    @map("archived_at")

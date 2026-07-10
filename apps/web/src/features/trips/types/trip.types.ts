@@ -10,6 +10,7 @@ export type Trip = {
   endDate: string | null;
   status: TripStatus;
   coverImageUrl: string | null;
+  budget: string | null;
   ownerId: string;
   currentUserRole: TripMemberRole;
   isFavorite: boolean;
@@ -28,6 +29,7 @@ export type TripInput = {
   coverImageUrl?: string;
 };
 
-export type TripUpdateInput = TripInput & {
+export type TripUpdateInput = Partial<TripInput> & {
   status?: TripStatus;
+  budget?: string | null;
 };

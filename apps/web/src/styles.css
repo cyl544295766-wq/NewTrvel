@@ -456,6 +456,69 @@ p {
   font-weight: 700;
 }
 
+.wallet-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wallet-progress-card {
+  grid-column: 1 / -1;
+}
+
+.budget-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e2da;
+}
+
+.budget-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: #315f45;
+}
+
+.summary-list {
+  display: grid;
+  gap: 8px;
+}
+
+.summary-list p,
+.expense-actions,
+.form-actions,
+.inline-budget-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-list p {
+  justify-content: space-between;
+}
+
+.inline-budget-form input {
+  min-width: 0;
+  height: 38px;
+  flex: 1;
+  border: 1px solid #cfcfc7;
+  border-radius: 6px;
+  padding: 0 10px;
+}
+
+.inline-budget-form button {
+  min-height: 38px;
+}
+
+.danger-card {
+  border-color: #d8b8b8;
+}
+
+.danger-card strong,
+.danger-text {
+  color: #9f2d2d;
+}
+
 .checkbox-group {
   border: 1px solid #dedbd2;
   border-radius: 8px;
@@ -474,6 +537,20 @@ p {
   align-items: center;
   display: flex;
   gap: 6px;
+}
+
+.expense-share-grid label {
+  min-width: 160px;
+  align-items: start;
+  flex: 1;
+}
+
+.receipt-placeholder {
+  border: 1px dashed #bfbab0;
+  border-radius: 8px;
+  color: #666b65;
+  padding: 18px;
+  text-align: center;
 }
 
 .expense-list {
@@ -651,6 +728,7 @@ dd {
   .form-grid,
   .detail-grid,
   .summary-grid,
+  .wallet-summary,
   .dashboard-stats-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -670,5 +748,11 @@ dd {
 
   .expense-amount {
     justify-items: start;
+  }
+
+  .expense-actions,
+  .form-actions,
+  .inline-budget-form {
+    flex-wrap: wrap;
   }
 }

@@ -2,11 +2,13 @@ import { TripStatus } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
+  IsNumberString,
   IsOptional,
   IsString,
   IsUrl,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateTripDto {
@@ -41,4 +43,8 @@ export class UpdateTripDto {
   @IsOptional()
   @IsUrl({ require_protocol: true })
   coverImageUrl?: string;
+
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
+  @IsNumberString()
+  budget?: string | null;
 }

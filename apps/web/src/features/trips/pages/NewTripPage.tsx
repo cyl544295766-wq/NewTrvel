@@ -1,14 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { TripForm } from '../components/TripForm';
 import { useCreateTrip } from '../hooks/useTrips';
-import { TripUpdateInput } from '../types/trip.types';
+import { TripInput, TripUpdateInput } from '../types/trip.types';
 
 export function NewTripPage() {
   const navigate = useNavigate();
   const createTrip = useCreateTrip();
 
   async function handleSubmit(input: TripUpdateInput) {
-    const result = await createTrip.mutateAsync(input);
+    const result = await createTrip.mutateAsync(input as TripInput);
     navigate(`/trips/${result.trip.id}`, { replace: true });
   }
 

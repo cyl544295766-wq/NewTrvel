@@ -9,6 +9,7 @@ export type TripResponse = {
   endDate: Date | null;
   status: TripStatus;
   coverImageUrl: string | null;
+  budget: string | null;
   ownerId: string;
   currentUserRole: TripMemberRole;
   isFavorite: boolean;

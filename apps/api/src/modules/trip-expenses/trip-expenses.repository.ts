@@ -18,6 +18,14 @@ export class TripExpensesRepository {
     });
   }
 
+  findSummaryExpenses(tripId: string) {
+    return this.findExpenses(tripId);
+  }
+
+  findTripBudget(tripId: string) {
+    return this.prisma.trip.findUnique({ where: { id: tripId }, select: { budget: true } });
+  }
+
   findExpensesForTrips(tripIds: string[]) {
     return this.prisma.tripExpense.findMany({
       where: { tripId: { in: tripIds } },
