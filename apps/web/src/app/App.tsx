@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { LoginPage, ProtectedRoute } from '../features/auth';
 import { ExpensesPage } from '../features/expenses';
 import { ItineraryPage } from '../features/itinerary';
+import { MapPage } from '../features/map';
 import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
 import { HomePage } from '../pages/HomePage';
 
@@ -55,6 +56,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <ExpensesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/map"
+          element={
+            <ProtectedRoute>
+              <MapPage />
             </ProtectedRoute>
           }
         />

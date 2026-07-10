@@ -485,6 +485,63 @@ p {
   margin-top: 0;
 }
 
+.trip-map-shell {
+  overflow: hidden;
+  border: 1px solid #dedbd2;
+  border-radius: 8px;
+}
+
+.trip-map {
+  height: min(620px, 68vh);
+  min-height: 420px;
+  width: 100%;
+}
+
+.route-marker {
+  border: 0;
+  background: transparent;
+}
+
+.route-marker span {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 6px 16px rgba(22, 22, 22, 0.24);
+  color: #ffffff;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  place-items: center;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.map-legend span {
+  border: 1px solid #dedbd2;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: #334138;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.map-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
 .muted-text {
   color: #777a75;
 }

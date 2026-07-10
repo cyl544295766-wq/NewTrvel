@@ -26,6 +26,11 @@ export class TripsController {
     return this.tripsService.findOne(tripId, currentUser);
   }
 
+  @Get(':tripId/route')
+  getRoute(@Param('tripId') tripId: string, @CurrentUser() currentUser: AuthenticatedUser) {
+    return this.tripsService.getRoute(tripId, currentUser);
+  }
+
   @Patch(':tripId')
   update(
     @Param('tripId') tripId: string,

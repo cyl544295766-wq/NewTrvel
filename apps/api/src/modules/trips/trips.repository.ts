@@ -108,6 +108,22 @@ export class TripsRepository {
     });
   }
 
+  findRouteDays(tripId: string) {
+    return this.prisma.tripDay.findMany({
+      where: { tripId },
+      include: {
+        places: {
+          where: {
+            latitude: { not: null },
+            longitude: { not: null },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: { dayIndex: 'asc' },
+    });
+  }
+
   duplicateWithStructure(id: string, ownerId: string) {
     return this.prisma.$transaction(async (tx) => {
       const sourceTrip = await tx.trip.findFirst({

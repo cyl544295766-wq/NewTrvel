@@ -53,6 +53,27 @@ export class TripsService {
     return { trip: this.toTripResponse(trip, membership.role) };
   }
 
+  async getRoute(tripId: string, currentUser: AuthenticatedUser) {
+    await this.tripMembersService.requireTripMember(tripId, currentUser.id);
+    const days = await this.tripsRepository.findRouteDays(tripId);
+
+    return {
+      route: days.map((day) => ({
+        dayId: day.id,
+        dayIndex: day.dayIndex,
+        date: day.date,
+        places: day.places.map((place) => ({
+          id: place.id,
+          name: place.name,
+          type: place.type,
+          latitude: place.latitude?.toString() ?? '',
+          longitude: place.longitude?.toString() ?? '',
+          sortOrder: place.sortOrder,
+        })),
+      })),
+    };
+  }
+
   async update(tripId: string, updateTripDto: UpdateTripDto, currentUser: AuthenticatedUser) {
     this.validateDateRange(updateTripDto.startDate, updateTripDto.endDate);
     const membership = await this.verifyCanManageTrip(tripId, currentUser.id);
