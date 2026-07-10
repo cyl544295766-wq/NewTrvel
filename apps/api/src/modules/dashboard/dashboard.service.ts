@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Photo, TravelDocument, Trip, TripExpense } from '@prisma/client';
+import { Photo, TravelDocument, Trip, TripExpense, TripJournal } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { PackingListsRepository } from '../packing-lists/packing-lists.repository';
 import { createPhotoThumbnail } from '../photos/photo-thumbnail';
 import { PhotosRepository } from '../photos/photos.repository';
 import { TripExpensesRepository } from '../trip-expenses/trip-expenses.repository';
+import { TripJournalsRepository } from '../trip-journals/trip-journals.repository';
 import { TravelDocumentsRepository } from '../travel-documents/travel-documents.repository';
 import { TripsRepository } from '../trips/trips.repository';
 
@@ -49,11 +50,21 @@ type DashboardDocument = {
   expiredAt: Date;
 };
 
+type DashboardJournal = {
+  id: string;
+  tripId: string;
+  tripTitle: string;
+  title: string;
+  summary: string;
+  createdAt: Date;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly tripsRepository: TripsRepository,
     private readonly tripExpensesRepository: TripExpensesRepository,
+    private readonly tripJournalsRepository: TripJournalsRepository,
     private readonly packingListsRepository: PackingListsRepository,
     private readonly photosRepository: PhotosRepository,
     private readonly travelDocumentsRepository: TravelDocumentsRepository,
@@ -72,9 +83,9 @@ export class DashboardService {
       tripIds.length === 0
         ? Promise.resolve(0)
         : this.packingListsRepository.countPendingItemsForTrips(tripIds);
-    const [expenses, recentExpenses, recentPhotos, upcomingDocuments] =
+    const [expenses, recentExpenses, recentPhotos, upcomingDocuments, recentJournals] =
       tripIds.length === 0
-        ? [[], [], [], []]
+        ? [[], [], [], [], []]
         : await Promise.all([
             this.tripExpensesRepository.findExpensesForTrips(tripIds),
             this.tripExpensesRepository.findRecentExpensesForTrips(tripIds, 5),
@@ -84,6 +95,7 @@ export class DashboardService {
               today,
               reminderWindowEnd,
             ),
+            this.tripJournalsRepository.findRecentPublishedForTrips(tripIds, 3),
           ]);
     const pendingPackingItemCount = await pendingPackingItemCountPromise;
     const dashboardPhotos = await Promise.all(
@@ -106,6 +118,7 @@ export class DashboardService {
       recentExpenses: recentExpenses.map((expense) => this.toDashboardExpense(expense)),
       recentPhotos: dashboardPhotos,
       upcomingDocuments: upcomingDocuments.map((document) => this.toDashboardDocument(document)),
+      recentJournals: recentJournals.map((journal) => this.toDashboardJournal(journal)),
     };
   }
 
@@ -161,6 +174,17 @@ export class DashboardService {
       type: document.type,
       title: document.title,
       expiredAt: document.expiredAt!,
+    };
+  }
+
+  private toDashboardJournal(journal: TripJournal & { trip: { title: string } }): DashboardJournal {
+    return {
+      id: journal.id,
+      tripId: journal.tripId,
+      tripTitle: journal.trip.title,
+      title: journal.title,
+      summary: journal.content.slice(0, 100),
+      createdAt: journal.createdAt,
     };
   }
 

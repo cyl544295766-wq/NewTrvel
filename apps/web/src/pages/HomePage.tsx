@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../features/auth';
 import { RecentExpenseList } from '../features/dashboard/components/RecentExpenseList';
 import { RecentPhotoList } from '../features/dashboard/components/RecentPhotoList';
+import { RecentJournalList } from '../features/dashboard/components/RecentJournalList';
 import { RecentTripList } from '../features/dashboard/components/RecentTripList';
 import { StatCard } from '../features/dashboard/components/StatCard';
 import { UpcomingTripList } from '../features/dashboard/components/UpcomingTripList';
@@ -69,6 +70,7 @@ export function HomePage() {
         <RecentExpenseList expenses={data.recentExpenses} />
         <RecentPhotoList photos={data.recentPhotos} />
         <UpcomingDocumentList documents={data.upcomingDocuments} />
+        <RecentJournalList journals={data.recentJournals} />
       </section>
     </main>
   );

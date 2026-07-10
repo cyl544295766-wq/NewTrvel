@@ -119,6 +119,7 @@ model Trip {
   photos          Photo[]
   travelDocuments TravelDocument[]
   packingLists    PackingList[]
+  journals        TripJournal[]
 
   @@map("trips")
 }
@@ -136,6 +137,7 @@ model TripDay {
   places          TripPlace[]
   photos          Photo[]
   travelDocuments TravelDocument[]
+  journals        TripJournal[]
 
   @@unique([tripId, date])
   @@unique([tripId, dayIndex])
@@ -162,6 +164,7 @@ model TripPlace {
   tripDay         TripDay?         @relation(fields: [tripDayId], references: [id])
   photos          Photo[]
   travelDocuments TravelDocument[]
+  journals        TripJournal[]
 
   @@index([tripId])
   @@index([tripDayId])
@@ -180,9 +183,10 @@ model Photo {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  trip      Trip       @relation(fields: [tripId], references: [id])
-  tripDay   TripDay?   @relation(fields: [tripDayId], references: [id])
-  tripPlace TripPlace? @relation(fields: [tripPlaceId], references: [id])
+  trip         Trip               @relation(fields: [tripId], references: [id])
+  tripDay      TripDay?           @relation(fields: [tripDayId], references: [id])
+  tripPlace    TripPlace?         @relation(fields: [tripPlaceId], references: [id])
+  journalLinks TripJournalPhoto[]
 
   @@index([tripId])
   @@index([tripDayId])
@@ -243,6 +247,44 @@ model PackingItem {
 
   @@index([packingListId])
   @@map("packing_items")
+}
+
+model TripJournal {
+  id          String   @id @default(cuid())
+  tripId      String   @map("trip_id")
+  tripDayId   String?  @map("trip_day_id")
+  tripPlaceId String?  @map("trip_place_id")
+  title       String
+  content     String
+  isDraft     Boolean  @default(true) @map("is_draft")
+  mood        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  trip      Trip               @relation(fields: [tripId], references: [id])
+  tripDay   TripDay?           @relation(fields: [tripDayId], references: [id])
+  tripPlace TripPlace?         @relation(fields: [tripPlaceId], references: [id])
+  photos    TripJournalPhoto[]
+
+  @@index([tripId])
+  @@index([tripDayId])
+  @@index([tripPlaceId])
+  @@index([isDraft, createdAt])
+  @@map("trip_journals")
+}
+
+model TripJournalPhoto {
+  journalId  String @map("journal_id")
+  photoId    String @map("photo_id")
+  orderIndex Int    @default(0) @map("order_index")
+
+  journal TripJournal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  photo   Photo       @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@id([journalId, photoId])
+  @@index([journalId])
+  @@index([photoId])
+  @@map("trip_journal_photos")
 }
 
 model TripExpense {

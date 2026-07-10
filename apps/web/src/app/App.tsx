@@ -6,6 +6,7 @@ import { MapPage } from '../features/map';
 import { PackingListsPage } from '../features/packing-lists';
 import { PhotosPage } from '../features/photos';
 import { TravelDocumentsPage } from '../features/travel-documents';
+import { JournalDetailPage, TripJournalsPage } from '../features/trip-journals';
 import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
 import { HomePage } from '../pages/HomePage';
 
@@ -91,6 +92,22 @@ export function App() {
           element={
             <ProtectedRoute>
               <PackingListsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/journals"
+          element={
+            <ProtectedRoute>
+              <TripJournalsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trips/:tripId/journals/:journalId"
+          element={
+            <ProtectedRoute>
+              <JournalDetailPage />
             </ProtectedRoute>
           }
         />

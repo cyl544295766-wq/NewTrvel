@@ -39,6 +39,15 @@ export type DashboardDocument = {
   expiredAt: string;
 };
 
+export type DashboardJournal = {
+  id: string;
+  tripId: string;
+  tripTitle: string;
+  title: string;
+  summary: string;
+  createdAt: string;
+};
+
 export type DashboardStats = {
   tripCount: number;
   totalExpenseAmount: string;
@@ -53,4 +62,5 @@ export type DashboardData = {
   recentExpenses: DashboardExpense[];
   recentPhotos: DashboardPhoto[];
   upcomingDocuments: DashboardDocument[];
+  recentJournals: DashboardJournal[];
 };

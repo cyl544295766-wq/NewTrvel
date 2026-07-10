@@ -120,6 +120,9 @@ export function TripDetailPage() {
           <Link className="button-link" to={`/trips/${data.id}/packing-lists`}>
             打包
           </Link>
+          <Link className="button-link" to={`/trips/${data.id}/journals`}>
+            游记
+          </Link>
           <Link className="button-link" to={`/trips/${data.id}/map`}>
             地图
           </Link>
