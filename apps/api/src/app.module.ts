@@ -16,6 +16,7 @@ import { TravelDocumentsModule } from './modules/travel-documents/travel-documen
 import { TravelStatsModule } from './modules/travel-stats/travel-stats.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { UsersModule } from './modules/users/users.module';
+import { WeatherModule } from './modules/weather/weather.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { UsersModule } from './modules/users/users.module';
     PhotosModule,
     TravelDocumentsModule,
     TravelStatsModule,
+    WeatherModule,
   ],
 })
 export class AppModule {}

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { ExportPdfButton } from '../../trip-pdf';
+import { WeatherForecast, useTripWeather } from '../../weather';
 import { TripMembers } from '../components/TripMembers';
 import { TripStatusBadge } from '../components/TripStatusBadge';
 import {
@@ -29,6 +30,7 @@ export function TripDetailPage() {
   const duplicateTrip = useDuplicateTrip();
   const favoriteTrip = useFavoriteTrip();
   const deleteTrip = useDeleteTrip();
+  const weather = useTripWeather(tripId ?? '', Boolean(tripId));
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const data = trip.data?.trip;
@@ -82,6 +84,10 @@ export function TripDetailPage() {
           </div>
           <TripStatusBadge status={data.status} />
         </div>
+        <WeatherForecast
+          isLoading={weather.isLoading}
+          weather={weather.data?.weather ?? []}
+        />
         {data.coverImageUrl ? (
           <div className="trip-detail-cover">
             <img alt={`${data.title} 封面`} src={data.coverImageUrl} />

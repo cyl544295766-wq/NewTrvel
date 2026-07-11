@@ -9,6 +9,7 @@ import {
 import { arrayMove } from '@dnd-kit/sortable';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useTrip } from '../../trips/hooks/useTrips';
+import { useTripWeather } from '../../weather';
 import { TripDayCard } from '../components/TripDayCard';
 import {
   useCreateTripPlace,
@@ -26,6 +27,7 @@ export function ItineraryPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const safeTripId = tripId ?? '';
   const trip = useTrip(safeTripId, Boolean(tripId));
+  const weather = useTripWeather(safeTripId, Boolean(tripId));
   const days = useTripDays(safeTripId);
   const generateDays = useGenerateTripDays(safeTripId);
   const updateDay = useUpdateTripDay(safeTripId);
@@ -119,6 +121,10 @@ export function ItineraryPage() {
                 onDeletePlace={(placeId) => deletePlace.mutate(placeId)}
                 onTogglePlaceCompleted={handleTogglePlaceCompleted}
                 onUpdateDay={handleUpdateDay}
+                weather={weather.data?.weather.find(
+                  (item) =>
+                    item.tripDayId === day.id || item.date.slice(0, 10) === day.date.slice(0, 10),
+                )}
               />
             ))}
           </div>

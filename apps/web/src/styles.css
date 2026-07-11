@@ -2485,6 +2485,137 @@ dd {
   font-size: 12px;
 }
 
+.weather-badge {
+  min-height: 34px;
+  border: 1px solid #c8d5c9;
+  border-radius: 6px;
+  background: #e7efe5;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.weather-badge strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.weather-badge > span:last-child {
+  color: var(--muted-strong);
+}
+
+.weather-forecast {
+  display: grid;
+  gap: 14px;
+}
+
+.weather-forecast > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.weather-forecast > header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.weather-forecast > header .eyebrow {
+  margin: 0;
+}
+
+.weather-forecast > header > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.weather-forecast-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.weather-card {
+  min-height: 148px;
+  border-radius: 7px;
+  background: #e5ece3;
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+  padding: 15px;
+}
+
+.weather-card:nth-child(2n) {
+  background: #e4eaec;
+}
+
+.weather-card > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weather-card > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.weather-card time {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.weather-card > header strong {
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+
+.weather-card-icon {
+  color: var(--accent);
+}
+
+.weather-temperatures {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.weather-temperatures strong {
+  color: var(--ink);
+  font-size: 27px;
+  line-height: 1;
+}
+
+.weather-temperatures span {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.weather-card p {
+  color: var(--muted-strong);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.weather-empty {
+  min-height: 78px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
 .recharts-default-tooltip {
   border-color: var(--line-strong) !important;
   border-radius: 6px;

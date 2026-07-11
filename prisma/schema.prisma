@@ -158,8 +158,30 @@ model Trip {
   travelDocuments TravelDocument[]
   packingLists    PackingList[]
   journals        TripJournal[]
+  weather         TripWeather[]
 
   @@map("trips")
+}
+
+model TripWeather {
+  id          String   @id @default(cuid())
+  tripId      String   @map("trip_id")
+  tripDayId   String?  @map("trip_day_id")
+  date        DateTime
+  destination String
+  condition   String
+  tempHigh    Decimal  @map("temp_high")
+  tempLow     Decimal  @map("temp_low")
+  rainChance  Int?     @map("rain_chance")
+  iconCode    String?  @map("icon_code")
+  fetchedAt   DateTime @map("fetched_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  trip Trip @relation(fields: [tripId], references: [id])
+
+  @@index([tripId])
+  @@index([tripId, date])
+  @@map("trip_weather")
 }
 
 model TripDay {

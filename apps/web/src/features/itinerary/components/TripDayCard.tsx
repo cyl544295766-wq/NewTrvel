@@ -1,5 +1,6 @@
 import { useDroppable } from '@dnd-kit/core';
 import { FormEvent, useState } from 'react';
+import { TripWeather, WeatherBadge } from '../../weather';
 import { TripDay, TripPlace, TripPlaceInput } from '../types/itinerary.types';
 import { TripPlaceForm } from './TripPlaceForm';
 import { TripPlaceList } from './TripPlaceList';
@@ -12,6 +13,7 @@ type Props = {
   onDeletePlace: (placeId: string) => void;
   onTogglePlaceCompleted: (place: TripPlace) => void;
   isCreatingPlace: boolean;
+  weather?: TripWeather;
 };
 
 export function TripDayCard({
@@ -22,6 +24,7 @@ export function TripDayCard({
   onDeletePlace,
   onTogglePlaceCompleted,
   isCreatingPlace,
+  weather,
 }: Props) {
   const [title, setTitle] = useState(day.title ?? '');
   const [summary, setSummary] = useState(day.summary ?? '');
@@ -42,6 +45,7 @@ export function TripDayCard({
           <p className="eyebrow">第 {day.dayIndex} 天</p>
           <h2>{new Date(day.date).toLocaleDateString('zh-CN')}</h2>
         </div>
+        {weather ? <WeatherBadge weather={weather} /> : null}
       </div>
       {canEdit ? (
         <form className="compact-form" onSubmit={handleSubmit}>
