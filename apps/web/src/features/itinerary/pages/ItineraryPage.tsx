@@ -125,6 +125,7 @@ export function ItineraryPage() {
                   (item) =>
                     item.tripDayId === day.id || item.date.slice(0, 10) === day.date.slice(0, 10),
                 )}
+                searchCity={currentTrip?.destination ?? undefined}
               />
             ))}
           </div>

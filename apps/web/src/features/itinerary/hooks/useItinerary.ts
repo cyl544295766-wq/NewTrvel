@@ -12,6 +12,12 @@ import {
 import { TripPlaceInput } from '../types/itinerary.types';
 
 const itineraryKey = (tripId: string) => ['itinerary', tripId];
+const mapKey = (tripId: string) => ['trip-route', tripId];
+
+function invalidatePlaceQueries(queryClient: ReturnType<typeof useQueryClient>, tripId: string) {
+  queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) });
+  queryClient.invalidateQueries({ queryKey: mapKey(tripId) });
+}
 
 export function useTripDays(tripId: string) {
   return useQuery({
@@ -34,7 +40,7 @@ export function useUpdateTripDay(tripId: string) {
   return useMutation({
     mutationFn: ({ dayId, title, summary }: { dayId: string; title?: string; summary?: string }) =>
       updateTripDay(tripId, dayId, { title, summary }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }
 
@@ -42,7 +48,7 @@ export function useCreateTripPlace(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: TripPlaceInput) => createTripPlace(tripId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }
 
@@ -51,7 +57,7 @@ export function useUpdateTripPlace(tripId: string) {
   return useMutation({
     mutationFn: ({ placeId, input }: { placeId: string; input: Partial<TripPlaceInput> }) =>
       updateTripPlace(tripId, placeId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }
 
@@ -60,7 +66,7 @@ export function useMoveTripPlace(tripId: string) {
   return useMutation({
     mutationFn: ({ placeId, tripDayId }: { placeId: string; tripDayId: string }) =>
       movePlace(tripId, placeId, tripDayId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }
 
@@ -69,7 +75,7 @@ export function useReorderTripPlaces(tripId: string) {
   return useMutation({
     mutationFn: ({ dayId, placeIds }: { dayId: string; placeIds: string[] }) =>
       reorderTripPlaces(tripId, dayId, placeIds),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }
 
@@ -77,6 +83,6 @@ export function useDeleteTripPlace(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (placeId: string) => deleteTripPlace(tripId, placeId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itineraryKey(tripId) }),
+    onSuccess: () => invalidatePlaceQueries(queryClient, tripId),
   });
 }

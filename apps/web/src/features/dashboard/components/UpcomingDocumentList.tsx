@@ -8,7 +8,7 @@ type Props = {
 
 export function UpcomingDocumentList({ documents }: Props) {
   return (
-    <section className="content-panel dashboard-card">
+    <section className="content-panel dashboard-card dashboard-card-documents">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">提醒</p>

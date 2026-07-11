@@ -8,6 +8,9 @@ export type TripRoutePlace = {
   latitude: string;
   longitude: string;
   sortOrder: number;
+  address?: string | null;
+  notes?: string | null;
+  startTime?: string | null;
 };
 
 export type TripRouteDay = {

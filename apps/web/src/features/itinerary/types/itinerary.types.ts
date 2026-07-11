@@ -32,8 +32,8 @@ export type TripPlaceInput = {
   name: string;
   type?: TripPlaceType;
   address?: string;
-  latitude?: string;
-  longitude?: string;
+  latitude?: number;
+  longitude?: number;
   startTime?: string;
   endTime?: string;
   notes?: string;

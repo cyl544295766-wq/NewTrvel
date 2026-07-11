@@ -7,7 +7,7 @@ type Props = {
 
 export function RecentPhotoList({ photos }: Props) {
   return (
-    <section className="content-panel dashboard-card">
+    <section className="content-panel dashboard-card dashboard-card-photos">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">照片</p>

@@ -21,7 +21,13 @@ export function useCreateTrip() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: TripInput) => createTrip(input),
+    mutationFn: async (input: TripUpdateInput) => {
+      const { budget, ...tripInput } = input;
+      delete tripInput.status;
+      const created = await createTrip(tripInput as TripInput);
+      if (budget) return updateTrip(created.trip.id, { budget });
+      return created;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: tripsQueryKey }),
   });
 }

@@ -14,6 +14,7 @@ type Props = {
   onTogglePlaceCompleted: (place: TripPlace) => void;
   isCreatingPlace: boolean;
   weather?: TripWeather;
+  searchCity?: string;
 };
 
 export function TripDayCard({
@@ -25,6 +26,7 @@ export function TripDayCard({
   onTogglePlaceCompleted,
   isCreatingPlace,
   weather,
+  searchCity,
 }: Props) {
   const [title, setTitle] = useState(day.title ?? '');
   const [summary, setSummary] = useState(day.summary ?? '');
@@ -79,7 +81,7 @@ export function TripDayCard({
         places={day.places}
       />
       {canEdit ? (
-        <TripPlaceForm isSubmitting={isCreatingPlace} onSubmit={onCreatePlace} tripDayId={day.id} />
+        <TripPlaceForm isSubmitting={isCreatingPlace} onSubmit={onCreatePlace} searchCity={searchCity} tripDayId={day.id} />
       ) : null}
     </section>
   );

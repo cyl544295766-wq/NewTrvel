@@ -7,7 +7,7 @@ type RecentExpenseListProps = {
 
 export function RecentExpenseList({ expenses }: RecentExpenseListProps) {
   return (
-    <section className="content-panel dashboard-card">
+    <section className="content-panel dashboard-card dashboard-card-expenses">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">费用</p>

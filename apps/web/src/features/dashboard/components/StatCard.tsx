@@ -1,19 +1,26 @@
 import { LucideIcon } from 'lucide-react';
 
 type StatCardProps = {
+  hint?: string;
   icon: LucideIcon;
   label: string;
   value: string;
+  variant?: 'wide';
 };
 
-export function StatCard({ icon: Icon, label, value }: StatCardProps) {
+export function StatCard({ hint, icon: Icon, label, value, variant }: StatCardProps) {
   return (
-    <article className="dashboard-stat-card">
+    <article className={`dashboard-stat-card${variant ? ` dashboard-stat-card-${variant}` : ''}`}>
       <div className="dashboard-stat-heading">
-        <span>{label}</span>
-        <Icon aria-hidden="true" size={18} strokeWidth={2} />
+        <span className="dashboard-stat-icon" aria-hidden="true">
+          <Icon size={21} strokeWidth={1.8} />
+        </span>
       </div>
-      <strong>{value}</strong>
+      <div className="dashboard-stat-value">
+        <strong>{value}</strong>
+        <span>{label}</span>
+        {hint ? <small>{hint}</small> : null}
+      </div>
     </article>
   );
 }

@@ -1,33 +1,28 @@
 import { Link } from 'react-router-dom';
-import { DashboardTrip } from '../types/dashboard.types';
+import { DashboardPhoto, DashboardTrip } from '../types/dashboard.types';
 
 type RecentTripListProps = {
+  photos?: DashboardPhoto[];
   trips: DashboardTrip[];
 };
 
-export function RecentTripList({ trips }: RecentTripListProps) {
+export function RecentTripList({ photos = [], trips }: RecentTripListProps) {
   return (
-    <section className="content-panel dashboard-card">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">旅行</p>
-          <h2>最近旅行</h2>
-        </div>
-      </div>
+    <section className="dashboard-trip-film" aria-label="最近旅行">
       {trips.length === 0 ? (
-        <p className="empty-state">暂无旅行，去创建一个吧</p>
+        <p className="dashboard-film-empty">暂无旅行，创建一段新旅程后会在这里展示。</p>
       ) : (
-        <div className="dashboard-list">
+        <div className="dashboard-film-track">
           {trips.map((trip) => (
-            <Link className="dashboard-list-row" key={trip.id} to={`/trips/${trip.id}`}>
-              <div>
-                <strong>
-                  {trip.isFavorite ? <span aria-hidden="true">★ </span> : null}
-                  {trip.title}
-                </strong>
-                <span>{trip.destination || '目的地未设置'}</span>
-              </div>
-              <time>{formatDate(trip.updatedAt)}</time>
+            <Link className="dashboard-film-item" key={trip.id} to={`/trips/${trip.id}`}>
+              <img
+                alt={`${trip.destination || trip.title}旅行缩略图`}
+                src={photos.find((photo) => photo.tripId === trip.id)?.thumbnailUrl ?? '/login-travel.webp'}
+              />
+              <span>
+                <strong>{trip.title}</strong>
+                <small>{trip.destination || formatDate(trip.updatedAt)}</small>
+              </span>
             </Link>
           ))}
         </div>

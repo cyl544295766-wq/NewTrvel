@@ -1,12 +1,13 @@
-import { ArrowUpRight, CalendarDays, Map, MapPin, Plus, Route } from 'lucide-react';
+import { CalendarDays, MapPin, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { DashboardTrip } from '../types/dashboard.types';
+import { DashboardPhoto, DashboardTrip } from '../types/dashboard.types';
 
 type FeaturedTripProps = {
   trip?: DashboardTrip;
+  photo?: DashboardPhoto;
 };
 
-export function FeaturedTrip({ trip }: FeaturedTripProps) {
+export function FeaturedTrip({ photo, trip }: FeaturedTripProps) {
   if (!trip) {
     return (
       <section className="dashboard-focus dashboard-focus-empty">
@@ -24,7 +25,12 @@ export function FeaturedTrip({ trip }: FeaturedTripProps) {
   }
 
   return (
-    <section className="dashboard-focus">
+    <section className={`dashboard-focus${photo ? ' dashboard-focus-with-photo' : ''}`}>
+      <img
+        alt={photo?.alt ?? `${trip.destination || trip.title}旅行风景`}
+        className="dashboard-focus-media"
+        src={photo?.thumbnailUrl ?? '/login-travel.webp'}
+      />
       <div className="dashboard-focus-topline">
         <p className="eyebrow">下一段旅行</p>
         <span>{getDepartureLabel(trip)}</span>
@@ -42,18 +48,6 @@ export function FeaturedTrip({ trip }: FeaturedTripProps) {
             {formatDateRange(trip.startDate, trip.endDate)}
           </span>
         </div>
-      </div>
-
-      <div className="dashboard-focus-actions">
-        <Link className="button-link" to={`/trips/${trip.id}`}>
-          <Route size={17} />
-          打开旅行
-          <ArrowUpRight size={15} />
-        </Link>
-        <Link className="secondary-button" to={`/trips/${trip.id}/map`}>
-          <Map size={17} />
-          查看地图
-        </Link>
       </div>
     </section>
   );
