@@ -1,4 +1,12 @@
-import { BellRing, CalendarRange, Luggage, MapPinned, Plus, WalletCards } from 'lucide-react';
+import {
+  BellRing,
+  CalendarRange,
+  ChartNoAxesCombined,
+  Luggage,
+  MapPinned,
+  Plus,
+  WalletCards,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../features/auth';
 import { RecentExpenseList } from '../features/dashboard/components/RecentExpenseList';
@@ -33,6 +41,10 @@ export function HomePage() {
           <p className="dashboard-intro">查看下一段行程和最近更新。</p>
         </div>
         <div className="top-actions dashboard-actions">
+          <Link className="secondary-button" to="/stats">
+            <ChartNoAxesCombined size={17} />
+            查看统计
+          </Link>
           <Link className="button-link" to="/trips/new">
             <Plus size={17} />
             新建旅行

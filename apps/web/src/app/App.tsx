@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { LoginPage, ProtectedRoute } from '../features/auth';
 import { ExpensesPage } from '../features/expenses';
@@ -12,6 +13,10 @@ import { EditTripPage, NewTripPage, TripDetailPage } from '../features/trips';
 import { HomePage } from '../pages/HomePage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
+const StatsOverviewPage = lazy(() =>
+  import('../features/travel-stats').then((module) => ({ default: module.StatsOverviewPage })),
+);
+
 export function App() {
   return (
     <BrowserRouter>
@@ -22,6 +27,16 @@ export function App() {
           element={
             <ProtectedRoute>
               <HomePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/stats"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={<main className="loading-shell">统计页面加载中...</main>}>
+                <StatsOverviewPage />
+              </Suspense>
             </ProtectedRoute>
           }
         />

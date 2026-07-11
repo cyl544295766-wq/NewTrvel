@@ -2329,6 +2329,169 @@ dd {
   transform: translateY(-1px);
 }
 
+.travel-stats-page {
+  display: grid;
+  gap: 26px;
+}
+
+.travel-stats-heading {
+  align-items: end;
+  border-bottom: 1px solid var(--line-strong);
+  margin-bottom: 0;
+  padding-bottom: 24px;
+}
+
+.travel-stats-heading > div:first-child {
+  display: grid;
+  gap: 8px;
+}
+
+.travel-stats-heading .eyebrow {
+  margin: 0;
+}
+
+.yearly-selector {
+  display: grid;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.yearly-selector select {
+  min-width: 148px;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 34px 0 12px;
+}
+
+.travel-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.travel-stat-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 144px;
+  border-radius: 8px;
+  background: #e2ebe1;
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+  padding: 20px;
+}
+
+.travel-stat-card:nth-child(2),
+.travel-stat-card:nth-child(7) {
+  background: #dfe8eb;
+}
+
+.travel-stat-card:nth-child(3),
+.travel-stat-card:nth-child(6) {
+  background: #eee7dc;
+}
+
+.travel-stat-card:nth-child(4),
+.travel-stat-card:nth-child(8) {
+  background: #eee2e2;
+}
+
+.travel-stat-card > div {
+  color: var(--muted-strong);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.travel-stat-card span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.travel-stat-card svg {
+  color: var(--accent);
+}
+
+.travel-stat-card strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 25px;
+  font-weight: 760;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travel-stat-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.travel-stats-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+}
+
+.stats-chart-panel {
+  min-width: 0;
+  min-height: 370px;
+  border-radius: 8px;
+  background: #e9ede7;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 24px;
+}
+
+.stats-chart-panel:nth-child(2) {
+  background: #ece7df;
+}
+
+.stats-chart-panel:nth-child(3) {
+  background: #e3e9ec;
+}
+
+.stats-chart-panel > header {
+  display: grid;
+  gap: 5px;
+}
+
+.stats-chart-panel .eyebrow {
+  margin: 0;
+}
+
+.stats-chart-wide {
+  grid-column: 1 / -1;
+}
+
+.stats-chart {
+  width: 100%;
+  min-width: 0;
+  height: 280px;
+}
+
+.recharts-cartesian-axis-tick-value,
+.recharts-tooltip-label,
+.recharts-default-tooltip {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.recharts-default-tooltip {
+  border-color: var(--line-strong) !important;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: var(--shadow-sm);
+}
+
 /* Page hierarchy */
 .app-page {
   width: min(1180px, 100%);

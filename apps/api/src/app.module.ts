@@ -13,6 +13,7 @@ import { TripPlacesModule } from './modules/trip-places/trip-places.module';
 import { TripJournalsModule } from './modules/trip-journals/trip-journals.module';
 import { TripPdfModule } from './modules/trip-pdf/trip-pdf.module';
 import { TravelDocumentsModule } from './modules/travel-documents/travel-documents.module';
+import { TravelStatsModule } from './modules/travel-stats/travel-stats.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -37,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     PackingListsModule,
     PhotosModule,
     TravelDocumentsModule,
+    TravelStatsModule,
   ],
 })
 export class AppModule {}
