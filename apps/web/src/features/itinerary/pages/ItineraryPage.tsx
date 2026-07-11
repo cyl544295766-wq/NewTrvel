@@ -1,26 +1,16 @@
-import {
-  DndContext,
-  DragEndEvent,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
+import { ArrowUpRight, Map as MapIcon, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
+import { TripMap } from '../../map/components/TripMap';
+import { TripRouteDay } from '../../map/types/map.types';
+import { ExportPdfButton } from '../../trip-pdf';
 import { useTrip } from '../../trips/hooks/useTrips';
 import { useTripWeather } from '../../weather';
+import { ItinerarySidebar } from '../components/ItinerarySidebar';
 import { TripDayCard } from '../components/TripDayCard';
-import {
-  useCreateTripPlace,
-  useDeleteTripPlace,
-  useGenerateTripDays,
-  useMoveTripPlace,
-  useReorderTripPlaces,
-  useTripDays,
-  useUpdateTripDay,
-  useUpdateTripPlace,
-} from '../hooks/useItinerary';
+import { useCreateTripPlace, useDeleteTripPlace, useGenerateTripDays, useMoveTripPlace, useReorderTripPlaces, useTripDays, useUpdateTripDay, useUpdateTripPlace } from '../hooks/useItinerary';
 import { TripDay, TripPlace, TripPlaceInput } from '../types/itinerary.types';
 
 export function ItineraryPage() {
@@ -37,112 +27,95 @@ export function ItineraryPage() {
   const reorderPlaces = useReorderTripPlaces(safeTripId);
   const deletePlace = useDeleteTripPlace(safeTripId);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [activeDayId, setActiveDayId] = useState<string | null>(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [openFormDayId, setOpenFormDayId] = useState<string | null>(null);
+  const dayRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const tripDays = days.data?.days ?? [];
+  const currentTrip = trip.data?.trip;
+  const canEdit = currentTrip ? ['owner', 'admin', 'member'].includes(currentTrip.currentUserRole) : false;
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      const id = visible?.target.getAttribute('data-day-id');
+      if (id) setActiveDayId(id);
+    }, { rootMargin: '-14% 0px -64% 0px', threshold: [0.1, 0.35, 0.7] });
+    dayRefs.current.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [tripDays]);
+
+  const mapRoute = useMemo<TripRouteDay[]>(() => tripDays.map((day) => ({ dayId: day.id, dayIndex: day.dayIndex, date: day.date, places: day.places.map((place) => ({ id: place.id, name: place.name, type: place.type, latitude: place.latitude ?? '', longitude: place.longitude ?? '', sortOrder: place.sortOrder, address: place.address, notes: place.notes, startTime: place.startTime })) })), [tripDays]);
+  const sidebarRoute = activeDayId ? mapRoute.filter((day) => day.dayId === activeDayId) : mapRoute;
+  const allPlaces = tripDays.flatMap((day) => day.places);
+  const completedPlaces = allPlaces.filter((place) => place.isCompleted).length;
 
   if (!tripId) return <Navigate replace to="/" />;
-  const currentTrip = trip.data?.trip;
-  const canEdit = currentTrip
-    ? ['owner', 'admin', 'member'].includes(currentTrip.currentUserRole)
-    : false;
-  const tripDays = days.data?.days ?? [];
+  if (trip.isLoading || days.isLoading) return <main className="loading-shell">正在打开行程手册...</main>;
+  if (trip.isError || !currentTrip) return <Navigate replace to="/" />;
 
-  async function handleUpdateDay(dayId: string, title: string, summary: string) {
-    await updateDay.mutateAsync({ dayId, title, summary });
+  function selectDay(dayId: string) {
+    setActiveDayId(dayId);
+    document.getElementById(`itinerary-day-${dayId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  async function handleCreatePlace(input: TripPlaceInput) {
-    await createPlace.mutateAsync(input);
+  function selectPlace(placeId: string) {
+    setSelectedPlaceId(placeId);
+    const element = document.querySelector(`[data-place-id="${placeId}"]`);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  function handleTogglePlaceCompleted(place: TripPlace) {
-    updatePlace.mutate({
-      placeId: place.id,
-      input: { isCompleted: !place.isCompleted },
-    });
+  function addPlace() {
+    const dayId = activeDayId ?? tripDays[0]?.id;
+    if (!dayId) return;
+    setOpenFormDayId(dayId);
+    selectDay(dayId);
   }
+
+  async function handleUpdateDay(dayId: string, title: string, summary: string) { await updateDay.mutateAsync({ dayId, title, summary }); }
+  async function handleCreatePlace(input: TripPlaceInput) { await createPlace.mutateAsync(input); }
+  async function handleUpdatePlace(placeId: string, input: Partial<TripPlaceInput>) { await updatePlace.mutateAsync({ placeId, input }); }
+  function handleTogglePlaceCompleted(place: TripPlace) { updatePlace.mutate({ placeId: place.id, input: { isCompleted: !place.isCompleted } }); }
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
     const activePlaceId = String(active.id);
     const sourceDay = findDayByPlaceId(tripDays, activePlaceId);
     const targetDay = findTargetDay(tripDays, String(over.id));
-
     if (!sourceDay || !targetDay) return;
-
     if (sourceDay.id === targetDay.id) {
       const oldIndex = sourceDay.places.findIndex((place) => place.id === activePlaceId);
       const newIndex = sourceDay.places.findIndex((place) => place.id === String(over.id));
       if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
-      const nextPlaceIds = arrayMove(
-        sourceDay.places.map((place) => place.id),
-        oldIndex,
-        newIndex,
-      );
-      await reorderPlaces.mutateAsync({ dayId: sourceDay.id, placeIds: nextPlaceIds });
+      await reorderPlaces.mutateAsync({ dayId: sourceDay.id, placeIds: arrayMove(sourceDay.places.map((place) => place.id), oldIndex, newIndex) });
       return;
     }
-
     await movePlace.mutateAsync({ placeId: activePlaceId, tripDayId: targetDay.id });
-    await reorderPlaces.mutateAsync({
-      dayId: targetDay.id,
-      placeIds: [...targetDay.places.map((place) => place.id), activePlaceId],
-    });
+    await reorderPlaces.mutateAsync({ dayId: targetDay.id, placeIds: [...targetDay.places.map((place) => place.id), activePlaceId] });
   }
 
   return (
-    <main className="app-page">
-      <Link className="text-link" to={`/trips/${safeTripId}`}>
-        返回旅行详情
-      </Link>
-      <section className="content-panel itinerary-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">行程</p>
-            <h1>行程规划</h1>
-          </div>
-          {canEdit ? (
-            <button onClick={() => generateDays.mutate()} type="button">
-              生成行程天数
-            </button>
-          ) : null}
+    <main className="itinerary-editorial-page">
+      <ItinerarySidebar activeDayId={activeDayId} completedPlaces={completedPlaces} days={tripDays} onAddPlace={addPlace} onDaySelect={selectDay} totalPlaces={allPlaces.length} trip={currentTrip} weather={weather.data?.weather ?? []} />
+      <section className="itinerary-main-column">
+        <header className="itinerary-page-header">
+          <div><Link className="itinerary-back-link" to={`/trips/${safeTripId}`}>返回旅行详情</Link><p className="itinerary-overline">THE JOURNEY AHEAD</p><h1>行程日程</h1><p className="itinerary-header-subtitle">{currentTrip.destination || '未命名旅程'} <span>·</span> {formatRange(currentTrip.startDate, currentTrip.endDate)}</p></div>
+          <div className="itinerary-header-actions"><Link className="itinerary-header-button" to={`/trips/${safeTripId}/map`}><MapIcon size={16} />地图视图</Link><ExportPdfButton compact tripId={safeTripId} />{canEdit && tripDays.length === 0 ? <button className="itinerary-header-button" disabled={generateDays.isPending} onClick={() => generateDays.mutate()} type="button">生成日期</button> : null}<button className="itinerary-primary-action" onClick={addPlace} type="button"><Plus size={17} />添加地点</button></div>
+        </header>
+        <div className="itinerary-content-grid">
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd} sensors={sensors}>
+            <div className="itinerary-timeline" aria-label="旅行日程">
+              {tripDays.length === 0 ? <div className="itinerary-empty-state"><Plus size={26} /><h2>还没有安排日程</h2><p>从第一个地点开始，慢慢铺陈这段旅程。</p><button onClick={addPlace} type="button">添加第一个地点</button></div> : tripDays.map((day) => <div className="itinerary-day-wrap" key={day.id} ref={(node: HTMLDivElement | null) => { if (node) dayRefs.current.set(day.id, node); else dayRefs.current.delete(day.id); }}><TripDayCard canEdit={canEdit} day={day} isCreatingPlace={createPlace.isPending} onCreatePlace={handleCreatePlace} onDeletePlace={(placeId) => deletePlace.mutate(placeId)} onFormOpenChange={(open) => { if (!open) setOpenFormDayId(null); }} onSelectPlace={selectPlace} onTogglePlaceCompleted={handleTogglePlaceCompleted} onUpdateDay={handleUpdateDay} onUpdatePlace={handleUpdatePlace} openForm={openFormDayId === day.id} searchCity={currentTrip.destination ?? undefined} selectedPlaceId={selectedPlaceId} weather={weather.data?.weather.find((item) => item.tripDayId === day.id || item.date.slice(0, 10) === day.date.slice(0, 10))} /></div>) }
+            </div>
+          </DndContext>
+          <aside className="itinerary-map-rail"><div className="itinerary-map-rail-heading"><div><p className="itinerary-overline">A SENSE OF PLACE</p><h2>{activeDayId ? `第 ${tripDays.find((day) => day.id === activeDayId)?.dayIndex ?? 1} 天路线` : '全部路线'}</h2></div><ArrowUpRight size={17} /></div><div className="itinerary-mini-map"><TripMap activeDayId={activeDayId} compact onSelectPlace={(placeId) => { if (placeId) selectPlace(placeId); else setSelectedPlaceId(null); }} route={sidebarRoute} selectedPlaceId={selectedPlaceId} /></div><p className="itinerary-map-caption">点击地点卡片，地图会跟随你的视线。</p></aside>
         </div>
-        {days.isLoading ? <p>加载中...</p> : null}
-        {tripDays.length === 0 ? <p className="empty-state">暂无行程天数</p> : null}
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <div className="day-list">
-            {tripDays.map((day) => (
-              <TripDayCard
-                canEdit={canEdit}
-                day={day}
-                isCreatingPlace={createPlace.isPending}
-                key={day.id}
-                onCreatePlace={handleCreatePlace}
-                onDeletePlace={(placeId) => deletePlace.mutate(placeId)}
-                onTogglePlaceCompleted={handleTogglePlaceCompleted}
-                onUpdateDay={handleUpdateDay}
-                weather={weather.data?.weather.find(
-                  (item) =>
-                    item.tripDayId === day.id || item.date.slice(0, 10) === day.date.slice(0, 10),
-                )}
-                searchCity={currentTrip?.destination ?? undefined}
-              />
-            ))}
-          </div>
-        </DndContext>
       </section>
     </main>
   );
 }
 
-function findDayByPlaceId(days: TripDay[], placeId: string) {
-  return days.find((day) => day.places.some((place) => place.id === placeId));
-}
-
-function findTargetDay(days: TripDay[], overId: string) {
-  if (overId.startsWith('day:')) {
-    return days.find((day) => `day:${day.id}` === overId);
-  }
-
-  return findDayByPlaceId(days, overId);
-}
+function findDayByPlaceId(days: TripDay[], placeId: string) { return days.find((day) => day.places.some((place) => place.id === placeId)); }
+function findTargetDay(days: TripDay[], overId: string) { return overId.startsWith('day:') ? days.find((day) => `day:${day.id}` === overId) : findDayByPlaceId(days, overId); }
+function formatRange(start: string | null, end: string | null) { if (!start && !end) return '日期待定'; return `${start?.slice(0, 10) ?? '待定'} — ${end?.slice(0, 10) ?? '待定'}`; }

@@ -10,10 +10,11 @@ type Props = {
   tripDayId: string;
   searchCity?: string;
   isSubmitting: boolean;
+  onCancel?: () => void;
   onSubmit: (input: TripPlaceInput) => Promise<void>;
 };
 
-export function TripPlaceForm({ tripDayId, searchCity, isSubmitting, onSubmit }: Props) {
+export function TripPlaceForm({ tripDayId, searchCity, isSubmitting, onCancel, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [type, setType] = useState<TripPlaceType>('custom');
   const [address, setAddress] = useState('');
@@ -60,7 +61,10 @@ export function TripPlaceForm({ tripDayId, searchCity, isSubmitting, onSubmit }:
       </div>
       <label className="inline-checkbox"><input checked={isCompleted} onChange={(event) => setIsCompleted(event.target.checked)} type="checkbox" />已完成</label>
       <label><span>备注</span><textarea maxLength={1000} onChange={(event) => setNotes(event.target.value)} placeholder="记录预约、开放时间或旅行想法" rows={3} value={notes} /></label>
-      <button disabled={isSubmitting || !name.trim()} type="submit">{isSubmitting ? '保存中...' : selectedSuggestion?.latitude ? '添加并在地图标记' : '添加地点'}</button>
+      <div className="trip-place-form-actions">
+        {onCancel ? <button className="secondary-button" disabled={isSubmitting} onClick={onCancel} type="button">取消</button> : null}
+        <button disabled={isSubmitting || !name.trim()} type="submit">{isSubmitting ? '保存中...' : selectedSuggestion?.latitude ? '添加并在地图标记' : '添加地点'}</button>
+      </div>
     </form>
   );
 }

@@ -11,12 +11,13 @@ type Props = {
   onSelectPlace: (placeId: string | null) => void;
   route: TripRouteDay[];
   selectedPlaceId: string | null;
+  compact?: boolean;
 };
 
 type MappedPlace = TripRoutePlace & { position: [number, number] };
 type MappedDay = Omit<TripRouteDay, 'places'> & { places: MappedPlace[] };
 
-export function TripMap({ activeDayId, onSelectPlace, route, selectedPlaceId }: Props) {
+export function TripMap({ activeDayId, onSelectPlace, route, selectedPlaceId, compact = false }: Props) {
   const mapRef = useRef<AMapMap | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapApi, setMapApi] = useState<AMapNamespace | null>(null);
@@ -68,7 +69,7 @@ export function TripMap({ activeDayId, onSelectPlace, route, selectedPlaceId }: 
   if (!routeDays.length) return <div className="map-empty-canvas"><MapPinned size={34} /><h2>还没有可显示的地点</h2><p>为行程地点添加坐标后，它们会出现在这里。</p></div>;
 
   return (
-    <div className="trip-map-shell map-workspace-canvas">
+    <div className={`trip-map-shell map-workspace-canvas${compact ? ' map-workspace-compact' : ''}`}>
       <div className="trip-map amap-container" ref={containerRef} />
       <div className="map-floating-controls"><button aria-label="适应全部点位" onClick={() => mapRef.current?.setFitView()} title="适应全部点位" type="button"><LocateFixed size={18} /></button><button aria-label="放大地图" onClick={() => mapRef.current?.zoomIn()} title="放大" type="button"><Plus size={18} /></button><button aria-label="缩小地图" onClick={() => mapRef.current?.zoomOut()} title="缩小" type="button"><Minus size={18} /></button></div>
       {selected ? <article className="map-place-detail"><button aria-label="关闭地点详情" onClick={() => onSelectPlace(null)} title="关闭" type="button"><X size={17} /></button><span style={{ color: dayColors[(selected.day.dayIndex - 1) % dayColors.length] }}>DAY {selected.day.dayIndex} · STOP {selected.place.sortOrder + 1}</span><h2>{selected.place.name}</h2><p>{typeLabels[selected.place.type]}{selected.place.startTime ? ` · ${selected.place.startTime}` : ''}</p>{selected.place.address ? <address>{selected.place.address}</address> : null}{selected.place.notes ? <small>{selected.place.notes}</small> : null}</article> : null}
