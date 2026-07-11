@@ -17,14 +17,23 @@ export function PhotosPage() {
   const deletePhoto = useDeletePhoto(safeTripId);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [uploadError, setUploadError] = useState('');
 
   if (!tripId) return <Navigate replace to="/" />;
 
   async function handleUpload(inputs: PhotoInput[]) {
-    for (const input of inputs) {
-      await createPhoto.mutateAsync(input);
+    setUploadError('');
+    try {
+      for (const input of inputs) {
+        await createPhoto.mutateAsync(input);
+      }
+      // Invalidate marks the query stale, but an explicit refetch guarantees the
+      // newly created data URL is visible before the upload panel closes.
+      await photos.refetch();
+      setShowUploadForm(false);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : '照片上传失败，请重试');
     }
-    setShowUploadForm(false);
   }
 
   async function handleSave(photoId: string, input: PhotoUpdateInput) {
@@ -48,7 +57,7 @@ export function PhotosPage() {
             <p className="eyebrow">照片</p>
             <h1>照片中心</h1>
           </div>
-          <button onClick={() => setShowUploadForm((current) => !current)} type="button">
+          <button onClick={() => { setUploadError(''); setShowUploadForm((current) => !current); }} type="button">
             上传照片
           </button>
         </div>
@@ -59,6 +68,7 @@ export function PhotosPage() {
             onSubmit={handleUpload}
           />
         ) : null}
+        {uploadError ? <p className="form-error photo-upload-error" role="alert">{uploadError}</p> : null}
         {photos.isLoading ? <p>加载中...</p> : null}
         {photos.isError ? <p className="form-error">照片加载失败</p> : null}
         {photos.data ? (

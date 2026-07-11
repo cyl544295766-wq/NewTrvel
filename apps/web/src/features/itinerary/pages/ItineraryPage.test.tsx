@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +27,7 @@ describe('ItineraryPage editorial layout', () => {
     mocks.useTrip.mockReturnValue({ data: { trip }, isLoading: false, isError: false });
     mocks.useTripWeather.mockReturnValue({ data: { weather: [] }, isLoading: false });
     mocks.useTripDays.mockReturnValue({ data: { days }, isLoading: false });
-    mocks.useGenerateTripDays.mockReturnValue({ isPending: false, mutate: vi.fn() });
+    mocks.useGenerateTripDays.mockReturnValue({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() });
     mocks.useUpdateTripDay.mockReturnValue({ mutateAsync: vi.fn() });
     mocks.useCreateTripPlace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
     mocks.useUpdateTripPlace.mockReturnValue({ mutate: vi.fn() });
@@ -49,5 +49,17 @@ describe('ItineraryPage editorial layout', () => {
     renderPage();
     await user.click(screen.getAllByRole('button', { name: '添加地点' })[0]);
     expect(screen.getByLabelText('搜索地点')).toBeInTheDocument();
+  });
+
+  it('generates dates when adding a place to a trip without days', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ days: [days[0]] });
+    mocks.useTripDays.mockReturnValue({ data: { days: [] }, isLoading: false });
+    mocks.useGenerateTripDays.mockReturnValue({ isPending: false, mutate: vi.fn(), mutateAsync });
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getAllByRole('button', { name: '添加地点' })[0]);
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
   });
 });

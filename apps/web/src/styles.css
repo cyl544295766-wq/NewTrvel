@@ -5920,3 +5920,13 @@ textarea::placeholder {
 @media (max-width: 900px) { .expenses-editorial-page { display: block; }.expenses-sidebar { position: relative; min-height: auto; padding: 24px; border-right: 0; border-bottom: 1px solid #e2dfd7; }.expenses-trip-cover { min-height: 125px; }.expenses-sidebar-actions { grid-template-columns: 1fr 1fr; }.expenses-main-column { padding: 38px 24px 60px; }.expenses-page-header { align-items: flex-start; }.expenses-page-header h2 { font-size: 42px; } }
 @media (max-width: 620px) { .expenses-page-header { display: grid; }.expenses-page-header .expense-primary-button { width: 100%; }.expenses-filter-bar { display: flex; flex-wrap: wrap; }.expenses-search { flex: 1 1 100%; }.expenses-filter-scroll { width: 100%; order: 3; }.expenses-date-filter, .expenses-sort { flex: 1; }.expense-ledger-card { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 11px; padding: 14px; }.expense-category-icon { width: 38px; height: 38px; }.expense-ledger-amount { grid-column: 3; grid-row: 1 / span 2; }.expense-ledger-actions { grid-column: 2 / -1; justify-content: flex-end; opacity: 1; }.expense-ledger-title-row { display: block; }.expense-status-tag { display: inline-block; margin-top: 5px; }.expenses-form-shell { padding: 20px 15px; } }
 @media (prefers-reduced-motion: reduce) { .expenses-editorial-page *, .expenses-editorial-page *::before, .expenses-editorial-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+.itinerary-action-error {
+  max-width: 78rem;
+  margin: -2rem auto 1.5rem;
+  border: 1px solid #e0b9b4;
+  background: #fff5f2;
+  color: #9b4f47;
+  padding: .7rem .85rem;
+  font-size: .72rem;
+}

@@ -15,7 +15,6 @@ type Props = {
   onTogglePlaceCompleted: (place: TripPlace) => void;
   isCreatingPlace: boolean;
   weather?: TripWeather;
-  searchCity?: string;
   selectedPlaceId?: string | null;
   onSelectPlace?: (placeId: string) => void;
   onUpdatePlace?: (placeId: string, input: Partial<TripPlaceInput>) => Promise<void>;
@@ -23,7 +22,7 @@ type Props = {
   onFormOpenChange?: (open: boolean) => void;
 };
 
-export function TripDayCard({ day, canEdit, onUpdateDay, onCreatePlace, onDeletePlace, onTogglePlaceCompleted, isCreatingPlace, weather, searchCity, selectedPlaceId, onSelectPlace, onUpdatePlace, openForm = false, onFormOpenChange }: Props) {
+export function TripDayCard({ day, canEdit, onUpdateDay, onCreatePlace, onDeletePlace, onTogglePlaceCompleted, isCreatingPlace, weather, selectedPlaceId, onSelectPlace, onUpdatePlace, openForm = false, onFormOpenChange }: Props) {
   const [title, setTitle] = useState(day.title ?? '');
   const [summary, setSummary] = useState(day.summary ?? '');
   const [isFormOpen, setIsFormOpen] = useState(openForm);
@@ -42,7 +41,7 @@ export function TripDayCard({ day, canEdit, onUpdateDay, onCreatePlace, onDelete
       </div>
       {canEdit ? <form className="compact-form day-meta-form" onSubmit={handleSubmit}><input maxLength={80} onChange={(event) => setTitle(event.target.value)} placeholder="当天标题，例如：慢慢走进老城" value={title} /><textarea maxLength={500} onChange={(event) => setSummary(event.target.value)} placeholder="给这一天留下一句摘要" rows={2} value={summary} /><button className="secondary-button" type="submit"><FormInput size={15} />保存当天信息</button></form> : day.summary ? <p className="day-summary-readonly">{day.summary}</p> : null}
       <TripPlaceList canEdit={canEdit} dayId={day.id} onDelete={onDeletePlace} onSelectPlace={onSelectPlace} onToggleCompleted={onTogglePlaceCompleted} onUpdate={onUpdatePlace} places={day.places} selectedPlaceId={selectedPlaceId} />
-      {canEdit ? <div className="day-add-place-area">{isFormOpen ? <TripPlaceForm isSubmitting={isCreatingPlace} onCancel={() => toggleForm(false)} onSubmit={async (input) => { await onCreatePlace(input); toggleForm(false); }} searchCity={searchCity} tripDayId={day.id} /> : <button className="add-place-button" onClick={() => toggleForm(true)} type="button"><Plus size={17} />添加地点</button>}</div> : null}
+      {canEdit ? <div className="day-add-place-area">{isFormOpen ? <TripPlaceForm isSubmitting={isCreatingPlace} onCancel={() => toggleForm(false)} onSubmit={async (input) => { await onCreatePlace(input); toggleForm(false); }} tripDayId={day.id} /> : <button className="add-place-button" onClick={() => toggleForm(true)} type="button"><Plus size={17} />添加地点</button>}</div> : null}
     </section>
   );
 }

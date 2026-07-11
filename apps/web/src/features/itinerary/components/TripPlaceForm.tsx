@@ -14,7 +14,7 @@ type Props = {
   onSubmit: (input: TripPlaceInput) => Promise<void>;
 };
 
-export function TripPlaceForm({ tripDayId, searchCity, isSubmitting, onCancel, onSubmit }: Props) {
+export function TripPlaceForm({ tripDayId, isSubmitting, onCancel, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [type, setType] = useState<TripPlaceType>('custom');
   const [address, setAddress] = useState('');
@@ -49,7 +49,7 @@ export function TripPlaceForm({ tripDayId, searchCity, isSubmitting, onCancel, o
 
   return (
     <form className="compact-form trip-place-form" onSubmit={handleSubmit}>
-      <PlaceAutocomplete city={searchCity} onChange={setName} onClearSelection={clearSelection} onSelect={selectSuggestion} selectedSuggestion={selectedSuggestion} value={name} />
+      <PlaceAutocomplete onChange={setName} onClearSelection={clearSelection} onSelect={selectSuggestion} selectedSuggestion={selectedSuggestion} value={name} />
       <div className="form-grid">
         <label><span>类型</span><select onChange={(event) => setType(event.target.value as TripPlaceType)} value={type}>{placeTypes.map((item) => <option key={item} value={item}>{typeLabels[item].label}</option>)}</select></label>
         <label><span>地址</span><input maxLength={300} onChange={(event) => setAddress(event.target.value)} placeholder="选择地点后自动填写，也可手动补充" value={address} /></label>
