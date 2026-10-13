@@ -15,8 +15,13 @@ jobs:
   build-frontend:
     name: 构建前端 (web-vue)
     runs-on: ubuntu-latest
+    outputs:
+      start_ts: ${{ steps.t0.outputs.start_ts }}
     steps:
       - uses: actions/checkout@v4
+
+      - id: t0
+        run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -139,8 +144,8 @@ jobs:
               sudo docker exec -i travel-os-postgres psql -U travel_os -d travel_os -v ON_ERROR_STOP=1 -q -f - < "$f"
             done'
 
-      - name: 上传前端产物（rsync --delete）
-        run: rsync -az --delete -e "ssh -p $PORT" dist/ "$USER@$HOST:/var/www/travel-os/"
+      - name: 上传前端产物（rsync --delete，排除 /ci/ 状态页）
+        run: rsync -az --delete --exclude '/ci/' -e "ssh -p $PORT" dist/ "$USER@$HOST:/var/www/travel-os/"
 
       - name: 重启后端 + 健康检查（失败自动回滚）
         run: |
@@ -159,3 +164,68 @@ jobs:
             cp "$latest" /opt/travel-os/travel-os-api.jar
             sudo systemctl restart travel-os-api
             exit 1'
+
+  record:
+    name: 记录本次运行结果（写入服务器 /ci/）
+    needs: [build-frontend, build-backend, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ secrets.SSH_HOST }}
+      PORT: ${{ secrets.SSH_PORT }}
+      USER: ${{ secrets.SSH_USER }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: 信任服务器指纹
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: 生成运行记录并写入服务器
+        env:
+          FRONTEND: ${{ needs.build-frontend.result }}
+          BACKEND: ${{ needs.build-backend.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          START_TS: ${{ needs.build-frontend.outputs.start_ts }}
+        run: |
+          NOW=$(date +%s)
+          DURATION=null
+          [ -n "$START_TS" ] && DURATION=$(( NOW - START_TS ))
+          CONCLUSION=success
+          for r in "$FRONTEND" "$BACKEND" "$DEPLOY"; do
+            case "$r" in
+              success|skipped) ;;
+              cancelled) [ "$CONCLUSION" = "success" ] && CONCLUSION=cancelled ;;
+              *) CONCLUSION=failure; break ;;
+            esac
+          done
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_number "${{ github.run_number }}" \
+            --arg url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            --arg message "${{ github.event.head_commit.message || github.event.pull_request.title || '手动触发' }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg event "${{ github.event_name }}" \
+            --arg frontend "$FRONTEND" --arg backend "$BACKEND" --arg deploy "$DEPLOY" \
+            --arg conclusion "$CONCLUSION" \
+            --arg finished_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson duration_sec "$DURATION" \
+            '{run_id:$run_id,run_number:$run_number,url:$url,commit:$commit,message:$message,branch:$branch,actor:$actor,event:$event,frontend:$frontend,backend:$backend,deploy:$deploy,conclusion:$conclusion,finished_at:$finished_at,duration_sec:$duration_sec}' \
+            > record.json
+          scp -P "$PORT" record.json "$USER@$HOST:/tmp/ci-record.json"
+          ssh -p "$PORT" "$USER@$HOST" '
+            python3 - <<PYEOF
+          import json
+          path = "/var/www/travel-os/ci/runs.json"
+          try:
+              runs = json.load(open(path))
+          except Exception:
+              runs = []
+          runs.insert(0, json.load(open("/tmp/ci-record.json")))
+          json.dump(runs[:50], open(path, "w"), ensure_ascii=False, indent=1)
+          PYEOF'
