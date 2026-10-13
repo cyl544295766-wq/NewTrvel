@@ -106,10 +106,26 @@ jobs:
             ls -1t /opt/travel-os/backups/www.bak-*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
             ls -la /opt/travel-os/backups/'
 
-      - name: 上传后端 jar
+      - name: 上传 jar 到 COS 中转（全球加速端点）
+        id: cos
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          COS_BUCKET: travel-os-deploy-1503378108
         run: |
-          scp -P "$PORT" jar/*.jar "$USER@$HOST:/opt/travel-os/travel-os-api.jar.new"
-          ssh -p "$PORT" "$USER@$HOST" 'mv /opt/travel-os/travel-os-api.jar.new /opt/travel-os/travel-os-api.jar'
+          curl -sL -o coscli https://cosbrowser.cloud.tencent.com/software/coscli/coscli-linux-amd64
+          chmod +x coscli
+          printf 'cos:\n  base:\n    secretid: %s\n    secretkey: %s\n    sessiontoken: ""\n    protocol: https\n  buckets: []\n' \
+            "$TENCENT_SECRET_ID" "$TENCENT_SECRET_KEY" > ~/.cos.yaml
+          ./coscli cp jar/*.jar "cos://$COS_BUCKET/travel-os-api.jar" -e cos.accelerate.myqcloud.com
+          url=$(./coscli signurl "cos://$COS_BUCKET/travel-os-api.jar" -e cos.ap-beijing.myqcloud.com -t 3600 2>/dev/null | grep -o 'https://[^ "]*')
+          echo "presigned_url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: 服务器经内网拉取 jar（<1s）
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" '
+            curl -sfL -o /opt/travel-os/travel-os-api.jar.new "${{ steps.cos.outputs.presigned_url }}"
+            mv /opt/travel-os/travel-os-api.jar.new /opt/travel-os/travel-os-api.jar'
 
       - name: 应用数据库迁移（apps/api-spring/db/migration/*.sql，需保持幂等）
         run: |
