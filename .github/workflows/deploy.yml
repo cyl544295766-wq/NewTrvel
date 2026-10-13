@@ -1,0 +1,145 @@
+name: CI/CD
+
+# push 到 main：构建 + 部署；PR：只构建不部署；支持手动触发
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-frontend:
+    name: 构建前端 (web-vue)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build web-vue（含 vue-tsc 类型检查）
+        working-directory: apps/web-vue
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: apps/web-vue/dist
+          retention-days: 7
+
+  build-backend:
+    name: 构建后端 (api-spring)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Maven verify（编译 + 测试 + 打包）
+        working-directory: apps/api-spring
+        run: mvn -B verify
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: apps/api-spring/target/*.jar
+          retention-days: 7
+
+  deploy:
+    name: 部署到生产服务器
+    needs: [build-frontend, build-backend]
+    # 仅 main 分支 push / 手动触发才部署；PR 只构建
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ secrets.SSH_HOST }}
+      PORT: ${{ secrets.SSH_PORT }}
+      USER: ${{ secrets.SSH_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: jar
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: 信任服务器指纹
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: 备份服务器现有版本（各保留最近 3 份）
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" '
+            mkdir -p /opt/travel-os/backups
+            TS=$(date +%Y%m%d%H%M%S)
+            [ -f /opt/travel-os/travel-os-api.jar ] && cp /opt/travel-os/travel-os-api.jar "/opt/travel-os/backups/travel-os-api.jar.bak-$TS" || true
+            [ -f /var/www/travel-os/index.html ] && tar czf "/opt/travel-os/backups/www.bak-$TS.tar.gz" -C /var/www/travel-os . || true
+            ls -1t /opt/travel-os/backups/travel-os-api.jar.bak-* 2>/dev/null | tail -n +4 | xargs -r rm -f
+            ls -1t /opt/travel-os/backups/www.bak-*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
+            ls -la /opt/travel-os/backups/'
+
+      - name: 上传后端 jar
+        run: |
+          scp -P "$PORT" jar/*.jar "$USER@$HOST:/opt/travel-os/travel-os-api.jar.new"
+          ssh -p "$PORT" "$USER@$HOST" 'mv /opt/travel-os/travel-os-api.jar.new /opt/travel-os/travel-os-api.jar'
+
+      - name: 应用数据库迁移（apps/api-spring/db/migration/*.sql，需保持幂等）
+        run: |
+          tar czf migrations.tar.gz -C apps/api-spring/db migration
+          scp -P "$PORT" migrations.tar.gz "$USER@$HOST:/tmp/"
+          ssh -p "$PORT" "$USER@$HOST" 'set -e
+            rm -rf /tmp/mig && mkdir -p /tmp/mig
+            tar xzf /tmp/migrations.tar.gz -C /tmp/mig
+            for f in $(ls /tmp/mig/migration/*.sql 2>/dev/null | sort); do
+              echo "applying: $f"
+              sudo docker exec -i travel-os-postgres psql -U travel_os -d travel_os -v ON_ERROR_STOP=1 -q -f - < "$f"
+            done'
+
+      - name: 上传前端产物（rsync --delete）
+        run: rsync -az --delete -e "ssh -p $PORT" dist/ "$USER@$HOST:/var/www/travel-os/"
+
+      - name: 重启后端 + 健康检查（失败自动回滚）
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" '
+            sudo systemctl restart travel-os-api
+            ok=0
+            for i in $(seq 1 12); do
+              sleep 5
+              if curl -sf -m 5 http://127.0.0.1:3000/api/health > /dev/null; then ok=1; break; fi
+            done
+            if [ "$ok" = "1" ]; then echo "health check OK"; exit 0; fi
+            echo "!! 健康检查失败，最近 50 行日志："
+            sudo journalctl -u travel-os-api --no-pager -n 50 || true
+            echo "!! 自动回滚到最近备份 jar"
+            latest=$(ls -1t /opt/travel-os/backups/travel-os-api.jar.bak-* | head -1)
+            cp "$latest" /opt/travel-os/travel-os-api.jar
+            sudo systemctl restart travel-os-api
+            exit 1'
