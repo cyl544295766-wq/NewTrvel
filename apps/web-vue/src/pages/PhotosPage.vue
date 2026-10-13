@@ -7,7 +7,7 @@
     <div class="toolbar">
       <el-upload :show-file-list="false" accept="image/jpeg,image/png,image/webp" :auto-upload="false"
         :on-change="handleFile">
-        <el-button type="primary">上传照片（≤5MB）</el-button>
+        <el-button v-if="canWrite" type="primary">上传照片（≤5MB）</el-button>
       </el-upload>
     </div>
 
@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadFile } from 'element-plus';
@@ -50,7 +50,9 @@ const route = useRoute();
 const router = useRouter();
 const tripId = route.params.tripId as string;
 const loading = ref(false);
+const canWrite = computed(() => tripRole.value !== 'viewer');
 const tripTitle = ref('');
+const tripRole = ref('');
 const photos = ref<Photo[]>([]);
 const previewVisible = ref(false);
 const current = ref<Photo | null>(null);
@@ -60,7 +62,9 @@ const editShotAt = ref<string | null>(null);
 async function load() {
   loading.value = true;
   try {
-    tripTitle.value = (await tripsApi.detail(tripId)).trip.title;
+    const trip = await tripsApi.detail(tripId);
+    tripTitle.value = trip.trip.title;
+    tripRole.value = trip.trip.currentUserRole;
     photos.value = (await photosApi.list(tripId)).photos;
   } finally {
     loading.value = false;

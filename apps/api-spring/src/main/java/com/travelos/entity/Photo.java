@@ -33,6 +33,10 @@ public class Photo {
   @TableField("is_cover")
   private Boolean isCover;
 
+  /** 上传者（数据隔离行级属主） */
+  @TableField("uploader_id")
+  private String uploaderId;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -55,6 +59,8 @@ public class Photo {
   public void setShotAt(Date shotAt) { this.shotAt = shotAt; }
   public Boolean getIsCover() { return isCover; }
   public void setIsCover(Boolean isCover) { this.isCover = isCover; }
+  public String getUploaderId() { return uploaderId; }
+  public void setUploaderId(String uploaderId) { this.uploaderId = uploaderId; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

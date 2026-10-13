@@ -5,7 +5,7 @@
     </el-page-header>
 
     <div class="toolbar">
-      <el-button type="primary" @click="openForm()">写游记</el-button>
+      <el-button v-if="canWrite" type="primary" @click="openForm()">写游记</el-button>
     </div>
 
     <el-empty v-if="journals.length === 0" description="还没有游记" />
@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { errorMessage, journalsApi, photosApi, tripsApi } from '../api';
@@ -70,8 +70,10 @@ const route = useRoute();
 const router = useRouter();
 const tripId = route.params.tripId as string;
 const loading = ref(false);
+const canWrite = computed(() => tripRole.value !== 'viewer');
 const saving = ref(false);
 const tripTitle = ref('');
+const tripRole = ref('');
 const journals = ref<TripJournal[]>([]);
 const photos = ref<Photo[]>([]);
 const formVisible = ref(false);
@@ -88,7 +90,9 @@ const form = reactive({
 async function load() {
   loading.value = true;
   try {
-    tripTitle.value = (await tripsApi.detail(tripId)).trip.title;
+    const trip = await tripsApi.detail(tripId);
+    tripTitle.value = trip.trip.title;
+    tripRole.value = trip.trip.currentUserRole;
     journals.value = (await journalsApi.list(tripId)).journals;
     photos.value = (await photosApi.list(tripId)).photos;
   } finally {

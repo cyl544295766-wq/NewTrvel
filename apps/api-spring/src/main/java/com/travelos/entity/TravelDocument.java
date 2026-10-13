@@ -37,6 +37,10 @@ public class TravelDocument {
   @TableField("is_reminder")
   private Boolean isReminder;
 
+  /** 上传者（数据隔离行级属主） */
+  @TableField("uploader_id")
+  private String uploaderId;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -63,6 +67,8 @@ public class TravelDocument {
   public void setExpiredAt(Date expiredAt) { this.expiredAt = expiredAt; }
   public Boolean getIsReminder() { return isReminder; }
   public void setIsReminder(Boolean isReminder) { this.isReminder = isReminder; }
+  public String getUploaderId() { return uploaderId; }
+  public void setUploaderId(String uploaderId) { this.uploaderId = uploaderId; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

@@ -32,6 +32,10 @@ public class TripJournal {
 
   private String mood;
 
+  /** 作者（数据隔离行级属主） */
+  @TableField("author_id")
+  private String authorId;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -54,6 +58,8 @@ public class TripJournal {
   public void setIsDraft(Boolean isDraft) { this.isDraft = isDraft; }
   public String getMood() { return mood; }
   public void setMood(String mood) { this.mood = mood; }
+  public String getAuthorId() { return authorId; }
+  public void setAuthorId(String authorId) { this.authorId = authorId; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

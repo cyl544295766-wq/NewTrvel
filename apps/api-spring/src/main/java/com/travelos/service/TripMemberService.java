@@ -135,6 +135,26 @@ public class TripMemberService {
         .eq(TripMember::getTripId, tripId));
   }
 
+  /**
+   * 危险操作行级属主校验：属主本人或行程 owner/admin 放行。
+   * 存量数据属主为 NULL 时按行程成员兼容处理（任何成员可改），
+   * 该兼容逻辑在属主列回填后仅对极老的遗留数据生效。
+   */
+  public void requireOwnerOrManager(String tripId, String ownerId, String userId,
+      String ownerLabel) {
+    if (ownerId == null) {
+      return;
+    }
+    if (ownerId.equals(userId)) {
+      return;
+    }
+    TripMember membership = requireTripMember(tripId, userId);
+    if (!TripPermission.OWNER.equals(membership.getRole())
+        && !TripPermission.ADMIN.equals(membership.getRole())) {
+      throw ApiException.forbidden("仅" + ownerLabel + "本人或行程管理员可执行该操作");
+    }
+  }
+
   private TripMember requireTargetMember(String tripId, String memberId) {
     TripMember member = tripMemberMapper.selectById(memberId);
     if (member == null || !member.getTripId().equals(tripId)) {

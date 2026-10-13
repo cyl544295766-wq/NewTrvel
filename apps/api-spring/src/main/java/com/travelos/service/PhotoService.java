@@ -10,6 +10,7 @@ import com.travelos.entity.TripPlace;
 import com.travelos.mapper.PhotoMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
+import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,7 +53,7 @@ public class PhotoService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     String url = string(dto.get("url"));
     validatePhotoUrl(url);
     long count = photoMapper.selectCount(new LambdaQueryWrapper<Photo>()
@@ -73,6 +74,8 @@ public class PhotoService {
     photo.setCaption(toNullable(dto.get("caption")));
     photo.setShotAt(dto.get("shotAt") == null ? null : DateUtil.parse(dto.get("shotAt").toString()));
     photo.setIsCover(isCover);
+    // 属主以当前登录用户为准，禁止信任前端传入的 uploaderId 等字段
+    photo.setUploaderId(userId);
     photo.setCreatedAt(new Date());
     photo.setUpdatedAt(new Date());
     photoMapper.insert(photo);
@@ -85,8 +88,10 @@ public class PhotoService {
   @Transactional
   public Map<String, Object> update(String tripId, String photoId, Map<String, Object> dto,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     Photo photo = requirePhoto(tripId, photoId);
+    // 数据隔离：仅上传者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
     if (dto.containsKey("tripDayId")) {
       String tripDayId = optionalString(dto.get("tripDayId"));
       if (tripDayId != null) {
@@ -120,8 +125,10 @@ public class PhotoService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String photoId, String userId) {
-    requireTripMember(tripId, userId);
-    requirePhoto(tripId, photoId);
+    requireEditableMember(tripId, userId);
+    Photo photo = requirePhoto(tripId, photoId);
+    // 数据隔离：仅上传者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
     photoMapper.deleteById(photoId);
     return Map.of("success", true);
   }
@@ -140,6 +147,18 @@ public class PhotoService {
   private void requireTripMember(String tripId, String userId) {
     try {
       tripMemberService.requireTripMember(tripId, userId);
+    } catch (ApiException ex) {
+      if (ex.getStatusCode() == 404) {
+        throw ApiException.forbidden("No permission to access photos for this trip");
+      }
+      throw ex;
+    }
+  }
+
+  /** 写操作统一角色收紧：viewer（只读角色）一律 403。 */
+  private void requireEditableMember(String tripId, String userId) {
+    try {
+      tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     } catch (ApiException ex) {
       if (ex.getStatusCode() == 404) {
         throw ApiException.forbidden("No permission to access photos for this trip");

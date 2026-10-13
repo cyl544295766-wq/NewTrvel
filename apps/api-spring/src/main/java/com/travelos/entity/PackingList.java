@@ -21,6 +21,10 @@ public class PackingList {
 
   private String category;
 
+  /** 创建者（数据隔离行级属主） */
+  @TableField("creator_id")
+  private String creatorId;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -35,6 +39,8 @@ public class PackingList {
   public void setName(String name) { this.name = name; }
   public String getCategory() { return category; }
   public void setCategory(String category) { this.category = category; }
+  public String getCreatorId() { return creatorId; }
+  public void setCreatorId(String creatorId) { this.creatorId = creatorId; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

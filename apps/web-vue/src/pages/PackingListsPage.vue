@@ -9,7 +9,7 @@
         <el-option v-for="c in CATEGORIES" :key="c.value" :label="c.label" :value="c.value" />
       </el-select>
       <el-input v-model="newName" placeholder="清单名称" style="width: 220px" />
-      <el-button type="primary" @click="createList">新建清单（自动填充模板）</el-button>
+      <el-button v-if="canWrite" type="primary" @click="createList">新建清单（自动填充模板）</el-button>
     </div>
 
     <el-empty v-if="lists.length === 0" description="还没有打包清单" />
@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { errorMessage, packingApi, tripsApi } from '../api';
@@ -65,7 +65,9 @@ const route = useRoute();
 const router = useRouter();
 const tripId = route.params.tripId as string;
 const loading = ref(false);
+const canWrite = computed(() => tripRole.value !== 'viewer');
 const tripTitle = ref('');
+const tripRole = ref('');
 const lists = ref<PackingList[]>([]);
 const newCategory = ref('clothing');
 const newName = ref('');
@@ -74,7 +76,9 @@ const itemDrafts = reactive<Record<string, string>>({});
 async function load() {
   loading.value = true;
   try {
-    tripTitle.value = (await tripsApi.detail(tripId)).trip.title;
+    const trip = await tripsApi.detail(tripId);
+    tripTitle.value = trip.trip.title;
+    tripRole.value = trip.trip.currentUserRole;
     lists.value = (await packingApi.list(tripId)).packingLists;
   } finally {
     loading.value = false;

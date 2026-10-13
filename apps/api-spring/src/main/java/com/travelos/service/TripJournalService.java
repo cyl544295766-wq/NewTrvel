@@ -12,6 +12,7 @@ import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripJournalMapper;
 import com.travelos.mapper.TripJournalPhotoMapper;
 import com.travelos.mapper.TripPlaceMapper;
+import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,7 +65,7 @@ public class TripJournalService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     String tripDayId = optionalString(dto.get("tripDayId"));
     String tripPlaceId = optionalString(dto.get("tripPlaceId"));
     validateRelations(tripId, tripDayId, tripPlaceId);
@@ -78,6 +79,8 @@ public class TripJournalService {
     journal.setContent(validateContent(string(dto.get("content"))));
     journal.setMood(validateMood(optionalString(dto.get("mood"))));
     journal.setIsDraft(dto.get("isDraft") == null || Boolean.parseBoolean(dto.get("isDraft").toString()));
+    // 作者以当前登录用户为准，禁止信任前端传入的 authorId 等字段
+    journal.setAuthorId(userId);
     journal.setCreatedAt(new Date());
     journal.setUpdatedAt(new Date());
     journalMapper.insert(journal);
@@ -88,8 +91,10 @@ public class TripJournalService {
   @Transactional
   public Map<String, Object> update(String tripId, String journalId, Map<String, Object> dto,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     TripJournal journal = requireJournal(tripId, journalId);
+    // 数据隔离：仅作者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, journal.getAuthorId(), userId, "作者");
     if (dto.containsKey("tripDayId")) {
       String tripDayId = optionalString(dto.get("tripDayId"));
       if (tripDayId != null) {
@@ -128,8 +133,10 @@ public class TripJournalService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String journalId, String userId) {
-    requireTripMember(tripId, userId);
-    requireJournal(tripId, journalId);
+    requireEditableMember(tripId, userId);
+    TripJournal journal = requireJournal(tripId, journalId);
+    // 数据隔离：仅作者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, journal.getAuthorId(), userId, "作者");
     journalPhotoMapper.delete(new LambdaQueryWrapper<TripJournalPhoto>()
         .eq(TripJournalPhoto::getJournalId, journalId));
     journalMapper.deleteById(journalId);
@@ -139,8 +146,10 @@ public class TripJournalService {
   @Transactional
   public Map<String, Object> reorderPhotos(String tripId, String journalId, List<String> photoIds,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     TripJournal journal = requireJournal(tripId, journalId);
+    // 数据隔离：仅作者本人或行程 owner/admin 可调整照片顺序（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, journal.getAuthorId(), userId, "作者");
     validatePhotos(tripId, photoIds);
     List<String> currentPhotoIds = journalPhotos(journalId).stream()
         .map(TripJournalPhoto::getPhotoId)
@@ -183,6 +192,18 @@ public class TripJournalService {
   private void requireTripMember(String tripId, String userId) {
     try {
       tripMemberService.requireTripMember(tripId, userId);
+    } catch (ApiException ex) {
+      if (ex.getStatusCode() == 404) {
+        throw ApiException.forbidden("没有权限访问该旅行的游记");
+      }
+      throw ex;
+    }
+  }
+
+  /** 写操作统一角色收紧：viewer（只读角色）一律 403。 */
+  private void requireEditableMember(String tripId, String userId) {
+    try {
+      tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     } catch (ApiException ex) {
       if (ex.getStatusCode() == 404) {
         throw ApiException.forbidden("没有权限访问该旅行的游记");

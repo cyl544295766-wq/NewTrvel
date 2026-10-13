@@ -6,6 +6,7 @@ import com.travelos.entity.PackingItem;
 import com.travelos.entity.PackingList;
 import com.travelos.mapper.PackingItemMapper;
 import com.travelos.mapper.PackingListMapper;
+import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,12 +40,14 @@ public class PackingListService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     String category = requiredString(dto.get("category"), "category should not be empty");
     PackingList list = new PackingList();
     list.setTripId(tripId);
     list.setName(normalizeName(string(dto.get("name")), 100, "清单名称"));
     list.setCategory(category);
+    // 创建者以当前登录用户为准，禁止信任前端传入的 creatorId 等字段
+    list.setCreatorId(userId);
     list.setCreatedAt(new Date());
     list.setUpdatedAt(new Date());
     listMapper.insert(list);
@@ -63,7 +66,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> update(String tripId, String listId, Map<String, Object> dto,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     PackingList list = requireList(tripId, listId);
     if (dto.containsKey("name")) {
       list.setName(normalizeName(string(dto.get("name")), 100, "清单名称"));
@@ -78,8 +81,10 @@ public class PackingListService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String listId, String userId) {
-    requireTripMember(tripId, userId);
-    requireList(tripId, listId);
+    requireEditableMember(tripId, userId);
+    PackingList list = requireList(tripId, listId);
+    // 数据隔离：仅创建者本人或行程 owner/admin 可删除整张清单（NULL 属主为存量兼容）
+    tripMemberService.requireOwnerOrManager(tripId, list.getCreatorId(), userId, "清单创建者");
     itemMapper.delete(new LambdaQueryWrapper<PackingItem>()
         .eq(PackingItem::getPackingListId, listId));
     listMapper.deleteById(listId);
@@ -89,7 +94,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> createItem(String tripId, String listId, Map<String, Object> dto,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     PackingList list = requireList(tripId, listId);
     int quantity = 1;
     if (dto.containsKey("quantity") && dto.get("quantity") != null) {
@@ -114,7 +119,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> updateItem(String tripId, String listId, String itemId,
       Map<String, Object> dto, String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     requireList(tripId, listId);
     PackingItem item = requireItem(listId, itemId);
     if (dto.containsKey("quantity") && dto.get("quantity") != null) {
@@ -143,7 +148,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> deleteItem(String tripId, String listId, String itemId,
       String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     requireList(tripId, listId);
     requireItem(listId, itemId);
     itemMapper.deleteById(itemId);
@@ -152,7 +157,7 @@ public class PackingListService {
 
   @Transactional
   public Map<String, Object> duplicate(String tripId, String listId, String userId) {
-    requireTripMember(tripId, userId);
+    requireEditableMember(tripId, userId);
     PackingList source = requireList(tripId, listId);
     String suffix = " 副本";
     String newName = source.getName().length() + suffix.length() > 100
@@ -226,6 +231,18 @@ public class PackingListService {
   private void requireTripMember(String tripId, String userId) {
     try {
       tripMemberService.requireTripMember(tripId, userId);
+    } catch (ApiException ex) {
+      if (ex.getStatusCode() == 404) {
+        throw ApiException.forbidden("没有权限访问该旅行的打包清单");
+      }
+      throw ex;
+    }
+  }
+
+  /** 写操作统一角色收紧：viewer（只读角色）一律 403。 */
+  private void requireEditableMember(String tripId, String userId) {
+    try {
+      tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     } catch (ApiException ex) {
       if (ex.getStatusCode() == 404) {
         throw ApiException.forbidden("没有权限访问该旅行的打包清单");
