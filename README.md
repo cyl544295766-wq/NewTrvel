@@ -1,7 +1,5 @@
 # Travel OS
 
-[![CI/CD](https://github.com/cyl544295766-wq/NewTrvel/actions/workflows/deploy.yml/badge.svg)](https://github.com/cyl544295766-wq/NewTrvel/actions/workflows/deploy.yml)
-
 Travel OS is a long-term travel management platform for private use with trusted friends.
 
 ## Current Scope
