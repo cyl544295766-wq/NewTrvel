@@ -8,3 +8,9 @@ coverage
 .env.*.local
 *.log
 .prisma
+# Java build
+target/
+*.class
+
+# WorkBuddy workspace notes
+.workbuddy/
