@@ -2,6 +2,7 @@ package com.travelos.controller;
 
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
+import com.travelos.trip.RequireTripRole;
 import com.travelos.service.TripJournalService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,24 +37,28 @@ public class TripJournalController {
     return journalService.findOne(tripId, journalId, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PostMapping
   public Map<String, Object> create(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return journalService.create(tripId, user.id(), dto);
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/{journalId}")
   public Map<String, Object> update(@PathVariable String tripId, @PathVariable String journalId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return journalService.update(tripId, journalId, dto, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @DeleteMapping("/{journalId}")
   public Map<String, Object> delete(@PathVariable String tripId, @PathVariable String journalId,
       @CurrentUser UserContext user) {
     return journalService.delete(tripId, journalId, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/{journalId}/photos/reorder")
   public Map<String, Object> reorderPhotos(@PathVariable String tripId,
       @PathVariable String journalId, @RequestBody Map<String, Object> dto,

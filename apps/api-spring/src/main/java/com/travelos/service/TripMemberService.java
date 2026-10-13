@@ -23,13 +23,15 @@ public class TripMemberService {
   private final TripMapper tripMapper;
   private final UserMapper userMapper;
   private final NotificationService notificationService;
+  private final AuditService auditService;
 
   public TripMemberService(TripMemberMapper tripMemberMapper, TripMapper tripMapper,
-      UserMapper userMapper, NotificationService notificationService) {
+      UserMapper userMapper, NotificationService notificationService, AuditService auditService) {
     this.tripMemberMapper = tripMemberMapper;
     this.tripMapper = tripMapper;
     this.userMapper = userMapper;
     this.notificationService = notificationService;
+    this.auditService = auditService;
   }
 
   public TripMember createOwner(String tripId, String userId) {
@@ -68,7 +70,6 @@ public class TripMemberService {
 
   public Map<String, Object> invite(String tripId, String inviterUserId,
       String username, String role) {
-    requireTripRole(tripId, inviterUserId, TripPermission.EDITABLE_ROLES);
     String normalizedRole = role == null ? TripPermission.MEMBER : role;
     if (TripPermission.OWNER.equals(normalizedRole)) {
       throw ApiException.badRequest("不能邀请所有者");
@@ -96,12 +97,13 @@ public class TripMemberService {
     if (trip != null) {
       notificationService.createMemberInvited(user.getId(), tripId, trip.getTitle(), normalizedRole);
     }
+    auditService.record(inviterUserId, tripId, "member_invited", "user", user.getId(),
+        Map.of("username", user.getUsername(), "role", normalizedRole));
     return toMembersResponse(tripId);
   }
 
   public Map<String, Object> updateRole(String tripId, String memberId, String role,
       String operatorUserId) {
-    requireTripRole(tripId, operatorUserId, TripPermission.EDITABLE_ROLES);
     TripMember target = requireTargetMember(tripId, memberId);
     if (TripPermission.OWNER.equals(target.getRole())) {
       throw ApiException.badRequest("不能修改所有者角色");
@@ -117,17 +119,72 @@ public class TripMemberService {
     if (trip != null) {
       notificationService.createRoleChanged(target.getUserId(), tripId, trip.getTitle(), role);
     }
+    auditService.record(operatorUserId, tripId, "role_changed", "trip_member", memberId,
+        Map.of("username", usernameOf(target.getUserId()), "role", role));
     return toMembersResponse(tripId);
   }
 
   public Map<String, Object> remove(String tripId, String memberId, String operatorUserId) {
-    requireTripRole(tripId, operatorUserId, TripPermission.EDITABLE_ROLES);
     TripMember target = requireTargetMember(tripId, memberId);
     if (TripPermission.OWNER.equals(target.getRole())) {
       throw ApiException.badRequest("不能移除所有者");
     }
     tripMemberMapper.deleteById(memberId);
+    auditService.record(operatorUserId, tripId, "member_removed", "trip_member", memberId,
+        Map.of("username", usernameOf(target.getUserId()), "role", target.getRole()));
     return toMembersResponse(tripId);
+  }
+
+  /**
+   * owner 角色转移：仅当前 owner 可调用；目标必须是行程成员且不能是自己。
+   * 事务内完成角色互换（目标→owner，原 owner→admin），带并发保护与幂等保护。
+   */
+  @org.springframework.transaction.annotation.Transactional
+  public Map<String, Object> transferOwner(String tripId, String currentUserId,
+      String targetUserId) {
+    if (targetUserId == null || targetUserId.isBlank()) {
+      throw ApiException.badRequest("targetUserId 不能为空");
+    }
+    if (targetUserId.equals(currentUserId)) {
+      throw ApiException.badRequest("不能将所有者转移给自己");
+    }
+    // 仅当前 owner 可调用（非成员 404 → 403 语义由切面/此处统一）
+    TripMember currentMember = requireTripRole(tripId, currentUserId, List.of(TripPermission.OWNER));
+    TripMember targetMember = tripMemberMapper.selectOne(new LambdaQueryWrapper<TripMember>()
+        .eq(TripMember::getTripId, tripId)
+        .eq(TripMember::getUserId, targetUserId));
+    if (targetMember == null) {
+      throw ApiException.badRequest("目标用户不是该行程成员");
+    }
+    // 幂等：目标已是 owner（说明此前已转移成功）直接返回，不产生脏数据
+    if (TripPermission.OWNER.equals(targetMember.getRole())) {
+      return toMembersResponse(tripId);
+    }
+    targetMember.setRole(TripPermission.OWNER);
+    targetMember.setUpdatedAt(new Date());
+    int updatedTarget = tripMemberMapper.updateById(targetMember);
+    // 并发保护：原 owner 行必须是 owner 角色才允许降级，失败则整体回滚
+    currentMember.setRole(TripPermission.ADMIN);
+    currentMember.setUpdatedAt(new Date());
+    int updatedCurrent = tripMemberMapper.update(currentMember,
+        new LambdaQueryWrapper<TripMember>()
+            .eq(TripMember::getId, currentMember.getId())
+            .eq(TripMember::getRole, TripPermission.OWNER));
+    if (updatedTarget == 0 || updatedCurrent == 0) {
+      throw ApiException.conflict("所有者状态已变化，请刷新后重试");
+    }
+    Trip trip = tripMapper.selectById(tripId);
+    if (trip != null) {
+      notificationService.createOwnerTransferred(targetUserId, tripId, trip.getTitle());
+    }
+    auditService.record(currentUserId, tripId, "owner_transferred", "trip", tripId,
+        Map.of("from", usernameOf(currentUserId), "to", usernameOf(targetUserId)));
+    return toMembersResponse(tripId);
+  }
+
+  private String usernameOf(String userId) {
+    User user = userMapper.selectById(userId);
+    return user == null ? userId : user.getUsername();
   }
 
   public List<TripMember> listMembers(String tripId) {

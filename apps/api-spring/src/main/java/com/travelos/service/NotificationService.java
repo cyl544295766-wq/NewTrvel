@@ -102,6 +102,12 @@ public class NotificationService {
         "/trips/" + tripId, Map.of("tripId", tripId, "role", role), "normal", null);
   }
 
+  public void createOwnerTransferred(String userId, String tripId, String tripTitle) {
+    create(userId, "role_changed", "你已成为旅行所有者",
+        "旅行「" + tripTitle + "」的所有权已转移给你。",
+        "/trips/" + tripId, Map.of("tripId", tripId, "role", "owner"), "normal", null);
+  }
+
   private void create(String userId, String type, String title, String content, String link,
       Map<String, Object> metadata, String priority, Date expiresAt) {
     Notification notification = new Notification();

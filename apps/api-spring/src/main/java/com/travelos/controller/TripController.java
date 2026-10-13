@@ -2,7 +2,9 @@ package com.travelos.controller;
 
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
+import com.travelos.service.TripMemberService;
 import com.travelos.service.TripService;
+import com.travelos.trip.RequireTripRole;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -19,9 +21,11 @@ import java.util.Map;
 public class TripController {
 
   private final TripService tripService;
+  private final TripMemberService tripMemberService;
 
-  public TripController(TripService tripService) {
+  public TripController(TripService tripService, TripMemberService tripMemberService) {
     this.tripService = tripService;
+    this.tripMemberService = tripMemberService;
   }
 
   @PostMapping
@@ -69,5 +73,17 @@ public class TripController {
   @DeleteMapping("/{tripId}")
   public Map<String, Object> remove(@PathVariable String tripId, @CurrentUser UserContext user) {
     return tripService.remove(tripId, user.id());
+  }
+
+  /** owner 角色转移：仅当前 owner 可调用（提示词规定路径 /api/trips/{tripId}/transfer-owner）。 */
+  @PostMapping("/{tripId}/transfer-owner")
+  @RequireTripRole({"owner"})
+  public Map<String, Object> transferOwner(@PathVariable String tripId,
+      @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
+    Object targetUserId = dto.get("targetUserId");
+    if (targetUserId == null || targetUserId.toString().isBlank()) {
+      throw new IllegalArgumentException("targetUserId should not be empty");
+    }
+    return tripMemberService.transferOwner(tripId, user.id(), targetUserId.toString());
   }
 }

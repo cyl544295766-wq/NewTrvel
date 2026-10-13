@@ -37,7 +37,17 @@ public class SeedRunner implements ApplicationRunner {
 
   @Override
   public void run(ApplicationArguments args) {
-    try {
+    // 种子初始化无请求上下文，显式绕过行程数据范围过滤
+    com.travelos.common.TripScopeContext.runBypassed(() -> {
+      try {
+        seed();
+      } catch (Exception ex) {
+        log.warn("Seed skipped: {}", ex.getMessage());
+      }
+    });
+  }
+
+  private void seed() {
       SystemSetting existing = systemSettingMapper
           .selectOne(new LambdaQueryWrapper<SystemSetting>().eq(SystemSetting::getKey, "app.name"));
       if (existing == null) {
@@ -65,8 +75,5 @@ public class SeedRunner implements ApplicationRunner {
         userMapper.updateById(toSave);
       }
       log.info("Seed completed (admin user: {})", adminUsername);
-    } catch (Exception ex) {
-      log.warn("Seed skipped: {}", ex.getMessage());
-    }
   }
 }

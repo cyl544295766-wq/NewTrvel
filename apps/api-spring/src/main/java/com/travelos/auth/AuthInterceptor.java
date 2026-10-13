@@ -59,8 +59,16 @@ public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumen
     if (user == null || !"active".equals(user.getStatus())) {
       throw ApiException.unauthorized("账户已注销或不可用");
     }
+    // 桥接 MyBatis-Plus 数据权限拦截器（afterCompletion 清理，防线程复用串号）
+    com.travelos.common.TripScopeContext.setUserId(user.getId());
     request.setAttribute(USER_ATTRIBUTE, new UserContext(sub.toString(), username.toString()));
     return true;
+  }
+
+  @Override
+  public void afterCompletion(@NonNull HttpServletRequest request,
+      @NonNull HttpServletResponse response, @NonNull Object handler, Exception ex) {
+    com.travelos.common.TripScopeContext.clear();
   }
 
   private String readCookie(HttpServletRequest request) {

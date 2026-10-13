@@ -154,8 +154,7 @@ public class TripService {
   @Transactional
   public Map<String, Object> update(String tripId, Map<String, Object> dto, String userId) {
     validateDateRange(dto.get("startDate"), dto.get("endDate"));
-    TripMember membership = tripMemberService.requireTripRole(tripId, userId,
-        TripPermission.EDITABLE_ROLES);
+    TripMember membership = tripMemberService.requireTripMember(tripId, userId);
     Trip trip = findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
@@ -193,8 +192,7 @@ public class TripService {
 
   @Transactional
   public Map<String, Object> archive(String tripId, String userId) {
-    TripMember membership = tripMemberService.requireTripRole(tripId, userId,
-        TripPermission.EDITABLE_ROLES);
+    TripMember membership = tripMemberService.requireTripMember(tripId, userId);
     Trip trip = findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
@@ -208,8 +206,7 @@ public class TripService {
 
   @Transactional
   public Map<String, Object> remove(String tripId, String userId) {
-    TripMember membership = tripMemberService.requireTripRole(tripId, userId,
-        TripPermission.EDITABLE_ROLES);
+    TripMember membership = tripMemberService.requireTripMember(tripId, userId);
     Trip trip = findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
@@ -222,7 +219,6 @@ public class TripService {
 
   @Transactional
   public Map<String, Object> duplicate(String tripId, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     Trip source = findLive(tripId);
     if (source == null) {
       throw ApiException.notFound("Trip not found");

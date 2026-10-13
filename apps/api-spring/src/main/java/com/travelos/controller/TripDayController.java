@@ -2,6 +2,7 @@ package com.travelos.controller;
 
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
+import com.travelos.trip.RequireTripRole;
 import com.travelos.service.TripDayService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -23,6 +24,7 @@ public class TripDayController {
     this.tripDayService = tripDayService;
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PostMapping("/generate")
   public Map<String, Object> generate(@PathVariable String tripId,
       @CurrentUser UserContext user) {
@@ -34,6 +36,7 @@ public class TripDayController {
     return tripDayService.findAll(tripId, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/{dayId}")
   public Map<String, Object> update(@PathVariable String tripId, @PathVariable String dayId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {

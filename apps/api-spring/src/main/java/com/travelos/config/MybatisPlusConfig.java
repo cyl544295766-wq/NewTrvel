@@ -45,4 +45,17 @@ public class MybatisPlusConfig {
       }
     };
   }
+
+  /**
+   * 数据权限兜底拦截器：为行程属下业务表自动注入「当前用户是该行程成员」条件。
+   * 与手写校验是双保险关系，语义冲突时以手写校验为准。
+   */
+  @Bean
+  public com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor mybatisPlusInterceptor() {
+    com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor interceptor =
+        new com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor();
+    interceptor.addInnerInterceptor(new com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor(
+        new TripScopeDataPermissionHandler()));
+    return interceptor;
+  }
 }

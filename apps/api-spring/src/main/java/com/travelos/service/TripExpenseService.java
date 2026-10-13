@@ -12,7 +12,6 @@ import com.travelos.entity.User;
 import com.travelos.mapper.TripExpenseMapper;
 import com.travelos.mapper.TripExpenseShareMapper;
 import com.travelos.mapper.TripMapper;
-import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,7 +71,6 @@ public class TripExpenseService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     long amountCents = toCents(string(dto.get("amount")), false);
     String payerUserId = requiredString(dto.get("payerUserId"), "payerUserId should not be empty");
     List<Map<String, String>> shares = normalizeShares(tripId, payerUserId, amountCents, dto, List.of());
@@ -100,7 +98,6 @@ public class TripExpenseService {
   @Transactional
   public Map<String, Object> update(String tripId, String expenseId, Map<String, Object> dto,
       String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripExpense expense = expenseMapper.selectById(expenseId);
     if (expense == null || !expense.getTripId().equals(tripId)) {
       throw ApiException.notFound("费用不存在");
@@ -157,7 +154,6 @@ public class TripExpenseService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String expenseId, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripExpense expense = expenseMapper.selectById(expenseId);
     if (expense == null || !expense.getTripId().equals(tripId)) {
       throw ApiException.notFound("费用不存在");

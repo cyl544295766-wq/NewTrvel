@@ -2,6 +2,7 @@ package com.travelos.controller;
 
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
+import com.travelos.trip.RequireTripRole;
 import com.travelos.service.TripPlaceService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,18 +25,21 @@ public class TripPlaceController {
     this.tripPlaceService = tripPlaceService;
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PostMapping("/places")
   public Map<String, Object> create(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return tripPlaceService.create(tripId, dto, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/places/{placeId}")
   public Map<String, Object> update(@PathVariable String tripId, @PathVariable String placeId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return tripPlaceService.update(tripId, placeId, dto, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/places/{placeId}/move")
   public Map<String, Object> move(@PathVariable String tripId, @PathVariable String placeId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
@@ -46,12 +50,14 @@ public class TripPlaceController {
     return tripPlaceService.move(tripId, placeId, tripDayId.toString(), user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @DeleteMapping("/places/{placeId}")
   public Map<String, Object> delete(@PathVariable String tripId, @PathVariable String placeId,
       @CurrentUser UserContext user) {
     return tripPlaceService.delete(tripId, placeId, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/days/{dayId}/places/reorder")
   public Map<String, Object> reorder(@PathVariable String tripId, @PathVariable String dayId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {

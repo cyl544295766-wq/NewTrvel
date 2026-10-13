@@ -22,16 +22,19 @@ public class AuthService {
   private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
 
   private final UserService userService;
+  private final com.travelos.service.AuditService auditService;
   private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
   private final String jwtSecret;
   private final String cookieName;
   private final boolean secureCookie;
 
   public AuthService(UserService userService,
+      com.travelos.service.AuditService auditService,
       @Value("${jwt.secret}") String jwtSecret,
       @Value("${auth.cookie-name:access_token}") String cookieName,
       @Value("${auth.secure-cookie:false}") boolean secureCookie) {
     this.userService = userService;
+    this.auditService = auditService;
     this.jwtSecret = jwtSecret;
     this.cookieName = cookieName;
     this.secureCookie = secureCookie;
@@ -113,6 +116,8 @@ public class AuthService {
     user.setStatus("deleted");
     user.setDeletedAt(new Date());
     userService.updateUser(user);
+    auditService.record(user.getId(), null, "account_deactivated", "user", user.getId(),
+        Map.of("username", user.getUsername()));
   }
 
   public Map<String, Object> getMe(UserContext currentUser) {

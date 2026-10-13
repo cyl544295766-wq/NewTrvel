@@ -9,7 +9,6 @@ import com.travelos.entity.TripDay;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
-import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,7 +38,6 @@ public class TripDayService {
 
   @Transactional
   public Map<String, Object> generate(String tripId, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     Trip trip = tripService.findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("旅行不存在");
@@ -87,7 +85,6 @@ public class TripDayService {
   @Transactional
   public Map<String, Object> update(String tripId, String dayId, Map<String, Object> dto,
       String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripDay day = tripDayMapper.selectById(dayId);
     if (day == null || !day.getTripId().equals(tripId)) {
       throw ApiException.notFound("行程天数不存在");

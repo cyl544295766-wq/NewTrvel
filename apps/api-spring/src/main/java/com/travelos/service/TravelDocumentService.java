@@ -10,7 +10,6 @@ import com.travelos.entity.TripPlace;
 import com.travelos.mapper.TravelDocumentMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
-import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,13 +27,16 @@ public class TravelDocumentService {
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
+  private final AuditService auditService;
 
   public TravelDocumentService(TravelDocumentMapper documentMapper, TripDayMapper tripDayMapper,
-      TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService) {
+      TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
+      AuditService auditService) {
     this.documentMapper = documentMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
+    this.auditService = auditService;
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -51,7 +53,6 @@ public class TravelDocumentService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    requireEditableMember(tripId, userId);
     String url = string(dto.get("url"));
     validateDocumentUrl(url);
     long count = documentMapper.selectCount(new LambdaQueryWrapper<TravelDocument>()
@@ -86,7 +87,6 @@ public class TravelDocumentService {
   @Transactional
   public Map<String, Object> update(String tripId, String documentId, Map<String, Object> dto,
       String userId) {
-    requireEditableMember(tripId, userId);
     TravelDocument document = requireDocument(tripId, documentId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, document.getUploaderId(), userId, "上传者");
@@ -131,11 +131,12 @@ public class TravelDocumentService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String documentId, String userId) {
-    requireEditableMember(tripId, userId);
     TravelDocument document = requireDocument(tripId, documentId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, document.getUploaderId(), userId, "上传者");
     documentMapper.deleteById(documentId);
+    auditService.record(userId, tripId, "document_deleted", "travel_document", documentId,
+        Map.of("title", document.getTitle()));
     return Map.of("success", true);
   }
 
@@ -156,17 +157,6 @@ public class TravelDocumentService {
     }
   }
 
-  /** 写操作统一角色收紧：viewer（只读角色）一律 403。 */
-  private void requireEditableMember(String tripId, String userId) {
-    try {
-      tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
-    } catch (ApiException ex) {
-      if (ex.getStatusCode() == 404) {
-        throw ApiException.forbidden("没有权限访问该旅行的文档");
-      }
-      throw ex;
-    }
-  }
 
   private TravelDocument requireDocument(String tripId, String documentId) {
     TravelDocument document = documentMapper.selectById(documentId);

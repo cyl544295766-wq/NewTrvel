@@ -2,6 +2,7 @@ package com.travelos.controller;
 
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
+import com.travelos.trip.RequireTripRole;
 import com.travelos.service.PhotoService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,18 +36,21 @@ public class PhotoController {
     return photoService.findOne(tripId, photoId, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PostMapping
   public Map<String, Object> create(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return photoService.create(tripId, user.id(), dto);
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @PatchMapping("/{photoId}")
   public Map<String, Object> update(@PathVariable String tripId, @PathVariable String photoId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return photoService.update(tripId, photoId, dto, user.id());
   }
 
+  @RequireTripRole({"owner", "admin", "member"})
   @DeleteMapping("/{photoId}")
   public Map<String, Object> delete(@PathVariable String tripId, @PathVariable String photoId,
       @CurrentUser UserContext user) {

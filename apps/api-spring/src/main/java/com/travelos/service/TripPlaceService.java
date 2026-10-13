@@ -7,7 +7,6 @@ import com.travelos.entity.TripDay;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
-import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +33,6 @@ public class TripPlaceService {
 
   @Transactional
   public Map<String, Object> create(String tripId, Map<String, Object> dto, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     String tripDayId = optionalString(dto.get("tripDayId"));
     if (tripDayId != null) {
       ensureDayBelongsToTrip(tripDayId, tripId);
@@ -69,7 +67,6 @@ public class TripPlaceService {
   @Transactional
   public Map<String, Object> update(String tripId, String placeId, Map<String, Object> dto,
       String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripPlace place = findPlace(placeId);
     if (place == null || !place.getTripId().equals(tripId)) {
       throw ApiException.notFound("地点不存在");
@@ -120,7 +117,6 @@ public class TripPlaceService {
   @Transactional
   public Map<String, Object> move(String tripId, String placeId, String tripDayId,
       String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripPlace place = findPlace(placeId);
     if (place == null || !place.getTripId().equals(tripId)) {
       throw ApiException.notFound("地点不存在");
@@ -137,7 +133,6 @@ public class TripPlaceService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String placeId, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     TripPlace place = findPlace(placeId);
     if (place == null || !place.getTripId().equals(tripId)) {
       throw ApiException.notFound("地点不存在");
@@ -149,7 +144,6 @@ public class TripPlaceService {
   @Transactional
   public Map<String, Object> reorder(String tripId, String dayId, List<String> placeIds,
       String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     ensureDayBelongsToTrip(dayId, tripId);
     List<TripPlace> places = tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
         .in(TripPlace::getId, placeIds));

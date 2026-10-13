@@ -10,7 +10,6 @@ import com.travelos.entity.TripPlace;
 import com.travelos.mapper.PhotoMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
-import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,13 +26,16 @@ public class PhotoService {
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
+  private final AuditService auditService;
 
   public PhotoService(PhotoMapper photoMapper, TripDayMapper tripDayMapper,
-      TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService) {
+      TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
+      AuditService auditService) {
     this.photoMapper = photoMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
+    this.auditService = auditService;
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -53,7 +55,6 @@ public class PhotoService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    requireEditableMember(tripId, userId);
     String url = string(dto.get("url"));
     validatePhotoUrl(url);
     long count = photoMapper.selectCount(new LambdaQueryWrapper<Photo>()
@@ -88,7 +89,6 @@ public class PhotoService {
   @Transactional
   public Map<String, Object> update(String tripId, String photoId, Map<String, Object> dto,
       String userId) {
-    requireEditableMember(tripId, userId);
     Photo photo = requirePhoto(tripId, photoId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
@@ -125,11 +125,12 @@ public class PhotoService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String photoId, String userId) {
-    requireEditableMember(tripId, userId);
     Photo photo = requirePhoto(tripId, photoId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
     photoMapper.deleteById(photoId);
+    auditService.record(userId, tripId, "photo_deleted", "photo", photoId,
+        Map.of("caption", photo.getCaption() == null ? "" : photo.getCaption()));
     return Map.of("success", true);
   }
 
@@ -155,17 +156,6 @@ public class PhotoService {
     }
   }
 
-  /** 写操作统一角色收紧：viewer（只读角色）一律 403。 */
-  private void requireEditableMember(String tripId, String userId) {
-    try {
-      tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
-    } catch (ApiException ex) {
-      if (ex.getStatusCode() == 404) {
-        throw ApiException.forbidden("No permission to access photos for this trip");
-      }
-      throw ex;
-    }
-  }
 
   private Photo requirePhoto(String tripId, String photoId) {
     Photo photo = photoMapper.selectById(photoId);

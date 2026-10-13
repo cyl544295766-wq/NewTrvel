@@ -37,6 +37,11 @@ public class UserCleanupScheduler {
   @Scheduled(cron = "0 0 3 * * ?")
   @Transactional
   public void purgeExpiredDeactivatedUsers() {
+    // 定时任务无请求上下文，显式绕过行程数据范围过滤
+    com.travelos.common.TripScopeContext.runBypassed(this::purge);
+  }
+
+  private void purge() {
     Calendar calendar = Calendar.getInstance();
     calendar.add(Calendar.DATE, -RETENTION_DAYS);
     Date threshold = calendar.getTime();
