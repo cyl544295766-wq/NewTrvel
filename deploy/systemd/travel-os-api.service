@@ -1,0 +1,16 @@
+[Unit]
+Description=Travel OS API (Spring Boot)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/travel-os
+ExecStart=/usr/bin/java -jar /opt/travel-os/travel-os-api.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target
