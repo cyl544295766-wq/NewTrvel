@@ -10,6 +10,7 @@ import type {
   TripExpense,
   TripJournal,
   TripMember,
+  Booking,
   TripPlace,
   TravelDocument,
   WeatherRow,
@@ -196,6 +197,22 @@ export const weatherApi = {
   tripWeather: (tripId: string) =>
     unwrap<{ source: string; weather: WeatherRow[] | null; message?: string }>(
       http.get(`/trips/${tripId}/weather`)),
+};
+
+// ---------- bookings ----------
+export const bookingsApi = {
+  list: (tripId: string) =>
+    unwrap<{ bookings: Booking[] }>(http.get(`/trips/${tripId}/bookings`)),
+  vouchers: (tripId: string) =>
+    unwrap<{ vouchers: Booking[] }>(http.get(`/trips/${tripId}/bookings/vouchers`)),
+  reminders: (tripId: string) =>
+    unwrap<{ reminders: Booking[] }>(http.get(`/trips/${tripId}/bookings/reminders`)),
+  create: (tripId: string, payload: Record<string, unknown>) =>
+    unwrap<{ booking: Booking }>(http.post(`/trips/${tripId}/bookings`, payload)),
+  update: (tripId: string, bookingId: string, payload: Record<string, unknown>) =>
+    unwrap<{ booking: Booking }>(http.patch(`/trips/${tripId}/bookings/${bookingId}`, payload)),
+  remove: (tripId: string, bookingId: string) =>
+    unwrap(http.delete(`/trips/${tripId}/bookings/${bookingId}`)),
 };
 
 // ---------- stats ----------

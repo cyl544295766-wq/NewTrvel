@@ -108,6 +108,30 @@ public class NotificationService {
         "/trips/" + tripId, Map.of("tripId", tripId, "role", "owner"), "normal", null);
   }
 
+  /** 预订提醒（设计文档 3.3.3），发給行程成员。 */
+  public void createBookingReminder(String userId, String tripId, String tripTitle,
+      String content) {
+    create(userId, "system", "预订提醒 · " + tripTitle, content,
+        "/trips/" + tripId + "/vouchers", Map.of("tripId", tripId), "high", null);
+  }
+
+  /** 行前检查清单汇总通知（设计文档 3.3.3），precheckKey 用于同一天幂等去重。 */
+  public void createTripPrecheck(String userId, String tripId, String precheckKey,
+      String content) {
+    create(userId, "system", "行前检查清单", content,
+        "/trips/" + tripId + "/bookings", Map.of("tripId", tripId, "precheckKey", precheckKey),
+        "high", null);
+  }
+
+  /** 行前检查清单幂等判断：同 key 的通知是否已存在。 */
+  public boolean precheckAlreadySent(String userId, String precheckKey) {
+    Long count = notificationMapper.selectCount(new LambdaQueryWrapper<Notification>()
+        .eq(Notification::getUserId, userId)
+        .eq(Notification::getType, "system")
+        .apply("metadata->>'precheckKey' = {0}", precheckKey));
+    return count != null && count > 0;
+  }
+
   private void create(String userId, String type, String title, String content, String link,
       Map<String, Object> metadata, String priority, Date expiresAt) {
     Notification notification = new Notification();

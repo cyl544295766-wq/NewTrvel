@@ -36,6 +36,15 @@ export interface TripDay {
   createdAt: string;
   updatedAt: string;
   places: TripPlace[];
+  /** 关联到当天的预订角标摘要 */
+  bookings?: Array<{
+    id: string;
+    type: string;
+    title: string;
+    startTime: string | null;
+    confirmCode: string | null;
+    orderNo: string | null;
+  }>;
 }
 
 export interface TripPlace {
@@ -237,6 +246,29 @@ export interface PlaceSuggestion {
   sourceType: string | null;
   latitude: string | null;
   longitude: string | null;
+}
+
+export interface Booking {
+  id: string;
+  tripId: string;
+  tripDayId: string | null;
+  tripPlaceId: string | null;
+  type: 'flight' | 'hotel' | 'train' | 'ticket' | 'other';
+  title: string;
+  startTime: string | null;
+  endTime: string | null;
+  orderNo: string | null;
+  confirmCode: string | null;
+  amount: string | null;
+  currency: string | null;
+  attachmentUrl: string | null;
+  reminderMinutes: number | null;
+  reminderEnabled: boolean;
+  reminderSentAt: string | null;
+  creatorId: string;
+  createdAt: string;
+  updatedAt: string;
+  extra: Record<string, unknown>;
 }
 
 export interface RouteDay {

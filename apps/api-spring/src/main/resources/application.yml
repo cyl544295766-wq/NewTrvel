@@ -36,6 +36,8 @@ seed:
 app:
   user-cleanup:
     enabled: false
+  booking-reminder:
+    enabled: true
 
 logging:
   level:

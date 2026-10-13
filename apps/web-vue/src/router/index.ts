@@ -24,6 +24,8 @@ export const router = createRouter({
         { path: 'trips/:tripId/photos', name: 'photos', component: () => import('../pages/PhotosPage.vue') },
         { path: 'trips/:tripId/documents', name: 'documents', component: () => import('../pages/DocumentsPage.vue') },
         { path: 'trips/:tripId/packing-lists', name: 'packing', component: () => import('../pages/PackingListsPage.vue') },
+        { path: 'trips/:tripId/bookings', name: 'bookings', component: () => import('../pages/BookingsPage.vue') },
+        { path: 'trips/:tripId/vouchers', name: 'vouchers', component: () => import('../pages/VouchersPage.vue') },
         { path: 'trips/:tripId/journals', name: 'journals', component: () => import('../pages/JournalsPage.vue') },
         { path: 'trips/:tripId/journals/:journalId', name: 'journal-detail', component: () => import('../pages/JournalDetailPage.vue') },
       ],

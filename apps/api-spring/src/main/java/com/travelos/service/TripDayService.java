@@ -27,13 +27,16 @@ public class TripDayService {
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final TripService tripService;
+  private final BookingService bookingService;
 
   public TripDayService(TripDayMapper tripDayMapper, TripPlaceMapper tripPlaceMapper,
-      TripMemberService tripMemberService, TripService tripService) {
+      TripMemberService tripMemberService, TripService tripService,
+      BookingService bookingService) {
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
     this.tripService = tripService;
+    this.bookingService = bookingService;
   }
 
   @Transactional
@@ -115,6 +118,8 @@ public class TripDayService {
     map.put("createdAt", day.getCreatedAt());
     map.put("updatedAt", day.getUpdatedAt());
     map.put("places", placeMaps);
+    // 预订角标：关联到当天的预订摘要（时间轴显示订单角标）
+    map.put("bookings", bookingService.daySummaries(day.getTripId(), day.getId()));
     return map;
   }
 

@@ -13,7 +13,15 @@
     <el-card v-for="day in days" :key="day.id" class="day-card">
       <template #header>
         <div class="day-header">
-          <span>第 {{ day.dayIndex }} 天 · {{ formatDate(day.date) }}</span>
+          <span>
+            第 {{ day.dayIndex }} 天 · {{ formatDate(day.date) }}
+            <el-tooltip v-if="(day.bookings?.length ?? 0) > 0"
+              :content="day.bookings!.map(b => b.title).join('、')" placement="top">
+              <el-tag size="small" round type="warning" effect="plain" class="booking-badge">
+                🎫 {{ day.bookings!.length }} 项预订
+              </el-tag>
+            </el-tooltip>
+          </span>
           <el-input v-model="dayTitles[day.id]" :placeholder="`第 ${day.dayIndex} 天标题`" size="small"
             style="width: 220px" @change="saveDayTitle(day)" />
         </div>
@@ -172,6 +180,7 @@ onMounted(load);
 .toolbar { margin: 16px 0; }
 .day-card { margin-bottom: 16px; }
 .day-header { display: flex; justify-content: space-between; align-items: center; }
+.booking-badge { margin-left: 10px; cursor: default; }
 .place-row {
   display: flex;
   align-items: center;

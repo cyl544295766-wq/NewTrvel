@@ -111,6 +111,15 @@ class TripScopeDataPermissionHandlerTest {
   }
 
   @Test
+  void bookingsTableIsTripScoped() {
+    TripScopeContext.setUserId(MEMBER);
+    Expression expression = handler.getSqlSegment(new Table("bookings"), null, "test.find");
+    assertEquals(
+        "trip_id IN (SELECT trip_id FROM trip_members WHERE user_id = 'userMember01')",
+        expression.toString());
+  }
+
+  @Test
   void malformedUserIdDoesNotFilter() {
     TripScopeContext.setUserId("bad'; DROP TABLE photos; --");
     assertNull(handler.getSqlSegment(PHOTOS, null, "test.find"));

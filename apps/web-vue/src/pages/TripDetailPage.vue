@@ -25,6 +25,7 @@
           <el-button @click="router.push(`/trips/${tripId}/photos`)">照片</el-button>
           <el-button @click="router.push(`/trips/${tripId}/documents`)">文档</el-button>
           <el-button @click="router.push(`/trips/${tripId}/packing-lists`)">打包清单</el-button>
+          <el-button @click="router.push(`/trips/${tripId}/bookings`)">🎫 预订</el-button>
           <el-button @click="router.push(`/trips/${tripId}/journals`)">游记</el-button>
           <el-button type="success" @click="exportPdf">导出 PDF</el-button>
           <el-button @click="archive">归档</el-button>

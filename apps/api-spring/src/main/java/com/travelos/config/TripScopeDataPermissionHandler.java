@@ -35,7 +35,7 @@ public class TripScopeDataPermissionHandler implements MultiDataPermissionHandle
 
   private static final Set<String> TRIP_SCOPED_TABLES = Set.of(
       "trips", "trip_days", "trip_places", "trip_expenses", "photos",
-      "travel_documents", "trip_journals", "packing_lists", "trip_weather");
+      "travel_documents", "trip_journals", "packing_lists", "trip_weather", "bookings");
 
   @Override
   public Expression getSqlSegment(Table table, Expression where, String mappedStatementId) {
