@@ -67,6 +67,11 @@
           <el-form-item label="酒店名称"><el-input v-model="extra.hotelName" /></el-form-item>
           <el-form-item label="房型"><el-input v-model="extra.roomType" /></el-form-item>
           <el-form-item label="取消政策"><el-input v-model="extra.cancelPolicy" placeholder="如 入住前 1 天可免费取消" /></el-form-item>
+          <el-form-item label="免费取消截止">
+            <el-date-picker v-model="freeCancelDeadline" type="datetime" style="width:100%"
+              value-format="YYYY-MM-DDTHH:mm:ss.000Z"
+              placeholder="留空则默认入住前 24 小时提醒" />
+          </el-form-item>
         </template>
         <template v-else-if="form.type === 'train'">
           <el-form-item label="车次"><el-input v-model="extra.trainNo" placeholder="如 G101" /></el-form-item>
@@ -101,8 +106,9 @@
         </el-form-item>
         <el-form-item label="行前提醒">
           <el-switch v-model="form.reminderEnabled" active-text="开启" inactive-text="关闭" />
-          <el-select v-model="form.reminderMinutes" style="width:160px;margin-left:12px"
+          <el-select v-model="form.reminderMinutes" style="width:180px;margin-left:12px"
             :disabled="!form.reminderEnabled">
+            <el-option label="默认（按类型规则）" :value="null" />
             <el-option label="提前 30 分钟" :value="30" />
             <el-option label="提前 1 小时" :value="60" />
             <el-option label="提前 2 小时" :value="120" />
@@ -154,9 +160,10 @@ const form = reactive({
   confirmCode: '',
   tripDayId: null as string | null,
   reminderEnabled: true,
-  reminderMinutes: 1440,
+  reminderMinutes: null as number | null,
 });
 const extra = reactive<Record<string, string>>({});
+const freeCancelDeadline = ref<string | null>(null);
 
 const typePlaceholder = computed(() => ({
   flight: '如 北京 → 上海 CA1234',
@@ -197,12 +204,16 @@ function openForm(booking?: Booking) {
   form.confirmCode = booking?.confirmCode ?? '';
   form.tripDayId = booking?.tripDayId ?? null;
   form.reminderEnabled = booking?.reminderEnabled ?? true;
-  form.reminderMinutes = booking?.reminderMinutes ?? 1440;
+  form.reminderMinutes = booking?.reminderMinutes ?? null;
   amountValue.value = booking?.amount ? Number(booking.amount) : undefined;
   attachmentUrl.value = booking?.attachmentUrl ?? null;
   Object.keys(extra).forEach(key => delete extra[key]);
   const source = (booking?.extra ?? {}) as Record<string, unknown>;
+  freeCancelDeadline.value = source.freeCancelDeadline == null ? null : String(source.freeCancelDeadline);
   Object.entries(source).forEach(([key, value]) => {
+    if (key === 'freeCancelDeadline') {
+      return;
+    }
     extra[key] = value == null ? '' : String(value);
   });
   formVisible.value = true;
@@ -234,6 +245,10 @@ async function save() {
   }
   saving.value = true;
   try {
+    const extraPayload: Record<string, unknown> = { ...extra };
+    if (form.type === 'hotel' && freeCancelDeadline.value) {
+      extraPayload.freeCancelDeadline = freeCancelDeadline.value;
+    }
     const payload: Record<string, unknown> = {
       type: form.type,
       title: form.title,
@@ -246,9 +261,12 @@ async function save() {
       attachmentUrl: attachmentUrl.value,
       tripDayId: form.tripDayId,
       reminderEnabled: form.reminderEnabled,
-      reminderMinutes: form.reminderMinutes,
-      extra: { ...extra },
+      extra: extraPayload,
     };
+    // 选「默认（按类型规则）」时不传 reminderMinutes，由后端按类型/免费取消截止日计算
+    if (form.reminderMinutes != null) {
+      payload.reminderMinutes = form.reminderMinutes;
+    }
     if (editingId.value) {
       await bookingsApi.update(tripId, editingId.value, payload);
     } else {

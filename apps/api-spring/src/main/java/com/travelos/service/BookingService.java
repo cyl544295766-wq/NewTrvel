@@ -25,7 +25,7 @@ import java.util.Map;
 public class BookingService {
 
   private static final List<String> TYPES = List.of("flight", "hotel", "train", "ticket", "other");
-  /** 各类型默认提醒提前量（分钟），锚点为 start_time；other 由用户自定义（默认关闭） */
+  /** 各类型默认提醒提前量（分钟），锚点为 start_time；hotel 传了免费取消截止日时以截止日为准，此处为回退值；other 由用户自定义（默认关闭） */
   private static final Map<String, Integer> DEFAULT_REMINDER_MINUTES = Map.of(
       "flight", 24 * 60, "hotel", 24 * 60, "train", 2 * 60, "ticket", 24 * 60, "other", 60);
 
@@ -243,8 +243,10 @@ public class BookingService {
   }
 
   /**
-   * 默认提醒规则：创建时按类型生成（flight 24h / hotel 24h / train 2h / ticket 24h /
-   * other 关闭）；dto 显式传 reminderMinutes/reminderEnabled 时优先。
+   * 默认提醒规则：创建时按类型生成（flight 24h / train 2h / ticket 24h / other 关闭）；
+   * hotel 若在 extra.freeCancelDeadline 传了免费取消截止日，则以截止日为提醒时刻
+   * （换算为相对 start_time 的提前量），否则回退 24h；dto 显式传
+   * reminderMinutes/reminderEnabled 时优先。
    */
   private void applyDefaultReminder(Booking booking, Map<String, Object> dto) {
     if (dto.containsKey("reminderMinutes") && dto.get("reminderMinutes") != null) {
@@ -254,14 +256,43 @@ public class BookingService {
       }
       booking.setReminderMinutes(minutes);
     } else if (booking.getReminderMinutes() == null) {
-      Integer defaultMinutes = DEFAULT_REMINDER_MINUTES.getOrDefault(
-          booking.getType() == null ? "other" : booking.getType(), 60);
-      booking.setReminderMinutes(defaultMinutes);
+      booking.setReminderMinutes(defaultReminderMinutes(booking));
     }
     if (dto.containsKey("reminderEnabled") && dto.get("reminderEnabled") != null) {
       booking.setReminderEnabled(Boolean.parseBoolean(dto.get("reminderEnabled").toString()));
     } else if (booking.getReminderEnabled() == null) {
       booking.setReminderEnabled(!"other".equals(booking.getType()));
+    }
+  }
+
+  /**
+   * 类型默认提前量（锚点 start_time）。hotel 提供了 extra.freeCancelDeadline 时，
+   * 提醒时刻对齐免费取消截止日（提前量 = start_time - 截止日，下限 0）；截止日缺失
+   * 或无法解析时回退到类型默认值。
+   */
+  private int defaultReminderMinutes(Booking booking) {
+    String type = booking.getType() == null ? "other" : booking.getType();
+    if ("hotel".equals(type) && booking.getStartTime() != null) {
+      Date deadline = freeCancelDeadlineOf(booking);
+      if (deadline != null) {
+        long minutes = (booking.getStartTime().getTime() - deadline.getTime()) / 60000L;
+        return (int) Math.max(0L, minutes);
+      }
+    }
+    return DEFAULT_REMINDER_MINUTES.getOrDefault(type, 60);
+  }
+
+  /** 从 extra(json) 里取免费取消截止日；缺失或格式非法返回 null。 */
+  private Date freeCancelDeadlineOf(Booking booking) {
+    if (booking.getExtra() == null || booking.getExtra().isBlank()) {
+      return null;
+    }
+    try {
+      Object raw = com.travelos.common.JsonUtil.readObject(booking.getExtra())
+          .get("freeCancelDeadline");
+      return raw == null ? null : DateUtil.parse(raw.toString());
+    } catch (Exception e) {
+      return null;
     }
   }
 
