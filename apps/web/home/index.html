@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 首页</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  body { padding: 32px; }
+  .placeholder-card {
+    max-width: 720px; margin: 80px auto; text-align: center;
+    background: #fff; border-radius: var(--r-card);
+    box-shadow: var(--card-shadow); padding: 64px 40px;
+  }
+  h1 { font-family: var(--slab); color: var(--brand); font-size: 28px; }
+  p  { color: var(--mute); margin: 12px 0 24px; }
+  .actions { display: flex; gap: 12px; justify-content: center; }
+</style>
+</head>
+<body>
+
+<div class="placeholder-card">
+  <h1>欢迎回来 · 首页待落地</h1>
+  <p>登录链路已通；首页内容（行程驾驶舱 / 登机牌 Hero / 统计卡）将在套用 travel-os-home.html 时填上。</p>
+  <div class="actions">
+    <button class="btn-stamp" id="goTrips">查看我的行程</button>
+    <button class="link" id="logout">退出登录</button>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  if (!requireLogin('/login/')) {
+    // 已自动跳走
+  } else {
+    var user = getCurrentUser();
+    document.querySelector('h1').textContent =
+      '欢迎回来，' + (user && (user.displayName || user.username) || '旅行者') + ' · 首页待落地';
+    document.getElementById('goTrips').addEventListener('click', function () {
+      location.href = '/trips/';
+    });
+    document.getElementById('logout').addEventListener('click', function () {
+      apiPost('/auth/logout').catch(function () {});
+      clearAuth();
+      location.replace('/login/');
+    });
+  }
+</script>
+</body>
+</html>

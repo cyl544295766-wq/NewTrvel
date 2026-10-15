@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 我的旅行</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  :root {
+    --brand: #0D6E6E;
+    --brand-soft: #5BC5C0;
+    --mist: #DCF2F0;
+    --cloud: #F7FAFA;
+    --stamp: #FF8A4C;
+    --mute: #9BB0B5;
+    --ink: #123A3C;
+    --slab: "Fraunces", "Noto Sans SC", serif;
+    --grot: "Space Grotesk", "Noto Sans SC", sans-serif;
+    --card-shadow: 0 8px 24px rgba(13,110,110,0.10), 0 1px 2px rgba(13,110,110,0.06);
+
+    /* 状态色（登机牌 ribbon / 印章） */
+    --st-draft:     #8A9BA5;
+    --st-planning:  #C08A2E;
+    --st-active:    #1E9A6E;
+    --st-completed: #0D6E6E;
+    --st-archived:  #8A9BA5;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--grot); background: var(--cloud); color: var(--ink);
+    line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: #3D6A6C; text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: #3D6A6C; display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 52px; max-width: 1240px; }
+
+  .page-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 20px; flex-wrap: wrap;
+  }
+  h1 {
+    font-family: var(--slab); font-weight: 600; font-size: 36px; line-height: 1.15; color: var(--brand);
+  }
+  h1 .en {
+    display: block; font-size: 12px; font-family: var(--grot); font-weight: 500;
+    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px;
+  }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 12px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  .btn-new {
+    font-family: var(--grot); font-weight: 600; font-size: 15px; color: #fff;
+    background: var(--stamp); border: none; padding: 14px 26px; border-radius: 10px;
+    cursor: pointer; box-shadow: 0 6px 16px rgba(255,138,76,0.30);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .btn-new:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(255,138,76,0.38); }
+  .btn-new:active { transform: translateY(0); }
+  .btn-new:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
+
+  /* ===== 工具栏：筛选 + 搜索 ===== */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 28px;
+  }
+  .filters { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); }
+  .filters button {
+    font-family: var(--grot); font-size: 13.5px; color: #3D6A6C;
+    background: none; border: none; padding: 8px 16px; border-radius: 8px;
+    cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .filters button:hover { background: #F2FAF9; color: var(--brand); }
+  .filters button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+  .filters button .n { font-size: 11.5px; opacity: .72; margin-left: 3px; }
+
+  .search {
+    margin-left: auto; display: flex; align-items: center; gap: 9px;
+    background: #fff; padding: 0 16px; height: 42px; border-radius: 11px;
+    box-shadow: var(--card-shadow); min-width: 230px;
+  }
+  .search input {
+    border: none; outline: none; font-family: var(--grot); font-size: 14px;
+    color: var(--ink); background: none; width: 100%;
+  }
+  .search input::placeholder { color: var(--mute); }
+  .search .si { color: var(--mute); font-size: 15px; }
+
+  /* ===== 登机牌卡组 ===== */
+  .board {
+    margin-top: 22px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 24px;
+  }
+
+  .ticket {
+    background: #fff; border-radius: 15px;
+    display: grid; grid-template-columns: 1fr 128px;
+    position: relative; box-shadow: var(--card-shadow);
+    transition: transform .18s ease, box-shadow .18s ease;
+    cursor: pointer;
+  }
+  .ticket:hover { transform: translateY(-4px); box-shadow: 0 16px 36px rgba(13,110,110,0.16), 0 2px 4px rgba(13,110,110,0.08); }
+  .ticket:focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
+
+  .ticket .ribbon {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    border-radius: 15px 0 0 15px;
+  }
+
+  .ticket::before {
+    content: ""; position: absolute; top: 16px; bottom: 16px; right: 128px;
+    border-left: 1.5px dashed #C9E8E6;
+  }
+  .ticket::after {
+    content: ""; position: absolute; right: 121px; top: -8px;
+    width: 15px; height: 15px; background: var(--cloud); border-radius: 50%;
+    box-shadow: 0 calc(100% + 14px) 0 -0.5px var(--cloud);
+  }
+
+  .ticket-main { padding: 22px 24px 20px 26px; }
+
+  .route { display: flex; align-items: center; gap: 12px; }
+  .route .pt-name {
+    font-family: var(--slab); font-weight: 700; font-size: 25px; color: var(--brand);
+    letter-spacing: .01em; white-space: nowrap;
+  }
+  .route .line {
+    flex: 1; height: 1.5px; background: repeating-linear-gradient(90deg, var(--brand-soft) 0 5px, transparent 5px 10px);
+    position: relative; min-width: 26px;
+  }
+  .route .line::after {
+    content: "✈"; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%,-50%); font-size: 13px; color: var(--brand-soft);
+    background: #fff; padding: 0 5px;
+  }
+
+  .ticket-title { font-size: 15.5px; font-weight: 500; margin-top: 9px; }
+  .ticket-title .code {
+    font-size: 11px; letter-spacing: .14em; color: var(--stamp);
+    background: #FFF1E8; border-radius: 5px; padding: 2px 7px; margin-left: 8px;
+    font-weight: 600; vertical-align: 1px;
+  }
+
+  .dates {
+    display: inline-flex; align-items: stretch; margin-top: 16px;
+    border-radius: 9px; overflow: hidden; font-size: 12.5px; background: var(--mist);
+  }
+  .dates span { padding: 7px 12px; }
+  .dates .dep { background: var(--brand); color: #fff; font-weight: 500; }
+  .dates .arr { color: var(--brand); font-weight: 500; }
+  .dates .sep { padding: 7px 8px; color: var(--brand-soft); font-weight: 700; }
+
+  .ops {
+    display: flex; gap: 6px; margin-top: 16px;
+    opacity: 0; transform: translateY(4px);
+    transition: opacity .18s ease, transform .18s ease;
+    pointer-events: none;
+  }
+  .ticket:hover .ops, .ticket:focus-within .ops { opacity: 1; transform: none; pointer-events: auto; }
+  .ops button {
+    font-family: var(--grot); font-size: 12.5px; color: #3D6A6C;
+    background: #F5FBFB; border: none; padding: 6px 13px; border-radius: 7px;
+    cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .ops button:hover { background: var(--mist); color: var(--brand); }
+  .ops button.danger:hover { background: #FFEDE6; color: #D2542A; }
+
+  .stub {
+    background: var(--mist); border-radius: 0 15px 15px 0;
+    padding: 20px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .stamp-badge {
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    padding: 3px 10px; border-radius: 5px; border: 1.5px solid currentColor;
+    transform: rotate(-4deg); white-space: nowrap;
+  }
+  .st-draft     { color: var(--st-draft); }
+  .st-planning  { color: var(--st-planning); }
+  .st-active    { color: var(--st-active); }
+  .st-completed { color: var(--st-completed); }
+  .st-archived  { color: var(--st-archived); }
+
+  .stub .days-label { font-size: 10px; letter-spacing: .22em; color: var(--mute); margin-top: 4px; }
+  .stub .days {
+    font-family: var(--slab); font-weight: 700; font-size: 30px; color: var(--brand); line-height: 1;
+  }
+  .stub .days small { font-size: 12px; font-weight: 500; color: var(--brand-soft); }
+
+  .stub .fav {
+    margin-top: auto; width: 40px; height: 40px; border-radius: 50%;
+    border: 1.5px solid var(--brand-soft); background: #fff;
+    display: grid; place-items: center; cursor: pointer;
+    color: var(--brand-soft); font-size: 16px;
+    transition: all .16s ease;
+  }
+  .stub .fav:hover { border-color: var(--stamp); color: var(--stamp); }
+  .stub .fav[aria-pressed="true"] { border-color: var(--stamp); color: var(--stamp); background: #FFF1E8; }
+
+  .barcode {
+    position: absolute; left: 26px; bottom: 9px; width: 120px; height: 14px;
+    opacity: 0; transition: opacity .2s ease; pointer-events: none;
+    background: repeating-linear-gradient(90deg,
+      var(--brand-soft) 0 1.5px, transparent 1.5px 4px,
+      var(--brand-soft) 4px 6.5px, transparent 6.5px 9px,
+      var(--brand-soft) 9px 10px, transparent 10px 14px);
+  }
+  .ticket:hover .barcode { opacity: .55; }
+
+  .new-ticket {
+    border: 1.5px dashed #B9DEDC; border-radius: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 9px; min-height: 200px; background: rgba(255,255,255,0.6);
+    cursor: pointer;
+    text-decoration: none; color: var(--mute);
+    transition: border-color .18s, background .18s;
+  }
+  .new-ticket:hover { border-color: var(--brand-soft); background: #fff; }
+  .new-ticket .plus {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--mist);
+    color: var(--brand); display: grid; place-items: center; font-size: 22px;
+  }
+  .new-ticket .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--brand); }
+  .new-ticket .s { font-size: 12.5px; }
+
+  .empty {
+    grid-column: 1 / -1; background: #fff; border-radius: 15px;
+    text-align: center; padding: 62px 24px; box-shadow: var(--card-shadow);
+  }
+  .empty .ill { font-size: 46px; margin-bottom: 14px; }
+  .empty strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 22px; color: var(--brand); margin-bottom: 7px; }
+  .empty p { font-size: 14px; color: var(--mute); margin-bottom: 22px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+    background: #123A3C; color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 9px; box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 980px) { .board { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 24px 16px 40px; }
+    h1 { font-size: 28px; }
+    .search { margin-left: 0; width: 100%; }
+    .filters { width: 100%; overflow-x: auto; }
+    .ticket { grid-template-columns: 1fr 112px; }
+    .ticket::before { right: 112px; }
+    .ticket::after { right: 105px; }
+    .ops { opacity: 1; transform: none; pointer-events: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span><span class="dot"></span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>我的旅行<span class="en">Boarding Passes</span></h1>
+        <p class="meta">共 <b id="metaCount">0</b> 段旅程 · <b id="metaFav">0</b> 个收藏</p>
+      </div>
+      <button class="btn-new" id="btnNew">＋ 新建旅行</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="filters" role="group" aria-label="按状态筛选" id="filters">
+        <button data-status="all"      aria-pressed="true">全部<span class="n" data-count="all">0</span></button>
+        <button data-status="planning" aria-pressed="false">规划中<span class="n" data-count="planning">0</span></button>
+        <button data-status="active"   aria-pressed="false">进行中<span class="n" data-count="active">0</span></button>
+        <button data-status="completed" aria-pressed="false">已完成<span class="n" data-count="completed">0</span></button>
+        <button data-status="draft"     aria-pressed="false">草稿<span class="n" data-count="draft">0</span></button>
+        <button data-status="archived"  aria-pressed="false">已归档<span class="n" data-count="archived">0</span></button>
+      </div>
+      <label class="search">
+        <span class="si" aria-hidden="true">&#8981;</span>
+        <input type="search" placeholder="搜索目的地或旅程名称" aria-label="搜索旅程" id="search">
+      </label>
+    </div>
+
+    <section class="board" aria-label="旅程列表" id="board">
+      <p style="grid-column:1/-1;padding:48px 0;text-align:center;color:var(--mute);" id="loading">正在加载旅程…</p>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    // 侧栏折叠
+    var shell = document.querySelector('.shell');
+    var btn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+    }
+
+    var STATUS_LABEL = {
+      draft:     { label: '草稿',    cls: 'st-draft',     color: '#A8B6BE' },
+      planning:  { label: '规划中',  cls: 'st-planning',  color: '#C08A2E' },
+      active:    { label: '进行中',  cls: 'st-active',    color: '#1E9A6E' },
+      completed: { label: '已完成',  cls: 'st-completed', color: '#0D6E6E' },
+      archived:  { label: '已归档',  cls: 'st-archived',  color: '#8A9BA5' }
+    };
+
+    var board = document.getElementById('board');
+    var state = { trips: [], filter: 'all', search: '' };
+
+    function escapeHtml(s) {
+      return (s == null ? '' : String(s))
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function fmtDateShort(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      var mm = String(d.getMonth() + 1).padStart(2, '0');
+      var dd = String(d.getDate()).padStart(2, '0');
+      return mm + '/' + dd;
+    }
+    function daysBetween(start, end) {
+      if (!start || !end) return 0;
+      var a = new Date(start), b = new Date(end);
+      if (isNaN(a) || isNaN(b)) return 0;
+      return Math.max(1, Math.round((b - a) / 86400000));
+    }
+
+    function codeFor(trip) {
+      var d = (trip.destination || '').trim();
+      if (!d) return 'TRIP';
+      var first = Array.from(d)[0];
+      return first.toUpperCase() + ' · ' + d.slice(0, 6);
+    }
+
+    function renderTicket(t) {
+      var st = STATUS_LABEL[t.status] || STATUS_LABEL.draft;
+      var hasDays = t.startDate && t.endDate && t.status !== 'draft';
+      var days = hasDays ? daysBetween(t.startDate, t.endDate) : '–';
+      var depText = hasDays ? (fmtDateShort(t.startDate) + ' 出发') : '日期待定';
+      var arrText;
+      if (!t.destination) {
+        arrText = '目的地未设置';
+      } else if (hasDays) {
+        arrText = fmtDateShort(t.endDate) + ' 返回';
+      } else {
+        arrText = '目的地 ' + t.destination;
+      }
+      var codeText = t.status === 'draft' ? 'DRAFT' : codeFor(t);
+
+      return ''
+        + '<article class="ticket" data-id="' + escapeHtml(t.id) + '" tabindex="0">'
+        +   '<span class="ribbon" style="background:' + st.color + ';"></span>'
+        +   '<div class="ticket-main">'
+        +     '<div class="route">'
+        +       '<span class="pt-name">' + escapeHtml(t.destination || '待定') + '</span>'
+        +       '<span class="line" aria-hidden="true"></span>'
+        +     '</div>'
+        +     '<p class="ticket-title">' + escapeHtml(t.title || '未命名旅程') + '<span class="code">' + escapeHtml(codeText) + '</span></p>'
+        +     '<div class="dates" role="group" aria-label="行程日期">'
+        +       '<span class="dep">' + escapeHtml(depText) + '</span>'
+        +       '<span class="sep">→</span>'
+        +       '<span class="arr">' + escapeHtml(arrText) + '</span>'
+        +     '</div>'
+        +     '<div class="ops">'
+        +       '<button data-act="duplicate">复制</button>'
+        +       '<button class="danger" data-act="delete">删除</button>'
+        +       '<button data-act="share">分享</button>'
+        +     '</div>'
+        +     '<div class="barcode" aria-hidden="true"></div>'
+        +   '</div>'
+        +   '<div class="stub">'
+        +     '<span class="stamp-badge ' + st.cls + '">' + st.label + '</span>'
+        +     '<span class="days-label">DAYS</span>'
+        +     '<span class="days">' + (days === '–' ? '–' : days + '<small>天</small>') + '</span>'
+        +     '<button class="fav" aria-pressed="' + (t.isFavorite ? 'true' : 'false') + '" aria-label="' + (t.isFavorite ? '已收藏，点击取消收藏' : '点击收藏') + '" data-act="fav">' + (t.isFavorite ? '★' : '☆') + '</button>'
+        +   '</div>'
+        + '</article>';
+    }
+
+    function updateMeta() {
+      var total = state.trips.length;
+      var favCount = state.trips.filter(function (t) { return t.isFavorite; }).length;
+      document.getElementById('metaCount').textContent = total;
+      document.getElementById('metaFav').textContent = favCount;
+
+      var counts = { all: total, draft: 0, planning: 0, active: 0, completed: 0, archived: 0 };
+      state.trips.forEach(function (t) {
+        if (counts[t.status] != null) counts[t.status]++;
+      });
+      document.querySelectorAll('[data-count]').forEach(function (el) {
+        el.textContent = counts[el.getAttribute('data-count')] || 0;
+      });
+    }
+
+    function applyFilter() {
+      var q = state.search.trim().toLowerCase();
+      var rows = state.trips.filter(function (t) {
+        if (state.filter !== 'all' && t.status !== state.filter) return false;
+        if (!q) return true;
+        return (t.title || '').toLowerCase().indexOf(q) >= 0 ||
+               (t.destination || '').toLowerCase().indexOf(q) >= 0;
+      });
+
+      if (rows.length === 0) {
+        board.innerHTML =
+          '<div class="empty">'
+          + '<div class="ill">✈</div>'
+          + '<strong>还没有匹配的旅程</strong>'
+          + '<p>试试切换状态筛选，或者直接签发下一张</p>'
+          + '<button class="btn-new" id="emptyNew">＋ 新建旅程</button>'
+          + '</div>';
+        var eb = document.getElementById('emptyNew');
+        if (eb) eb.addEventListener('click', function () { location.href = '/trip-form/'; });
+        return;
+      }
+
+      var html = rows.map(renderTicket).join('');
+      html +=
+        '<a href="/trip-form/" class="new-ticket">'
+        +   '<span class="plus" aria-hidden="true">＋</span>'
+        +   '<span class="t">签发下一张</span>'
+        +   '<span class="s">定好出发日期就能填上</span>'
+        + '</a>';
+      board.innerHTML = html;
+    }
+
+    board.addEventListener('click', async function (e) {
+      var act = e.target.closest('button[data-act]');
+      if (act) {
+        var ticket = act.closest('.ticket');
+        if (!ticket) return;
+        e.stopPropagation();
+        var id = ticket.getAttribute('data-id');
+        try {
+          if (act.getAttribute('data-act') === 'fav') {
+            var on = act.getAttribute('aria-pressed') === 'true';
+            await apiPatch('/trips/' + id + '/favorite', {});
+            act.setAttribute('aria-pressed', on ? 'false' : 'true');
+            act.textContent = on ? '☆' : '★';
+            act.setAttribute('aria-label', on ? '点击收藏' : '已收藏，点击取消收藏');
+            var t = state.trips.find(function (x) { return x.id === id; });
+            if (t) t.isFavorite = !on;
+            updateMeta();
+            showToast(on ? '已取消收藏' : '已收藏');
+          } else if (act.getAttribute('data-act') === 'duplicate') {
+            showToast('正在复制…');
+            var dup = await apiPost('/trips/' + id + '/duplicate', {});
+            var newId = dup && (dup.id || (dup.trip && dup.trip.id));
+            showToast('已复制为新旅程');
+            if (newId) location.href = '/trip-detail/?id=' + encodeURIComponent(newId);
+            else await reload();
+          } else if (act.getAttribute('data-act') === 'delete') {
+            if (!confirm('删除该旅程？此操作不可撤销。')) return;
+            await apiDelete('/trips/' + id);
+            state.trips = state.trips.filter(function (x) { return x.id !== id; });
+            updateMeta();
+            applyFilter();
+            showToast('已删除');
+          } else if (act.getAttribute('data-act') === 'share') {
+            var url = location.origin + '/trip-detail/?id=' + encodeURIComponent(id);
+            try {
+              await navigator.clipboard.writeText(url);
+              showToast('链接已复制到剪贴板');
+            } catch (err) {
+              prompt('复制这个链接分享：', url);
+            }
+          }
+        } catch (err) {
+          showToast(humanError(err));
+        }
+        return;
+      }
+      var ticket = e.target.closest('.ticket');
+      if (ticket) {
+        var id2 = ticket.getAttribute('data-id');
+        location.href = '/trip-detail/?id=' + encodeURIComponent(id2);
+      }
+    });
+
+    async function reload() {
+      try {
+        var data = await apiGet('/trips');
+        state.trips = (data && data.trips) || [];
+        updateMeta();
+        applyFilter();
+      } catch (err) {
+        board.innerHTML =
+          '<div class="empty">'
+          + '<div class="ill">⚠</div>'
+          + '<strong>加载失败</strong>'
+          + '<p>' + escapeHtml(humanError(err)) + '</p>'
+          + '</div>';
+      }
+    }
+
+    document.querySelectorAll('#filters button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#filters button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        b.setAttribute('aria-pressed', 'true');
+        state.filter = b.getAttribute('data-status');
+        applyFilter();
+      });
+    });
+    document.getElementById('search').addEventListener('input', function (e) {
+      state.search = e.target.value || '';
+      applyFilter();
+    });
+
+    document.getElementById('btnNew').addEventListener('click', function () {
+      location.href = '/trip-form/';
+    });
+
+    reload();
+  })();
+</script>
+</body>
+</html>

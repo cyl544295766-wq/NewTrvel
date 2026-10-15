@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 账户设置</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架 ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none; transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1240px; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+
+  .layout { margin-top: 26px; display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .subnav { position: sticky; top: 26px; background: #fff; border-radius: 14px; box-shadow: var(--card-shadow); padding: 14px; }
+  .subnav .st { font-size: 11px; letter-spacing: .14em; color: var(--mute); text-transform: uppercase; margin: 0 6px 10px; }
+  .subnav a {
+    display: flex; align-items: center; gap: 10px; text-decoration: none;
+    font-size: 13.5px; color: var(--ink-2); border-radius: 9px; padding: 9px 11px;
+    transition: background .15s, color .15s;
+  }
+  .subnav a:hover { background: var(--cloud); color: var(--brand); }
+  .subnav a.on { background: var(--mist); color: var(--brand); font-weight: 600; }
+  .subnav a .nn { margin-left: auto; font-size: 11px; color: var(--mute); }
+
+  .panels { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .card { background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow); padding: 22px 24px; scroll-margin-top: 24px; }
+  .card .ct { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .card .ct small { font-family: var(--grot); font-weight: 400; font-size: 12px; color: var(--mute); }
+  .card.danger { border-left: 4px solid #D2543A; }
+  .pill-soon {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .04em; color: #8A5A16;
+    background: #FDF5E2; border: 1px solid #F0DFB9; border-radius: 999px; padding: 3px 10px;
+  }
+
+  /* ===== 资料大卡 ===== */
+  .hero-profile {
+    background: linear-gradient(125deg, #0D6E6E 0%, #14827F 55%, #1E9A93 100%);
+    border-radius: 16px; padding: 26px 28px; color: #fff;
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    box-shadow: 0 14px 36px rgba(13,110,110,.22); position: relative; overflow: hidden;
+  }
+  .hero-profile::after {
+    content: ""; position: absolute; right: -40px; top: -60px; width: 260px; height: 260px;
+    border-radius: 50%; background: rgba(255,255,255,.10);
+  }
+  .hp-avatar {
+    width: 76px; height: 76px; border-radius: 22px; flex: none;
+    background: rgba(255,255,255,.20); border: 2px solid rgba(255,255,255,.45);
+    display: grid; place-items: center;
+    font-family: var(--slab); font-weight: 700; font-size: 32px; color: #fff;
+  }
+  .hp-main { min-width: 0; position: relative; z-index: 1; }
+  .hp-name { font-family: var(--slab); font-weight: 600; font-size: 24px; line-height: 1.25; }
+  .hp-sub { font-size: 13px; color: rgba(255,255,255,.82); margin-top: 4px; }
+  .hp-tags { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .hp-tag {
+    font-size: 11.5px; color: #fff; background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 4px 12px;
+  }
+  .hp-tag.ok::before { content: "✓ "; }
+
+  /* ===== 信息网格 ===== */
+  .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+  .inf { min-width: 0; }
+  .inf .k { font-size: 11px; letter-spacing: .12em; color: var(--mute); text-transform: uppercase; }
+  .inf .v { font-family: var(--grot); font-weight: 600; font-size: 14.5px; color: var(--ink); margin-top: 4px; word-break: break-all; }
+  .inf .v.mono { font-family: var(--grot); font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .inf .v .state { color: #2A8055; }
+  .inf .hint { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
+
+  /* ===== 行项（设置行） ===== */
+  .row-item {
+    display: flex; align-items: center; gap: 14px; padding: 14px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .row-item:last-child { border-bottom: none; }
+  .row-item .ri-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 16px; flex: none; }
+  .row-item .ri-main { min-width: 0; flex: 1; }
+  .row-item .ri-t { font-size: 14px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row-item .ri-d { font-size: 12.5px; color: var(--mute); margin-top: 3px; line-height: 1.6; }
+  .row-item .ri-act { flex: none; }
+
+  .btn-primary-sm {
+    font-family: var(--grot); font-weight: 600; font-size: 13.5px; color: #fff;
+    background: var(--brand); border: none; border-radius: 10px; padding: 11px 22px;
+    cursor: pointer; box-shadow: 0 4px 12px rgba(13,110,110,.22); transition: transform .14s;
+  }
+  .btn-primary-sm:hover { transform: translateY(-1px); }
+  .btn-primary-sm:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 18px; cursor: pointer; transition: all .15s;
+  }
+  .btn-plain:hover { border-color: var(--brand-soft); color: var(--brand); }
+  .btn-plain:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-danger {
+    font-family: var(--grot); font-weight: 600; font-size: 13.5px; color: #fff;
+    background: #D2543A; border: none; border-radius: 10px; padding: 11px 22px;
+    cursor: pointer; transition: transform .14s, background .15s;
+  }
+  .btn-danger:hover { background: #BF4A32; transform: translateY(-1px); }
+  .btn-danger:disabled { background: #E3B3A6; cursor: not-allowed; transform: none; }
+
+  /* 待接入的禁用控件 */
+  .fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .fld label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .fld input, .fld select {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; outline: none; width: 100%;
+  }
+  .fld input:disabled, .fld select:disabled { color: #A8BEC0; background: #F4F8F8; cursor: not-allowed; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+
+  .notice {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: #FDF5E2; border: 1.5px solid #F0DFB9; border-radius: 11px;
+    padding: 12px 16px; font-size: 12.5px; color: #8A5A16; line-height: 1.65; margin-bottom: 16px;
+  }
+  .notice.info { background: var(--mist); border-color: #C7E5EA; color: #16595C; }
+
+  /* 开关（禁用态） */
+  .sw { position: relative; width: 42px; height: 24px; border-radius: 999px; background: #D5E5E3; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .sw.on { background: #A9CFCD; }
+  .sw.on::after { transform: translateX(18px); }
+  .sw.locked { opacity: .6; cursor: not-allowed; }
+
+  /* 危险区表单 */
+  .danger-form { display: flex; flex-direction: column; gap: 14px; max-width: 460px; }
+  .confirm-line { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; line-height: 1.6; }
+  .confirm-line input { margin-top: 3px; accent-color: #D2543A; width: 15px; height: 15px; flex: none; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99; max-width: 76vw;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 响应式 */
+  @media (max-width: 980px) {
+    main { padding: 28px 24px 50px; }
+    .layout { grid-template-columns: 1fr; }
+    .subnav { position: static; display: flex; gap: 6px; overflow-x: auto; }
+    .subnav .st { display: none; }
+    .subnav a { white-space: nowrap; }
+    .grid3 { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 50px; }
+    h1 { font-size: 27px; }
+    .info-grid, .grid3 { grid-template-columns: 1fr; }
+    .hero-profile { padding: 20px; gap: 16px; }
+    .hp-avatar { width: 58px; height: 58px; border-radius: 18px; font-size: 24px; }
+    .hp-name { font-size: 20px; }
+    .row-item { flex-wrap: wrap; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/" aria-current="page"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span><span class="dot"></span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <h1>账户设置<span class="en">Account</span></h1>
+
+    <div class="layout">
+      <nav class="subnav" id="subnav" aria-label="设置分组">
+        <div class="st">设置</div>
+        <a href="#sec-profile">账户资料</a>
+        <a href="#sec-security">安全与登录</a>
+        <a href="#sec-data">数据管理</a>
+        <a href="#sec-pref">偏好与显示<span class="nn">待接入</span></a>
+        <a href="#sec-danger">危险区</a>
+      </nav>
+
+      <div class="panels">
+
+        <!-- 资料大卡 -->
+        <section class="hero-profile" id="sec-profile">
+          <span class="hp-avatar" id="hpAvatar">A</span>
+          <div class="hp-main">
+            <div class="hp-name" id="hpName">…</div>
+            <div class="hp-sub" id="hpSub">@…</div>
+            <div class="hp-tags" id="hpTags"></div>
+          </div>
+        </section>
+
+        <!-- 账户信息 -->
+        <section class="card">
+          <div class="ct">账户资料 <small>· 来自 GET /api/auth/me</small></div>
+          <div class="info-grid" id="infoGrid">
+            <div class="inf"><div class="k">用户名</div><div class="v mono" id="iUsername">…</div><div class="hint">登录用，注册后不可修改</div></div>
+            <div class="inf"><div class="k">显示名</div><div class="v" id="iDisplay">…</div><div class="hint">用于行程成员、游记署名等场景</div></div>
+            <div class="inf"><div class="k">账户状态</div><div class="v" id="iStatus">…</div></div>
+            <div class="inf"><div class="k">注册时间</div><div class="v" id="iCreated">…</div></div>
+            <div class="inf"><div class="k">用户 ID</div><div class="v mono" id="iId">…</div></div>
+            <div class="inf"><div class="k">头像</div><div class="v" id="iAvatar">…</div><div class="hint">当前用显示名首字母占位</div></div>
+          </div>
+        </section>
+
+        <!-- 安全与登录 -->
+        <section class="card" id="sec-security">
+          <div class="ct">安全与登录</div>
+          <div class="row-item">
+            <span class="ri-ic" style="background:#DCF2F0;color:#0D6E6E;">🔑</span>
+            <div class="ri-main">
+              <div class="ri-t">登录会话</div>
+              <div class="ri-d">当前使用 Bearer Token 登录（有效期 7 天）。退出后会清除本地凭证，需要重新登录。</div>
+            </div>
+            <div class="ri-act"><button type="button" class="btn-plain" id="btnLogout">退出登录</button></div>
+          </div>
+          <div class="row-item">
+            <span class="ri-ic" style="background:#FDF5E2;color:#B8830F;">🔒</span>
+            <div class="ri-main">
+              <div class="ri-t">修改密码 <span class="pill-soon">待后端接入</span></div>
+              <div class="ri-d">后端目前没有提供修改密码接口，表单已保留但不可提交。</div>
+            </div>
+            <div class="ri-act"><button type="button" class="btn-plain" disabled>修改密码</button></div>
+          </div>
+        </section>
+
+        <!-- 数据管理 -->
+        <section class="card" id="sec-data">
+          <div class="ct">数据管理 <small>· 导出为 JSON，可离线留存</small></div>
+          <div class="row-item">
+            <span class="ri-ic" style="background:#E9F2FD;color:#2F6FB5;">⤓</span>
+            <div class="ri-main">
+              <div class="ri-t">导出我的旅行数据</div>
+              <div class="ri-d">拉取全部行程及其行程天、地点、费用、预订、清单、游记（照片仅导出说明与时间，不含图片本体）。</div>
+            </div>
+            <div class="ri-act"><button type="button" class="btn-primary-sm" id="btnExport">导出 JSON</button></div>
+          </div>
+          <div class="row-item">
+            <span class="ri-ic" style="background:#EEF2F5;color:#5B6B7C;">⤒</span>
+            <div class="ri-main">
+              <div class="ri-t">导入数据 <span class="pill-soon">待后端接入</span></div>
+              <div class="ri-d">批量导入需要后端提供写入接口，暂未开放。</div>
+            </div>
+            <div class="ri-act"><button type="button" class="btn-plain" disabled>导入</button></div>
+          </div>
+        </section>
+
+        <!-- 偏好（待接入） -->
+        <section class="card" id="sec-pref">
+          <div class="ct">偏好与显示 <span class="pill-soon">待后端接入</span></div>
+          <div class="notice">
+            <span>⚠</span>
+            <span>这些偏好需要服务端保存（当前后端没有用户设置接口），所以控件已置灰、不会提交。等接口就绪后可直接启用。</span>
+          </div>
+          <div class="grid3">
+            <div class="fld"><label>主题</label>
+              <select disabled><option>跟随系统</option><option>浅色</option><option>深色</option></select></div>
+            <div class="fld"><label>时区</label>
+              <select disabled><option>Asia/Shanghai (UTC+8)</option><option>Asia/Tokyo (UTC+9)</option></select></div>
+            <div class="fld"><label>距离单位</label>
+              <select disabled><option>公里 km</option><option>英里 mi</option></select></div>
+            <div class="fld"><label>默认货币</label>
+              <select disabled><option>CNY ¥ 人民币</option><option>USD $ 美元</option><option>EUR € 欧元</option></select></div>
+            <div class="fld"><label>日期格式</label>
+              <select disabled><option>2026年7月24日</option><option>2026/07/24</option><option>07/24/2026</option></select></div>
+            <div class="fld"><label>一周起始日</label>
+              <select disabled><option>周一</option><option>周日</option></select></div>
+          </div>
+          <div class="row-item" style="margin-top:8px;">
+            <span class="ri-ic" style="background:#FDEFF2;color:#C2566C;">🔔</span>
+            <div class="ri-main">
+              <div class="ri-t">通知偏好</div>
+              <div class="ri-d">行前提醒 / 文档到期 / 成员邀请 / 每周摘要 —— 目前所有提醒都由后端默认规则触发。</div>
+            </div>
+            <div class="ri-act"><span class="sw on locked" title="待后端接入"></span></div>
+          </div>
+        </section>
+
+        <!-- 危险区 -->
+        <section class="card danger" id="sec-danger">
+          <div class="ct" style="color:#D2543A;">危险区</div>
+          <div class="notice">
+            <span>⚠</span>
+            <span>注销是<b>不可逆</b>操作：账户会被停用、立即清除登录凭证，你创建的所有行程将无法再访问。</span>
+          </div>
+          <div class="danger-form">
+            <div class="fld">
+              <label for="dfPassword">请输入登录密码以确认</label>
+              <input type="password" id="dfPassword" placeholder="当前账户密码" autocomplete="current-password">
+            </div>
+            <label class="confirm-line">
+              <input type="checkbox" id="dfConfirm">
+              <span>我已了解此操作会停用账户并清除登录凭证，且不可撤销</span>
+            </label>
+            <div>
+              <button type="button" class="btn-danger" id="btnDeactivate" disabled>注销我的账户</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+    }
+    var $ = function (id) { return document.getElementById(id); };
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      return isNaN(d) ? '—' : (d.getFullYear() + ' 年 ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日');
+    }
+    var STATUS_LABEL = { active: '正常使用中', disabled: '已禁用', deleted: '已注销' };
+
+    /* ===== 资料 ===== */
+    async function loadMe() {
+      try {
+        var d = await apiGet('/auth/me');
+        var u = d && d.user;
+        if (!u) throw new Error('no user');
+        setAuth(getToken(), u);   /* 同步本地缓存，保持侧栏与资料一致 */
+        renderProfile(u);
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    function renderProfile(u) {
+      var name = u.displayName || u.username || '旅行者';
+      var initial = name.charAt(0).toUpperCase();
+      $('hpAvatar').textContent = initial;
+      $('hpName').textContent = name;
+      $('hpSub').textContent = '@' + (u.username || '—') + ' · 注册于 ' + fmtDate(u.createdAt);
+      $('hpTags').innerHTML = ''
+        + '<span class="hp-tag ok">账户' + (STATUS_LABEL[u.status] || u.status || '正常') + '</span>'
+        + (u.username ? '<span class="hp-tag">@' + escapeHtml(u.username) + '</span>' : '');
+
+      document.getElementById('who').textContent = name;
+      document.getElementById('avatar').textContent = initial;
+
+      $('iUsername').textContent = u.username || '—';
+      $('iDisplay').textContent = u.displayName || '—';
+      $('iStatus').innerHTML = '<span class="state">' + escapeHtml(STATUS_LABEL[u.status] || u.status || '—') + '</span>';
+      $('iCreated').textContent = fmtDate(u.createdAt);
+      $('iId').textContent = u.id || '—';
+      $('iAvatar').textContent = u.avatarUrl ? '已设置图片' : '未设置（首字母占位）';
+    }
+
+    /* ===== 子导航高亮 ===== */
+    var links = Array.prototype.slice.call(document.querySelectorAll('.subnav a'));
+    var targets = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+    function onScroll() {
+      var best = 0;
+      targets.forEach(function (el, i) {
+        if (el && el.getBoundingClientRect().top <= 130) best = i;
+      });
+      links.forEach(function (a, i) { a.classList.toggle('on', i === best); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    /* ===== 退出登录 ===== */
+    $('btnLogout').addEventListener('click', async function () {
+      if (!confirm('退出当前账户？需要重新登录才能继续使用。')) return;
+      try { await apiPost('/auth/logout', {}); } catch (e) { /* 即使失败也清理本地 */ }
+      clearAuth();
+      showToast('已退出，正在返回登录页…');
+      setTimeout(function () { location.replace('/login/'); }, 700);
+    });
+
+    /* ===== 导出数据 ===== */
+    $('btnExport').addEventListener('click', async function () {
+      var b = $('btnExport');
+      b.disabled = true; b.textContent = '正在导出…';
+      try {
+        var tripsRes = await apiGet('/trips');
+        var trips = (tripsRes && tripsRes.trips) || [];
+        var out = {
+          exportedAt: new Date().toISOString(),
+          account: { username: (user.username || ''), displayName: (user.displayName || '') },
+          tripCount: trips.length,
+          trips: []
+        };
+        for (var i = 0; i < trips.length; i++) {
+          var t = trips[i];
+          b.textContent = '正在导出 ' + (i + 1) + '/' + trips.length + '…';
+          var pack = { trip: t };
+          var r = await Promise.allSettled([
+            apiGet('/trips/' + t.id + '/days'),
+            apiGet('/trips/' + t.id + '/expenses'),
+            apiGet('/trips/' + t.id + '/bookings'),
+            apiGet('/trips/' + t.id + '/packing-lists'),
+            apiGet('/trips/' + t.id + '/journals'),
+            apiGet('/trips/' + t.id + '/photos'),
+            apiGet('/trips/' + t.id + '/documents'),
+            apiGet('/trips/' + t.id + '/members')
+          ]);
+          function ok(j) { return r[j].status === 'fulfilled' ? r[j].value : null; }
+          var days = ok(0), exp = ok(1), bk = ok(2), pk = ok(3), jr = ok(4), ph = ok(5), dc = ok(6), mb = ok(7);
+          pack.days = (days && days.days) || [];
+          pack.expenses = (exp && exp.expenses) || [];
+          pack.expenseSummary = (exp && exp.summary) || null;
+          pack.bookings = (bk && bk.bookings) || [];
+          pack.packingLists = (pk && pk.packingLists) || [];
+          pack.journals = (jr && jr.journals) || [];
+          /* 照片/文档只导出元信息，避免把 base64 图片塞进导出文件 */
+          pack.photos = ((ph && ph.photos) || []).map(function (p) {
+            return { id: p.id, caption: p.caption, shotAt: p.shotAt, isCover: p.isCover, tripDayId: p.tripDayId, tripPlaceId: p.tripPlaceId };
+          });
+          pack.documents = ((dc && dc.documents) || []).map(function (d) {
+            return { id: d.id, type: d.type, title: d.title, notes: d.notes, expiredAt: d.expiredAt, isReminder: d.isReminder };
+          });
+          pack.members = (mb && mb.members) || [];
+          out.trips.push(pack);
+        }
+        var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a');
+        var stamp = new Date().toISOString().slice(0, 10);
+        a.href = URL.createObjectURL(blob);
+        a.download = 'travel-os-export-' + stamp + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        showToast('已导出 ' + trips.length + ' 个行程的数据');
+      } catch (err) {
+        showToast(humanError(err));
+      }
+      b.disabled = false; b.textContent = '导出 JSON';
+    });
+
+    /* ===== 危险区：按钮启用条件 ===== */
+    function syncDanger() {
+      var hasPwd = $('dfPassword').value.length > 0;
+      var checked = $('dfConfirm').checked;
+      $('btnDeactivate').disabled = !(hasPwd && checked);
+    }
+    $('dfPassword').addEventListener('input', syncDanger);
+    $('dfConfirm').addEventListener('change', syncDanger);
+    syncDanger();
+
+    $('btnDeactivate').addEventListener('click', async function () {
+      if (!confirm('最后确认：真的要注销账户吗？此操作不可撤销。')) return;
+      var b = $('btnDeactivate');
+      b.disabled = true; b.textContent = '正在注销…';
+      try {
+        await apiPost('/auth/deactivate', { password: $('dfPassword').value });
+        clearAuth();
+        alert('账户已注销，登录凭证已清除。');
+        location.replace('/login/');
+      } catch (err) {
+        showToast(humanError(err));
+        b.disabled = false; b.textContent = '注销我的账户';
+      }
+    });
+
+    loadMe();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 旅行统计</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架 ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none; transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1240px; }
+  .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  .year-pill { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); }
+  .year-pill button {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: none; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .year-pill button:hover { background: #F2FAF9; color: var(--brand); }
+  .year-pill button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+
+  /* ===== 统计卡 ===== */
+  .stats4 { margin-top: 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .sc {
+    background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow);
+    padding: 18px 22px; position: relative; overflow: hidden;
+  }
+  .sc .ic { position: absolute; right: 16px; top: 14px; font-size: 22px; opacity: .5; }
+  .sc .k { font-size: 12px; color: var(--mute); letter-spacing: .04em; }
+  .sc .v { font-family: var(--grot); font-weight: 600; font-size: 27px; color: var(--ink); margin-top: 8px; line-height: 1.15; }
+  .sc .v small { font-size: 14px; color: var(--mute); font-weight: 500; margin-left: 3px; }
+  .sc .foot { font-size: 12px; color: var(--mute); margin-top: 8px; }
+  .sc .foot b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 图表区 ===== */
+  .grid2 { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow); padding: 20px 24px; }
+  .card .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--ink); margin-bottom: 16px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .card .t small { font-family: var(--grot); font-weight: 400; font-size: 12px; color: var(--mute); }
+  .chart-empty { padding: 34px 0; text-align: center; color: var(--mute); font-size: 13px; }
+
+  /* 年对比 */
+  .bars { display: flex; align-items: flex-end; gap: 26px; height: 190px; padding: 6px 4px 0; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .bar-pair { display: flex; align-items: flex-end; gap: 7px; height: 138px; }
+  .bar { width: 26px; border-radius: 7px 7px 3px 3px; position: relative; transition: height .5s cubic-bezier(.4,0,.2,1); }
+  .bar.trip { background: linear-gradient(180deg, var(--brand-soft), var(--brand)); }
+  .bar.day { background: linear-gradient(180deg, #F3B596, var(--stamp)); }
+  .bar .num { position: absolute; top: -19px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .bar-col .lab { font-family: var(--grot); font-weight: 600; font-size: 13px; color: var(--ink); }
+  .bar-col .sub { font-size: 11px; color: var(--mute); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--mute); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  /* 月度 */
+  .months { display: flex; align-items: flex-end; gap: 6px; height: 190px; padding-top: 20px; }
+  .mo { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+  .mo .mbar { width: 100%; max-width: 30px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, var(--brand-soft), var(--brand)); transition: height .5s cubic-bezier(.4,0,.2,1); }
+  .mo .mnum { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+  .mo .mlab { font-size: 10px; color: var(--mute); white-space: nowrap; transform: scale(.92); }
+  .mo.has .mlab { color: var(--brand); font-weight: 600; }
+
+  /* 分类环形 */
+  .donut-wrap { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .donut-wrap svg { transform: rotate(-90deg); flex: none; }
+  .cat-list { flex: 1; min-width: 190px; display: flex; flex-direction: column; gap: 9px; }
+  .cat-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+  .cat-row .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .cat-row .nm { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-row .am { font-family: var(--grot); font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .cat-row .pc { color: var(--mute); font-size: 11px; margin-left: 6px; }
+
+  /* 亮点卡 */
+  .highlights { display: flex; flex-direction: column; gap: 14px; }
+  .hl { display: flex; align-items: center; gap: 16px; background: var(--cloud); border-radius: 12px; padding: 16px 18px; }
+  .hl .ic2 { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 20px; flex: none; }
+  .hl .k { font-size: 11.5px; color: var(--mute); letter-spacing: .08em; }
+  .hl .v { font-family: var(--slab); font-weight: 600; font-size: 20px; color: var(--ink); margin-top: 3px; }
+  .hl .sub { font-size: 12px; color: var(--mute); margin-top: 2px; }
+
+  /* 年度明细表 */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th {
+    text-align: left; font-size: 11px; letter-spacing: .1em; color: var(--mute);
+    text-transform: uppercase; font-weight: 600; padding: 0 10px 10px 0; border-bottom: 1px solid var(--line);
+  }
+  .tbl td { padding: 12px 10px 12px 0; border-bottom: 1px dashed var(--line); color: var(--ink-2); }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl .yr { font-family: var(--grot); font-weight: 600; color: var(--ink); }
+  .tbl .num { font-family: var(--grot); font-weight: 600; color: var(--ink); text-align: right; }
+  .tbl th.num { text-align: right; }
+  .mini { display: flex; align-items: center; gap: 10px; min-width: 120px; }
+  .mini .track { flex: 1; height: 8px; border-radius: 999px; background: #EDF5F4; overflow: hidden; }
+  .mini .track i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--brand-soft), var(--brand)); }
+  .mini.orange .track i { background: linear-gradient(90deg, #F3B596, var(--stamp)); }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99; max-width: 76vw;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 响应式 */
+  @media (max-width: 1024px) {
+    .stats4 { grid-template-columns: 1fr 1fr; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 980px) { main { padding: 28px 24px 50px; } }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 50px; }
+    h1 { font-size: 27px; }
+    .stats4 { grid-template-columns: 1fr 1fr; }
+    .months { gap: 3px; }
+    .mo .mlab { transform: scale(.8); }
+    .bar { width: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/" aria-current="page"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span><span class="dot"></span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>旅行统计<span class="en">Travel Stats</span></h1>
+        <p class="meta" id="pageMeta">正在统计…</p>
+      </div>
+      <div class="year-pill" id="yearPill" role="group" aria-label="年份切换"></div>
+    </div>
+
+    <!-- 4 统计卡 -->
+    <section class="stats4">
+      <div class="sc">
+        <span class="ic">🧭</span>
+        <div class="k">旅行次数</div>
+        <div class="v" id="sTrips">0 <small>次</small></div>
+        <div class="foot" id="sTripsFoot">—</div>
+      </div>
+      <div class="sc">
+        <span class="ic">💰</span>
+        <div class="k">累计花费</div>
+        <div class="v" id="sCost">–</div>
+        <div class="foot" id="sCostFoot">—</div>
+      </div>
+      <div class="sc">
+        <span class="ic">📅</span>
+        <div class="k">累计天数</div>
+        <div class="v" id="sDays">0 <small>天</small></div>
+        <div class="foot" id="sDaysFoot">—</div>
+      </div>
+      <div class="sc">
+        <span class="ic">📍</span>
+        <div class="k">到访目的地</div>
+        <div class="v" id="sDest">0 <small>个</small></div>
+        <div class="foot" id="sDestFoot">—</div>
+      </div>
+    </section>
+
+    <!-- 图表区 -->
+    <div class="grid2">
+      <div class="card">
+        <div class="t">年度对比 <small>· 次数 / 天数（柱）</small></div>
+        <div id="chartYear"></div>
+      </div>
+      <div class="card">
+        <div class="t">月度分布 <small id="monthSub"></small></div>
+        <div id="chartMonth"></div>
+      </div>
+      <div class="card">
+        <div class="t">费用分类 <small>· 占比</small></div>
+        <div id="chartCat"></div>
+      </div>
+      <div class="card">
+        <div class="t">年度亮点</div>
+        <div class="highlights" id="highlights"></div>
+      </div>
+    </div>
+
+    <!-- 年度明细 -->
+    <div class="card" style="margin-top:16px;">
+      <div class="t">年度明细 <small>· 全部年份</small></div>
+      <div id="yearTable"></div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+
+    var CAT_COLORS = {
+      transport: '#2F6FB5', hotel: '#B8830F', food: '#C1704A', ticket: '#C2566C',
+      parking: '#5B6B7C', shopping: '#6B4FC0', maintenance: '#4A5A66',
+      activity: '#2A8055', other: '#0D6E6E'
+    };
+    var $ = function (id) { return document.getElementById(id); };
+    var state = { year: null, overview: null, yearly: null, monthly: null, cats: null };
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function money(v) {
+      var n = Number(v);
+      if (isNaN(n)) return '¥ –';
+      return '¥ ' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    function num(v) { var n = Number(v); return isNaN(n) ? 0 : n; }
+
+    /* ===== 加载 ===== */
+    async function boot() {
+      try {
+        var ov = await apiGet('/stats/overview');
+        state.overview = ov || {};
+        var years = (ov && ov.availableYears) || [];
+        state.year = years.length ? String(years[0]) : String(new Date().getFullYear());
+        buildYearPill(years.length ? years : [new Date().getFullYear()]);
+        await loadYear(state.year);
+        renderYearTable();
+      } catch (err) {
+        showToast(humanError(err));
+        $('pageMeta').textContent = '统计加载失败，请刷新重试';
+      }
+    }
+
+    async function loadYear(year) {
+      var results = await Promise.allSettled([
+        apiGet('/stats/yearly?year=' + encodeURIComponent(year)),
+        apiGet('/stats/monthly?year=' + encodeURIComponent(year)),
+        apiGet('/stats/expense-categories')
+      ]);
+      state.yearly = results[0].status === 'fulfilled' ? results[0].value : null;
+      state.monthly = results[1].status === 'fulfilled' ? results[1].value : null;
+      state.cats = results[2].status === 'fulfilled' ? results[2].value : null;
+      renderStats();
+      renderYearChart();
+      renderMonthChart();
+      renderCatChart();
+      renderHighlights();
+    }
+
+    /* ===== 年份 pill ===== */
+    function buildYearPill(years) {
+      $('yearPill').innerHTML = years.map(function (y) {
+        return '<button type="button" data-y="' + y + '" aria-pressed="' + (String(y) === state.year) + '">' + y + '</button>';
+      }).join('');
+    }
+    $('yearPill').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.year = b.getAttribute('data-y');
+      $('yearPill').querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      loadYear(state.year);
+    });
+
+    /* ===== 统计卡 ===== */
+    function renderStats() {
+      var y = state.yearly || {};
+      $('sTrips').innerHTML = num(y.tripCount) + ' <small>次</small>';
+      $('sCost').textContent = money(y.totalExpenseAmount);
+      $('sDays').innerHTML = num(y.totalDays) + ' <small>天</small>';
+      $('sDest').innerHTML = num(y.destinationCount) + ' <small>个</small>';
+
+      $('sTripsFoot').innerHTML = y.busiestMonth && y.busiestMonth.label
+        ? '最忙的月份 <b>' + escapeHtml(y.busiestMonth.label) + '</b>'
+        : '还没有行程记录';
+      $('sCostFoot').innerHTML = num(y.tripCount) > 0
+        ? '平均每趟 <b>' + money(y.averageExpensePerTrip) + '</b>'
+        : '—';
+      $('sDaysFoot').innerHTML = num(y.tripCount) > 0
+        ? '平均每趟 <b>' + num(y.averageTripDays) + ' 天</b>'
+        : '—';
+      $('sDestFoot').innerHTML = y.mostVisitedDestination && y.mostVisitedDestination.label
+        ? '最常去 <b>' + escapeHtml(y.mostVisitedDestination.label) + '</b>'
+        : '—';
+
+      $('pageMeta').innerHTML = '<b>' + state.year + ' 年</b> · 共 ' + num(y.tripCount) + ' 次旅行 · '
+        + num(y.totalDays) + ' 天在路上';
+      $('monthSub').textContent = '· ' + state.year + ' 年';
+    }
+
+    /* ===== 年度对比：双柱（次数 / 天数） ===== */
+    function renderYearChart() {
+      var rows = (state.overview && state.overview.yearlyComparison) || [];
+      var box = $('chartYear');
+      if (!rows.length) {
+        box.innerHTML = '<div class="chart-empty">还没有可对比的年份</div>';
+        return;
+      }
+      var maxTrip = Math.max.apply(null, rows.map(function (r) { return num(r.tripCount); })) || 1;
+      var maxDays = Math.max.apply(null, rows.map(function (r) { return num(r.totalDays); })) || 1;
+      box.innerHTML = ''
+        + '<div class="bars">'
+        + rows.map(function (r) {
+            var ht = Math.max(4, Math.round(num(r.tripCount) / maxTrip * 132));
+            var hd = Math.max(4, Math.round(num(r.totalDays) / maxDays * 132));
+            return '<div class="bar-col">'
+              + '<div class="bar-pair">'
+              +   '<div class="bar trip" style="height:' + ht + 'px;"><span class="num">' + num(r.tripCount) + '</span></div>'
+              +   '<div class="bar day" style="height:' + hd + 'px;"><span class="num">' + num(r.totalDays) + '</span></div>'
+              + '</div>'
+              + '<span class="lab">' + r.year + '</span>'
+              + '<span class="sub">' + money(r.totalExpenseAmount) + '</span>'
+              + '</div>';
+          }).join('')
+        + '</div>'
+        + '<div class="legend">'
+        +   '<span><i style="background:var(--brand)"></i>旅行次数</span>'
+        +   '<span><i style="background:var(--stamp)"></i>天数</span>'
+        + '</div>';
+    }
+
+    /* ===== 月度分布 ===== */
+    function renderMonthChart() {
+      var ms = (state.monthly && state.monthly.months) || [];
+      var box = $('chartMonth');
+      if (!ms.length) {
+        box.innerHTML = '<div class="chart-empty">该年度暂无数据</div>';
+        return;
+      }
+      var max = Math.max.apply(null, ms.map(function (m) { return num(m.totalDays); })) || 1;
+      box.innerHTML = '<div class="months">' + ms.map(function (m) {
+        var has = num(m.tripCount) > 0;
+        var h = has ? Math.max(8, Math.round(num(m.totalDays) / max * 140)) : 4;
+        return '<div class="mo' + (has ? ' has' : '') + '" title="' + m.label + '：' + num(m.tripCount) + ' 次 / ' + num(m.totalDays) + ' 天">'
+          + '<span class="mnum">' + (has ? num(m.totalDays) : '') + '</span>'
+          + '<span class="mbar" style="height:' + h + 'px;' + (has ? '' : 'background:#E6F0EF;') + '"></span>'
+          + '<span class="mlab">' + String(m.label).replace('月', '') + '</span>'
+          + '</div>';
+      }).join('') + '</div>';
+    }
+
+    /* ===== 费用分类环形 ===== */
+    function renderCatChart() {
+      var d = state.cats || { categories: [], totalExpenseAmount: '0.00' };
+      var rows = (d.categories || []).filter(function (c) { return num(c.amount) > 0; });
+      var box = $('chartCat');
+      if (!rows.length) {
+        box.innerHTML = '<div class="chart-empty">还没有费用记录<br><span style="font-size:12px;">在行程的「费用记账」里记一笔，这里就会出现分类占比</span></div>';
+        return;
+      }
+      var total = num(d.totalExpenseAmount);
+      var R = 50, C = 2 * Math.PI * R, off = 0;
+      var segs = rows.map(function (c) {
+        var frac = total > 0 ? num(c.amount) / total : 0;
+        var len = frac * C;
+        var col = CAT_COLORS[c.category] || '#8A9BA5';
+        var seg = '<circle cx="68" cy="68" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="22" stroke-dasharray="'
+          + Math.max(0, len - 2).toFixed(1) + ' ' + (C - len + 2).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+        off += len;
+        return seg;
+      }).join('');
+      box.innerHTML = ''
+        + '<div class="donut-wrap">'
+        +   '<svg width="136" height="136" viewBox="0 0 136 136">' + segs
+        +     '<text x="68" y="64" text-anchor="middle" font-size="10" fill="#9BB0B5" transform="rotate(90 68 68)">总计</text>'
+        +     '<text x="68" y="80" text-anchor="middle" font-size="14" font-weight="600" fill="#123A3C" transform="rotate(90 68 68)">' + money(total) + '</text>'
+        +   '</svg>'
+        +   '<div class="cat-list">' + rows.map(function (c) {
+              return '<div class="cat-row">'
+                + '<span class="dot" style="background:' + (CAT_COLORS[c.category] || '#8A9BA5') + '"></span>'
+                + '<span class="nm">' + escapeHtml(c.label) + '</span>'
+                + '<span class="am">' + money(c.amount) + '<span class="pc">' + num(c.percentage).toFixed(1) + '%</span></span>'
+                + '</div>';
+            }).join('') + '</div>'
+        + '</div>';
+    }
+
+    /* ===== 年度亮点 ===== */
+    function renderHighlights() {
+      var y = state.yearly || {};
+      var box = $('highlights');
+      var mv = y.mostVisitedDestination || null;
+      var bm = y.busiestMonth || null;
+      box.innerHTML = ''
+        + '<div class="hl">'
+        +   '<span class="ic2" style="background:#FDEFF2;color:#C2566C;">📍</span>'
+        +   '<div><div class="k">最常去的地方</div>'
+        +     '<div class="v">' + (mv && mv.label ? escapeHtml(mv.label) : '—') + '</div>'
+        +     '<div class="sub">' + (mv && mv.count ? ('去过 ' + mv.count + ' 次') : '还没有记录') + '</div></div>'
+        + '</div>'
+        + '<div class="hl">'
+        +   '<span class="ic2" style="background:#FDF5E2;color:#B8830F;">🔥</span>'
+        +   '<div><div class="k">最忙的月份</div>'
+        +     '<div class="v">' + (bm && bm.label ? escapeHtml(bm.label) : '—') + '</div>'
+        +     '<div class="sub">' + (bm && bm.count ? ('当月 ' + bm.count + ' 次出发') : '还没有记录') + '</div></div>'
+        + '</div>'
+        + '<div class="hl">'
+        +   '<span class="ic2" style="background:#DCF2F0;color:#0D6E6E;">⏱</span>'
+        +   '<div><div class="k">单次平均时长</div>'
+        +     '<div class="v">' + num(y.averageTripDays) + ' 天</div>'
+        +     '<div class="sub">' + (num(y.tripCount) > 0 ? ('共 ' + num(y.totalDays) + ' 天在路上') : '—') + '</div></div>'
+        + '</div>';
+    }
+
+    /* ===== 年度明细表 ===== */
+    function renderYearTable() {
+      var rows = (state.overview && state.overview.yearlyComparison) || [];
+      var box = $('yearTable');
+      if (!rows.length) {
+        box.innerHTML = '<div class="chart-empty">还没有年度数据</div>';
+        return;
+      }
+      var sorted = rows.slice().sort(function (a, b) { return b.year - a.year; });
+      var maxTrip = Math.max.apply(null, sorted.map(function (r) { return num(r.tripCount); })) || 1;
+      var maxDays = Math.max.apply(null, sorted.map(function (r) { return num(r.totalDays); })) || 1;
+      var maxCost = Math.max.apply(null, sorted.map(function (r) { return num(r.totalExpenseAmount); })) || 1;
+      box.innerHTML = ''
+        + '<table class="tbl">'
+        + '<thead><tr><th>年份</th><th>旅行次数</th><th>天数</th><th class="num">花费</th><th>对比</th></tr></thead>'
+        + '<tbody>' + sorted.map(function (r) {
+            return '<tr data-year="' + r.year + '">'
+              + '<td class="yr">' + r.year + '</td>'
+              + '<td>' + num(r.tripCount) + ' 次</td>'
+              + '<td>' + num(r.totalDays) + ' 天</td>'
+              + '<td class="num">' + money(r.totalExpenseAmount) + '</td>'
+              + '<td>'
+              +   '<div class="mini"><span class="track"><i style="width:' + (num(r.tripCount) / maxTrip * 100).toFixed(0) + '%"></i></span><span style="font-size:11px;color:var(--mute);">次</span></div>'
+              +   '<div class="mini" style="margin-top:6px;"><span class="track"><i style="width:' + (num(r.totalDays) / maxDays * 100).toFixed(0) + '%;background:linear-gradient(90deg,#9BE0DC,#0D6E6E)"></i></span><span style="font-size:11px;color:var(--mute);">天</span></div>'
+              +   '<div class="mini orange" style="margin-top:6px;"><span class="track"><i style="width:' + (num(r.totalExpenseAmount) / maxCost * 100).toFixed(0) + '%"></i></span><span style="font-size:11px;color:var(--mute);">¥</span></div>'
+              + '</td>'
+              + '</tr>';
+          }).join('') + '</tbody></table>';
+    }
+
+    /* 点表格某年 → 切到该年 */
+    $('yearTable').addEventListener('click', function (e) {
+      var tr = e.target.closest('tr[data-year]');
+      if (!tr) return;
+      var y = tr.getAttribute('data-year');
+      var btn = $('yearPill').querySelector('button[data-y="' + y + '"]');
+      if (btn) btn.click();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    boot();
+  })();
+</script>
+</body>
+</html>

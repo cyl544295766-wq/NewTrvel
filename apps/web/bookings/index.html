@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 预订管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架 ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1320px; }
+  .crumb { font-size: 13px; color: var(--mute); display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .crumb a { color: var(--mute); text-decoration: none; }
+  .crumb a:hover { color: var(--brand); }
+  .crumb b { color: var(--brand); font-weight: 600; }
+  .page-head { margin-top: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+  .btn-add {
+    font-family: var(--grot); font-weight: 600; font-size: 14.5px; color: #fff;
+    background: var(--stamp); border: none; padding: 13px 24px; border-radius: 10px;
+    cursor: pointer; box-shadow: 0 6px 16px rgba(255,138,76,0.30);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .btn-add:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(255,138,76,0.38); }
+
+  /* ===== 工具栏 ===== */
+  .toolbar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .filters { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); flex-wrap: wrap; }
+  .filters button {
+    font-family: var(--grot); font-size: 13px; color: var(--ink-2);
+    background: none; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .filters button:hover { background: #F2FAF9; color: var(--brand); }
+  .filters button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+  .filters button .n { font-size: 11px; opacity: .72; margin-left: 3px; }
+  .rem-note {
+    margin-left: auto; font-size: 12.5px; color: #8A5A16; background: #FDF5E2;
+    border: 1px solid #F0DFB9; border-radius: 999px; padding: 7px 15px;
+  }
+  .rem-note.ok { color: #2A8055; background: #E9F8EE; border-color: #C9E6D3; }
+
+  /* ===== 表单面板 ===== */
+  .form-panel {
+    margin-top: 20px; background: #fff; border-radius: var(--r-card, 14px);
+    box-shadow: var(--card-shadow); padding: 22px 24px; border-top: 3px solid var(--stamp);
+  }
+  .form-panel[hidden] { display: none; }
+  .fp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .fp-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .fp-head .x { margin-left: auto; width: 30px; height: 30px; border: none; background: var(--cloud); border-radius: 8px; color: var(--mute); cursor: pointer; font-size: 14px; }
+  .type-tabs { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 18px; }
+  .type-tabs button {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 8px 17px; cursor: pointer; transition: all .14s;
+  }
+  .type-tabs button[aria-pressed="true"] { color: var(--tc); background: var(--tb); border-color: var(--tc); font-weight: 600; }
+
+  .fp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .fp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .fp-field.wide { grid-column: span 2; }
+  .fp-field label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .fp-field input, .fp-field select, .fp-field textarea {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; outline: none; width: 100%;
+  }
+  .fp-field input:focus, .fp-field select:focus { border-color: var(--brand-soft); background: #fff; box-shadow: 0 0 0 3px rgba(91,197,192,.16); }
+  .fp-field .hint { font-size: 11px; color: var(--mute); }
+  .sec-lab {
+    grid-column: 1 / -1; font-size: 11px; letter-spacing: .14em; color: var(--mute);
+    text-transform: uppercase; margin-top: 6px; padding-bottom: 6px; border-bottom: 1px dashed var(--line);
+  }
+  .rem-row { display: flex; gap: 10px; align-items: center; }
+  .rem-row select { flex: 1; }
+  .sw { position: relative; width: 42px; height: 24px; border-radius: 999px; background: #D5E5E3; cursor: pointer; transition: background .18s; border: none; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .sw.on { background: var(--brand); }
+  .sw.on::after { transform: translateX(18px); }
+  .file-row { display: flex; gap: 10px; align-items: center; }
+  .file-row .pick {
+    font-family: var(--grot); font-size: 13px; color: var(--brand); background: var(--mist);
+    border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; white-space: nowrap;
+  }
+  .file-row .nm { font-size: 12.5px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fp-actions { margin-top: 18px; display: flex; gap: 10px; justify-content: flex-end; }
+  .btn-primary-sm {
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: #fff;
+    background: var(--brand); border: none; padding: 11px 26px; border-radius: 10px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(13,110,110,.24);
+  }
+  .btn-primary-sm:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 20px; cursor: pointer;
+  }
+  .btn-plain:hover { border-color: var(--brand-soft); color: var(--brand); }
+
+  /* ===== 预订票 ===== */
+  .bk-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; align-items: start; }
+  .bk-card {
+    background: #fff; border-radius: 15px; box-shadow: var(--card-shadow);
+    display: grid; grid-template-columns: 1fr 128px; position: relative; overflow: hidden;
+  }
+  .bk-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--tc); }
+  .bk-main { padding: 18px 20px 16px 22px; min-width: 0; }
+  .bk-type-line { display: flex; align-items: center; gap: 9px; }
+  .bk-ic { width: 30px; height: 30px; border-radius: 9px; background: var(--tb); color: var(--tc); display: grid; place-items: center; font-size: 14px; flex: none; }
+  .bk-type-nm { font-size: 11.5px; font-weight: 600; color: var(--tc); letter-spacing: .08em; }
+  .bk-title { font-family: var(--grot); font-weight: 600; font-size: 16px; color: var(--ink); margin-top: 10px; line-height: 1.35; }
+  .bk-ops { margin-left: auto; display: flex; gap: 3px; opacity: 0; transition: opacity .16s; }
+  .bk-card:hover .bk-ops { opacity: 1; }
+  .bk-ops button { width: 27px; height: 27px; border: none; border-radius: 8px; background: none; color: var(--mute); font-size: 12.5px; cursor: pointer; }
+  .bk-ops button:hover { background: var(--cloud); color: var(--brand); }
+  .bk-ops button.del:hover { color: #D2543A; background: #FFF3F0; }
+
+  /* 航线（机票 / 火车） */
+  .route { margin-top: 14px; display: flex; align-items: center; gap: 10px; }
+  .route .pt { font-family: var(--slab); font-weight: 600; font-size: 19px; color: var(--ink); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .route .mid { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  .route .mid .no { font-size: 11.5px; font-weight: 600; color: var(--tc); letter-spacing: .06em; white-space: nowrap; }
+  .route .mid .ln { width: 100%; border-top: 2px dashed color-mix(in srgb, var(--tc) 45%, white); position: relative; }
+  .route .mid .ln::after { content: "✈"; position: absolute; left: 50%; top: -10px; transform: translateX(-50%); background: #fff; padding: 0 6px; color: var(--tc); font-size: 12px; }
+  .route .mid .no-train + .ln::after { content: "🚄"; }
+
+  /* 信息格（酒店 / 门票 / 其他） */
+  .info-grid { margin-top: 14px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
+  .inf .k { font-size: 10.5px; letter-spacing: .1em; color: var(--mute); text-transform: uppercase; }
+  .inf .v { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inf .v.warn { color: #C1704A; }
+
+  .bk-times { margin-top: 14px; display: flex; gap: 18px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+  .bk-times .k { color: var(--mute); margin-right: 5px; }
+  .bk-note { margin-top: 10px; font-size: 12px; color: #8A5A16; background: #FDF5E2; border-radius: 8px; padding: 7px 11px; }
+
+  /* 票根 */
+  .bk-stub {
+    border-left: 2px dashed color-mix(in srgb, var(--tc) 28%, white);
+    background: linear-gradient(180deg, var(--tb) 0%, #fff 100%);
+    padding: 16px 12px 14px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    text-align: center;
+  }
+  .stamp {
+    transform: rotate(-7deg);
+    font-family: var(--slab); font-weight: 700; font-size: 12px; letter-spacing: .1em;
+    border: 2.5px solid currentColor; border-radius: 8px; padding: 4px 10px;
+    white-space: nowrap;
+  }
+  .stamp.up { color: #2A8055; }
+  .stamp.now { color: var(--stamp); }
+  .stamp.done { color: #8A9BA5; }
+  .stub-lab { font-size: 10px; letter-spacing: .14em; color: var(--mute); text-transform: uppercase; }
+  .stub-code { font-family: var(--grot); font-weight: 600; font-size: 12.5px; color: var(--ink); letter-spacing: .04em; word-break: break-all; }
+  .stub-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 100%; }
+  .stub-rem { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ink-2); cursor: pointer; }
+  .stub-rem .sw { width: 30px; height: 17px; }
+  .stub-rem .sw::after { width: 13px; height: 13px; }
+  .stub-rem .sw.on::after { transform: translateX(13px); }
+  .stub-del { font-family: var(--grot); font-size: 11px; color: var(--mute); background: none; border: none; cursor: pointer; }
+  .stub-del:hover { color: #D2543A; }
+
+  /* 空态 */
+  .empty-state {
+    grid-column: 1 / -1; background: #fff; border-radius: 16px; box-shadow: var(--card-shadow);
+    padding: 58px 30px; text-align: center;
+  }
+  .empty-state .ic { font-size: 40px; margin-bottom: 10px; }
+  .empty-state .t { font-family: var(--slab); font-weight: 600; font-size: 18px; color: var(--ink); }
+  .empty-state .d { font-size: 13px; color: var(--mute); margin-top: 6px; }
+  .empty-state .d b { color: var(--stamp); font-weight: 500; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99; max-width: 76vw;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 响应式 */
+  @media (max-width: 1180px) { .bk-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { main { padding: 28px 24px 50px; } .fp-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 50px; }
+    h1 { font-size: 27px; }
+    .fp-grid { grid-template-columns: 1fr; }
+    .fp-field.wide { grid-column: span 1; }
+    .bk-grid { grid-template-columns: 1fr; }
+    .bk-card { grid-template-columns: 1fr; }
+    .bk-stub { border-left: none; border-top: 2px dashed color-mix(in srgb, var(--tc) 28%, white); flex-direction: row; flex-wrap: wrap; justify-content: space-between; }
+    .bk-ops { opacity: 1; }
+    .rem-note { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <p class="crumb"><a href="/trips/">我的旅行</a><span>/</span><a href="#" id="crumbTrip">行程详情</a><span>/</span><b>预订管理</b></p>
+    <div class="page-head">
+      <div>
+        <h1>预订管理<span class="en">Bookings</span></h1>
+        <p class="meta" id="pageMeta">正在加载…</p>
+      </div>
+      <button class="btn-add" id="btnToggleForm">＋ 新建预订</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="filters" id="filters" role="group" aria-label="按类型筛选"></div>
+      <span class="rem-note" id="remNote" hidden></span>
+    </div>
+
+    <section class="form-panel" id="formPanel" hidden>
+      <div class="fp-head">
+        <span class="t" id="fpTitle">新建预订</span>
+        <button type="button" class="x" id="btnCloseForm" aria-label="关闭">✕</button>
+      </div>
+      <div class="type-tabs" id="typeTabs" role="group" aria-label="预订类型"></div>
+      <div class="fp-grid" id="fpGrid"></div>
+      <div class="fp-actions">
+        <button type="button" class="btn-plain" id="btnCancelForm">取消</button>
+        <button type="button" class="btn-primary-sm" id="btnSaveBk">保存</button>
+      </div>
+    </section>
+
+    <section class="bk-grid" id="bkGrid" aria-label="预订列表">
+      <p style="grid-column:1/-1;padding:44px 0;text-align:center;color:var(--mute);" id="loading">正在加载预订…</p>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var qs = new URLSearchParams(location.search);
+    var tripId = qs.get('trip') || qs.get('id');
+    if (!tripId) { location.replace('/trips/'); return; }
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+
+    /* ===== 类型定义（含 extra 字段配置） ===== */
+    var TYPES = [
+      { value: 'flight', label: '机票', ic: '✈', c: '#2F6FB5', bg: '#E9F2FD', route: true,
+        fields: [
+          { k: 'flightNo', label: '航班号', ph: '如 CA1234' },
+          { k: 'airports', label: '起降机场', ph: '如 大兴T2 → 虹桥T2' },
+          { k: 'cabin', label: '舱位', ph: '如 经济舱' }
+        ] },
+      { value: 'hotel', label: '酒店', ic: '⌂', c: '#B8830F', bg: '#FDF5E2',
+        fields: [
+          { k: 'hotelName', label: '酒店名称', ph: '如 腾格里沙漠营地' },
+          { k: 'roomType', label: '房型', ph: '如 双人帐篷' },
+          { k: 'cancelPolicy', label: '取消政策', ph: '如 入住前 1 天可免费取消' },
+          { k: 'freeCancelDeadline', label: '免费取消截止', type: 'datetime-local', full: true,
+            hint: '填了它，提醒时间会自动设为截止前 30 分钟' }
+        ] },
+      { value: 'train', label: '火车', ic: '🚄', c: '#0D6E6E', bg: '#DCF2F0', route: true,
+        fields: [
+          { k: 'trainNo', label: '车次', ph: '如 G101' },
+          { k: 'stations', label: '发到站', ph: '如 北京南 → 上海虹桥' },
+          { k: 'seat', label: '座位', ph: '如 05车12F' }
+        ] },
+      { value: 'ticket', label: '门票', ic: '▣', c: '#C2566C', bg: '#FDEFF2',
+        fields: [
+          { k: 'itemName', label: '项目名称', ph: '如 故宫门票' },
+          { k: 'session', label: '场次', ph: '如 上午场' }
+        ] },
+      { value: 'other', label: '其他', ic: '◆', c: '#8A6A3A', bg: '#F6F1E8',
+        fields: [
+          { k: 'pickup', label: '取还 / 详情', ph: '如 银川取车 09/12 17:00' }
+        ] }
+    ];
+    function typeOf(v) {
+      for (var i = 0; i < TYPES.length; i++) if (TYPES[i].value === v) return TYPES[i];
+      return TYPES[3];
+    }
+    var REM_OPTS = [
+      { v: '', label: '不提醒（按类型默认）' },
+      { v: '15', label: '提前 15 分钟' },
+      { v: '30', label: '提前 30 分钟' },
+      { v: '60', label: '提前 1 小时' },
+      { v: '120', label: '提前 2 小时' },
+      { v: '1440', label: '提前 1 天' },
+      { v: '2880', label: '提前 2 天' }
+    ];
+    var $ = function (id) { return document.getElementById(id); };
+    var state = { trip: null, bookings: [], filter: 'all', editingId: null, formType: 'flight', pendingFile: null };
+
+    /* ===== 工具 ===== */
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    /* ISO/datetime-local → 本地 "YYYY-MM-DD HH:mm:00"（后端按本地时区解析） */
+    function toLocal(s) {
+      if (!s) return null;
+      var t = String(s).replace('T', ' ');
+      if (t.length === 16) t += ':00';
+      return t;
+    }
+    function toLocalInput(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2)
+        + 'T' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    function fmtDT(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      if (isNaN(d)) return '—';
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    function fmtD(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      return isNaN(d) ? '—' : (d.getFullYear() + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '.' + ('0' + d.getDate()).slice(-2));
+    }
+    /* 状态：按时间推断（后端无 status 字段） */
+    function statusOf(b) {
+      var now = Date.now();
+      var st = b.startTime ? new Date(b.startTime).getTime() : null;
+      var et = b.endTime ? new Date(b.endTime).getTime() : st;
+      if (st == null) return { cls: 'up', label: '未定时间', txt: 'TBD' };
+      if (now < st) return { cls: 'up', label: '待出行', txt: 'UPCOMING' };
+      if (et != null && now > et) return { cls: 'done', label: '已结束', txt: 'DONE' };
+      return { cls: 'now', label: '进行中', txt: 'ONGOING' };
+    }
+    function routeSplit(extra, aKey, bKey) {
+      var raw = (extra && (extra[aKey] || extra[bKey])) || '';
+      var parts = String(raw).split(/→|->|—|–|to/).map(function (s) { return s.trim(); }).filter(Boolean);
+      return { from: parts[0] || '', to: parts[1] || '' };
+    }
+
+    /* ===== 加载 ===== */
+    async function load() {
+      try {
+        var results = await Promise.allSettled([
+          apiGet('/trips/' + tripId),
+          apiGet('/trips/' + tripId + '/bookings')
+        ]);
+        if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
+        state.bookings = results[1].status === 'fulfilled' ? (results[1].value.bookings || []) : [];
+        document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
+        document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
+        document.title = 'Travel OS · ' + ((state.trip && state.trip.title) || '') + ' · 预订管理';
+        buildFilters();
+        render();
+      } catch (err) {
+        showToast(humanError(err));
+        $('loading').textContent = '加载失败，请刷新重试';
+      }
+    }
+
+    /* ===== 筛选 + 提醒汇总 ===== */
+    function buildFilters() {
+      var counts = { all: state.bookings.length };
+      TYPES.forEach(function (t) { counts[t.value] = 0; });
+      state.bookings.forEach(function (b) { counts[b.type] = (counts[b.type] || 0) + 1; });
+      var html = '<button type="button" data-f="all" aria-pressed="' + (state.filter === 'all') + '">全部<span class="n">' + counts.all + '</span></button>';
+      TYPES.forEach(function (t) {
+        html += '<button type="button" data-f="' + t.value + '" aria-pressed="' + (state.filter === t.value) + '">' + t.ic + ' ' + t.label + '<span class="n">' + counts[t.value] + '</span></button>';
+      });
+      $('filters').innerHTML = html;
+
+      var off = state.bookings.filter(function (b) { return !b.reminderEnabled; }).length;
+      var note = $('remNote');
+      if (!state.bookings.length) { note.hidden = true; }
+      else {
+        note.hidden = false;
+        note.className = 'rem-note' + (off ? '' : ' ok');
+        note.textContent = off ? ('⏰ ' + off + ' 项预订的提醒已关闭') : '✓ 所有预订提醒均已开启';
+      }
+    }
+    $('filters').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.filter = b.getAttribute('data-f');
+      buildFilters();
+      render();
+    });
+
+    /* ===== 渲染票卡 ===== */
+    function cardHtml(b) {
+      var t = typeOf(b.type);
+      var extra = b.extra || {};
+      var st = statusOf(b);
+      var main = '';
+
+      if (t.route) {
+        var r = routeSplit(extra, 'airports', 'stations');
+        main += '<div class="route">'
+          + '<span class="pt">' + escapeHtml(r.from || '—') + '</span>'
+          + '<span class="mid">'
+          +   '<span class="no">' + escapeHtml(extra.flightNo || extra.trainNo || '') + '</span>'
+          +   '<span class="ln"></span>'
+          + '</span>'
+          + '<span class="pt" style="text-align:right">' + escapeHtml(r.to || '—') + '</span>'
+          + '</div>';
+        main += '<div class="bk-times">'
+          + '<span><span class="k">出发</span>' + fmtDT(b.startTime) + '</span>'
+          + '<span><span class="k">到达</span>' + fmtDT(b.endTime) + '</span>'
+          + (extra.cabin ? '<span><span class="k">舱位</span>' + escapeHtml(extra.cabin) + '</span>' : '')
+          + (extra.seat ? '<span><span class="k">座位</span>' + escapeHtml(extra.seat) + '</span>' : '')
+          + '</div>';
+      } else {
+        var infos = [];
+        if (b.type === 'hotel') {
+          infos.push(['酒店', extra.hotelName || b.title || '—']);
+          infos.push(['房型', extra.roomType || '—']);
+          if (extra.freeCancelDeadline) infos.push(['免费取消截止', fmtD(extra.freeCancelDeadline)]);
+        } else if (b.type === 'ticket') {
+          infos.push(['项目', extra.itemName || b.title || '—']);
+          infos.push(['场次', extra.session || '—']);
+        } else {
+          infos.push(['详情', extra.pickup || b.title || '—']);
+        }
+        main += '<div class="info-grid">' + infos.map(function (row) {
+          return '<div class="inf"><div class="k">' + row[0] + '</div><div class="v">' + escapeHtml(row[1]) + '</div></div>';
+        }).join('') + '</div>';
+        main += '<div class="bk-times">'
+          + '<span><span class="k">' + (b.type === 'hotel' ? '入住' : '开始') + '</span>' + fmtDT(b.startTime) + '</span>'
+          + '<span><span class="k">' + (b.type === 'hotel' ? '退房' : '结束') + '</span>' + fmtDT(b.endTime) + '</span>'
+          + '</div>';
+        if (extra.cancelPolicy) main += '<div class="bk-note">' + escapeHtml(extra.cancelPolicy) + '</div>';
+      }
+
+      return ''
+        + '<article class="bk-card" data-bk="' + escapeHtml(b.id) + '" style="--tc:' + t.c + ';--tb:' + t.bg + ';">'
+        +   '<div class="bk-main">'
+        +     '<div class="bk-type-line">'
+        +       '<span class="bk-ic">' + t.ic + '</span>'
+        +       '<span class="bk-type-nm">' + t.label + '</span>'
+        +       '<span class="bk-ops">'
+        +         '<button type="button" class="ed" title="编辑">✎</button>'
+        +         '<button type="button" class="del" title="删除">×</button>'
+        +       '</span>'
+        +     '</div>'
+        +     '<div class="bk-title">' + escapeHtml(b.title || t.label) + '</div>'
+        +     main
+        +   '</div>'
+        +   '<div class="bk-stub">'
+        +     '<span class="stamp ' + st.cls + '">' + st.txt + '</span>'
+        +     '<span class="stub-lab">' + st.label + '</span>'
+        +     (b.confirmCode ? '<span class="stub-lab">确认码</span><span class="stub-code">' + escapeHtml(b.confirmCode) + '</span>' : '')
+        +     (b.orderNo ? '<span class="stub-lab">订单号</span><span class="stub-code">' + escapeHtml(b.orderNo) + '</span>' : '')
+        +     '<span class="stub-foot">'
+        +       '<span class="stub-rem" data-rem="' + escapeHtml(b.id) + '" title="点击切换提醒">'
+        +         '<span class="sw' + (b.reminderEnabled ? ' on' : '') + '"></span>' + (b.reminderEnabled ? '提醒开' : '提醒关')
+        +       '</span>'
+        +       '<button type="button" class="stub-del" data-del="' + escapeHtml(b.id) + '">删除</button>'
+        +     '</span>'
+        +   '</div>'
+        + '</article>';
+    }
+
+    function render() {
+      var list = state.bookings.filter(function (b) { return state.filter === 'all' || b.type === state.filter; });
+      var grid = $('bkGrid');
+      var meta = $('pageMeta');
+      meta.innerHTML = '<b>' + escapeHtml((state.trip && state.trip.title) || '') + '</b> · ' + state.bookings.length + ' 项预订';
+
+      if (!state.bookings.length) {
+        grid.innerHTML = ''
+          + '<div class="empty-state">'
+          +   '<div class="ic">🎫</div>'
+          +   '<div class="t">还没有预订</div>'
+          +   '<div class="d">点击右上角 <b>「＋ 新建预订」</b>，机票 / 酒店 / 火车 / 门票 一次登记，行前自动提醒</div>'
+          + '</div>';
+        return;
+      }
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty-state" style="padding:36px 20px;"><div class="ic">🔍</div><div class="t" style="font-size:15px;">该类型下暂无预订</div></div>';
+        return;
+      }
+      var sorted = list.slice().sort(function (a, b) {
+        return new Date(a.startTime || 0) - new Date(b.startTime || 0);
+      });
+      grid.innerHTML = sorted.map(cardHtml).join('');
+    }
+
+    /* ===== 表单 ===== */
+    $('typeTabs').innerHTML = TYPES.map(function (t) {
+      return '<button type="button" data-t="' + t.value + '" style="--tc:' + t.c + ';--tb:' + t.bg + ';" aria-pressed="' + (t.value === 'flight') + '">' + t.ic + ' ' + t.label + '</button>';
+    }).join('');
+    $('typeTabs').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.formType = b.getAttribute('data-t');
+      $('typeTabs').querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      if (!state.editingId) buildFields(null); else buildFields(collectFields());
+    });
+
+    /* 收集当前表单里的通用 + extra 值（切类型时保留已填内容） */
+    function collectFields() {
+      var out = { extra: {} };
+      ['fTitle', 'fStart', 'fEnd', 'fOrderNo', 'fConfirm'].forEach(function (id) {
+        var el = $(id); if (el) out[id] = el.value;
+      });
+      document.querySelectorAll('[data-extra]').forEach(function (el) {
+        out.extra[el.getAttribute('data-extra')] = el.value;
+      });
+      var rem = $('fRemind'); if (rem) out.remind = rem.value;
+      var sw = $('fRemEnabled'); if (sw) out.remEnabled = sw.classList.contains('on');
+      return out;
+    }
+
+    function buildFields(prefill) {
+      var t = typeOf(state.formType);
+      var p = prefill || {};
+      var extra = p.extra || {};
+      var html = '';
+
+      html += '<div class="sec-lab">通用信息</div>';
+      html += '<div class="fp-field wide"><label for="fTitle">标题</label>'
+        + '<input type="text" id="fTitle" maxlength="120" placeholder="如 银川 → 中卫 高铁" value="' + escapeHtml(p.fTitle || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fOrderNo">订单号</label>'
+        + '<input type="text" id="fOrderNo" maxlength="60" placeholder="选填" value="' + escapeHtml(p.fOrderNo || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fStart">开始 / 出发</label>'
+        + '<input type="datetime-local" id="fStart" value="' + escapeHtml(p.fStart || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fEnd">结束 / 到达</label>'
+        + '<input type="datetime-local" id="fEnd" value="' + escapeHtml(p.fEnd || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fConfirm">确认码</label>'
+        + '<input type="text" id="fConfirm" maxlength="60" placeholder="选填" value="' + escapeHtml(p.fConfirm || '') + '"></div>';
+
+      html += '<div class="sec-lab">' + t.label + '信息</div>';
+      t.fields.forEach(function (f) {
+        html += '<div class="fp-field' + (f.full ? ' wide' : '') + '">'
+          + '<label for="ex_' + f.k + '">' + f.label + '</label>'
+          + '<input type="' + (f.type || 'text') + '" id="ex_' + f.k + '" data-extra="' + f.k + '" maxlength="120" placeholder="' + (f.ph || '') + '" value="' + escapeHtml(extra[f.k] || '') + '">'
+          + (f.hint ? '<span class="hint">' + f.hint + '</span>' : '')
+          + '</div>';
+      });
+
+      html += '<div class="sec-lab">凭证与提醒</div>';
+      html += '<div class="fp-field wide"><label>凭证附件</label>'
+        + '<div class="file-row">'
+        +   '<button type="button" class="pick" id="btnPick">选择文件</button>'
+        +   '<input type="file" id="fFile" accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none">'
+        +   '<span class="nm" id="fileName">' + (state.pendingFile ? escapeHtml(state.pendingFile.name) : '未选择（图片 / PDF，≤ 5MB）') + '</span>'
+        + '</div></div>';
+      html += '<div class="fp-field"><label for="fRemind">提醒时间</label>'
+        + '<select id="fRemind">' + REM_OPTS.map(function (o) {
+            return '<option value="' + o.v + '"' + (String(p.remind || '') === o.v ? ' selected' : '') + '>' + o.label + '</option>';
+          }).join('') + '</select></div>';
+      html += '<div class="fp-field"><label>提醒开关</label>'
+        + '<div class="rem-row">'
+        +   '<button type="button" class="sw' + (p.remEnabled !== false ? ' on' : '') + '" id="fRemEnabled" aria-pressed="' + (p.remEnabled !== false) + '" aria-label="提醒开关"></button>'
+        +   '<span class="hint" id="remLab">' + (p.remEnabled !== false ? '已开启，行前自动提醒' : '已关闭，不会提醒') + '</span>'
+        + '</div></div>';
+
+      $('fpGrid').innerHTML = html;
+
+      $('btnPick').addEventListener('click', function () { $('fFile').click(); });
+      $('fFile').addEventListener('change', function () {
+        var f = this.files && this.files[0];
+        if (!f) return;
+        if (!/^image\/(jpeg|png|webp)$|^application\/pdf$/.test(f.type)) { showToast('仅支持 JPG / PNG / WebP / PDF'); return; }
+        if (f.size > 5 * 1048576) { showToast('附件不能超过 5MB'); return; }
+        var r = new FileReader();
+        r.onload = function () {
+          state.pendingFile = { name: f.name, dataUrl: r.result };
+          $('fileName').textContent = f.name;
+        };
+        r.readAsDataURL(f);
+      });
+      $('fRemEnabled').addEventListener('click', function () {
+        var on = this.classList.toggle('on');
+        this.setAttribute('aria-pressed', on ? 'true' : 'false');
+        $('remLab').textContent = on ? '已开启，行前自动提醒' : '已关闭，不会提醒';
+      });
+    }
+
+    function openForm(bk) {
+      state.editingId = bk ? bk.id : null;
+      state.formType = bk ? bk.type : 'flight';
+      state.pendingFile = null;
+      $('fpTitle').textContent = bk ? '编辑预订' : '新建预订';
+      $('btnSaveBk').textContent = bk ? '保存修改' : '保存';
+      $('typeTabs').querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x.getAttribute('data-t') === state.formType ? 'true' : 'false');
+      });
+      buildFields(bk ? {
+        fTitle: bk.title || '',
+        fOrderNo: bk.orderNo || '',
+        fStart: toLocalInput(bk.startTime),
+        fEnd: toLocalInput(bk.endTime),
+        fConfirm: bk.confirmCode || '',
+        extra: bk.extra || {},
+        remind: bk.reminderMinutes != null ? String(bk.reminderMinutes) : '',
+        remEnabled: bk.reminderEnabled !== false
+      } : { remEnabled: true });
+      $('formPanel').hidden = false;
+      $('formPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function closeForm() { $('formPanel').hidden = true; state.editingId = null; }
+    $('btnToggleForm').addEventListener('click', function () { openForm(null); });
+    $('btnCloseForm').addEventListener('click', closeForm);
+    $('btnCancelForm').addEventListener('click', closeForm);
+
+    $('btnSaveBk').addEventListener('click', async function () {
+      var title = $('fTitle').value.trim();
+      if (!title) { $('fTitle').focus(); showToast('请先填写标题'); return; }
+      var start = $('fStart').value, end = $('fEnd').value;
+      if (start && end && toLocal(end) < toLocal(start)) { showToast('结束时间不能早于开始时间'); return; }
+
+      var extra = {};
+      document.querySelectorAll('[data-extra]').forEach(function (el) {
+        var v = el.value.trim();
+        var key = el.getAttribute('data-extra');
+        extra[key] = el.type === 'datetime-local' ? toLocal(v) : (v || '');
+      });
+      var remV = $('fRemind').value;
+      var body = {
+        type: state.formType,
+        title: title,
+        startTime: toLocal(start),
+        endTime: toLocal(end),
+        orderNo: $('fOrderNo').value.trim() || null,
+        confirmCode: $('fConfirm').value.trim() || null,
+        extra: extra,
+        reminderEnabled: $('fRemEnabled').classList.contains('on')
+      };
+      if (remV) body.reminderMinutes = Number(remV);
+      if (state.pendingFile) body.attachmentUrl = state.pendingFile.dataUrl;
+
+      var b = $('btnSaveBk');
+      b.disabled = true;
+      try {
+        if (state.editingId) {
+          await apiPatch('/trips/' + tripId + '/bookings/' + state.editingId, body);
+          showToast('已保存修改');
+        } else {
+          await apiPost('/trips/' + tripId + '/bookings', body);
+          showToast('预订已登记');
+        }
+        closeForm();
+        await load();
+      } catch (err) { showToast(humanError(err)); }
+      b.disabled = false;
+    });
+
+    /* ===== 卡片操作 ===== */
+    $('bkGrid').addEventListener('click', async function (e) {
+      var card = e.target.closest('.bk-card');
+      if (!card) return;
+      var id = card.getAttribute('data-bk');
+      var bk = state.bookings.find(function (x) { return x.id === id; });
+      if (!bk) return;
+
+      /* 提醒开关 */
+      if (e.target.closest('[data-rem]')) {
+        try {
+          await apiPatch('/trips/' + tripId + '/bookings/' + id, { reminderEnabled: !bk.reminderEnabled });
+          bk.reminderEnabled = !bk.reminderEnabled;
+          buildFilters();
+          render();
+          showToast(bk.reminderEnabled ? '已开启提醒' : '已关闭提醒');
+        } catch (err) { showToast(humanError(err)); }
+        return;
+      }
+
+      /* 编辑 */
+      if (e.target.closest('.bk-ops .ed')) { openForm(bk); return; }
+
+      /* 删除（票根按钮或 hover × 都可） */
+      if (e.target.closest('.stub-del') || e.target.closest('.bk-ops .del')) {
+        if (!confirm('删除预订「' + (bk.title || typeOf(bk.type).label) + '」？')) return;
+        try {
+          await apiDelete('/trips/' + tripId + '/bookings/' + id);
+          state.bookings = state.bookings.filter(function (x) { return x.id !== id; });
+          buildFilters();
+          render();
+          showToast('已删除');
+        } catch (err) { showToast(humanError(err)); }
+      }
+    });
+
+    load();
+  })();
+</script>
+</body>
+</html>

@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-frontend:
-    name: 构建前端 (web-vue)
+  build-backend:
+    name: 构建后端 (apps/server)
     runs-on: ubuntu-latest
     outputs:
       start_ts: ${{ steps.t0.outputs.start_ts }}
@@ -23,35 +23,6 @@ jobs:
       - id: t0
         run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build web-vue（含 vue-tsc 类型检查）
-        working-directory: apps/web-vue
-        env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: pnpm build
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: apps/web-vue/dist
-          retention-days: 7
-
-  build-backend:
-    name: 构建后端 (api-spring)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,18 +30,18 @@ jobs:
           cache: maven
 
       - name: Maven verify（编译 + 测试 + 打包）
-        working-directory: apps/api-spring
+        working-directory: apps/server
         run: mvn -B verify
 
       - uses: actions/upload-artifact@v4
         with:
           name: backend-jar
-          path: apps/api-spring/target/*.jar
+          path: apps/server/target/*.jar
           retention-days: 7
 
   deploy:
     name: 部署到生产服务器
-    needs: [build-frontend, build-backend]
+    needs: [build-backend]
     # 仅 main 分支 push / 手动触发才部署；PR 只构建
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -80,11 +51,6 @@ jobs:
       USER: ${{ secrets.SSH_USER }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: dist
 
       - uses: actions/download-artifact@v4
         with:
@@ -132,9 +98,9 @@ jobs:
             curl -sfL -o /opt/travel-os/travel-os-api.jar.new "${{ steps.cos.outputs.presigned_url }}"
             mv /opt/travel-os/travel-os-api.jar.new /opt/travel-os/travel-os-api.jar'
 
-      - name: 应用数据库迁移（apps/api-spring/db/migration/*.sql，需保持幂等）
+      - name: 应用数据库迁移（apps/server/db/migration/*.sql，需保持幂等）
         run: |
-          tar czf migrations.tar.gz -C apps/api-spring/db migration
+          tar czf migrations.tar.gz -C apps/server/db migration
           scp -P "$PORT" migrations.tar.gz "$USER@$HOST:/tmp/"
           ssh -p "$PORT" "$USER@$HOST" 'set -e
             rm -rf /tmp/mig && mkdir -p /tmp/mig
@@ -144,8 +110,8 @@ jobs:
               sudo docker exec -i travel-os-postgres psql -U travel_os -d travel_os -v ON_ERROR_STOP=1 -q -f - < "$f"
             done'
 
-      - name: 上传前端产物（rsync --delete，排除 /ci/ 状态页）
-        run: rsync -az --delete --exclude '/ci/' -e "ssh -p $PORT" dist/ "$USER@$HOST:/var/www/travel-os/"
+      - name: 发布前端静态站点（rsync apps/web，排除 /ci/ 状态页）
+        run: rsync -az --delete --exclude '/ci/' -e "ssh -p $PORT" apps/web/ "$USER@$HOST:/var/www/travel-os/"
 
       - name: 重启后端 + 健康检查（失败自动回滚）
         run: |
@@ -167,7 +133,7 @@ jobs:
 
   record:
     name: 记录本次运行结果（写入服务器 /ci/）
-    needs: [build-frontend, build-backend, deploy]
+    needs: [build-backend, deploy]
     if: always()
     runs-on: ubuntu-latest
     env:
@@ -186,16 +152,16 @@ jobs:
 
       - name: 生成运行记录并写入服务器
         env:
-          FRONTEND: ${{ needs.build-frontend.result }}
+          FRONTEND: static
           BACKEND: ${{ needs.build-backend.result }}
           DEPLOY: ${{ needs.deploy.result }}
-          START_TS: ${{ needs.build-frontend.outputs.start_ts }}
+          START_TS: ${{ needs.build-backend.outputs.start_ts }}
         run: |
           NOW=$(date +%s)
           DURATION=null
           [ -n "$START_TS" ] && DURATION=$(( NOW - START_TS ))
           CONCLUSION=success
-          for r in "$FRONTEND" "$BACKEND" "$DEPLOY"; do
+          for r in "$BACKEND" "$DEPLOY"; do
             case "$r" in
               success|skipped) ;;
               cancelled) [ "$CONCLUSION" = "success" ] && CONCLUSION=cancelled ;;

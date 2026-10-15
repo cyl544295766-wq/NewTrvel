@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 旅行游记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1240px; }
+
+  .crumb { font-size: 13px; color: var(--mute); display: flex; gap: 7px; align-items: center; }
+  .crumb a { color: var(--mute); text-decoration: none; }
+  .crumb a:hover { color: var(--brand); }
+  .crumb b { color: var(--brand); font-weight: 600; }
+
+  .page-head { margin-top: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en {
+    display: block; font-size: 12px; font-family: var(--grot); font-weight: 500;
+    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px;
+  }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  .btn-write {
+    font-family: var(--grot); font-weight: 600; font-size: 14.5px; color: #fff;
+    background: var(--stamp); border: none; padding: 13px 24px; border-radius: 10px;
+    cursor: pointer; box-shadow: 0 6px 16px rgba(255,138,76,0.30);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .btn-write:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(255,138,76,0.38); }
+
+  /* ===== 总览 ===== */
+  .overview { margin-top: 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .ov {
+    background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow);
+    padding: 16px 20px; display: flex; align-items: center; gap: 14px;
+  }
+  .ov .ic { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+  .ov .v { font-family: var(--grot); font-weight: 600; font-size: 22px; color: var(--ink); line-height: 1.2; }
+  .ov .k { font-size: 12px; color: var(--mute); margin-top: 2px; }
+
+  /* ===== 筛选 ===== */
+  .toolbar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .seg { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); }
+  .seg button {
+    font-family: var(--grot); font-size: 13px; color: var(--ink-2);
+    background: none; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .seg button:hover { background: #F2FAF9; color: var(--brand); }
+  .seg button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+
+  .moods { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .moods .lab { font-size: 12px; color: var(--mute); margin-right: 2px; }
+  .moods button {
+    font-family: var(--grot); font-size: 12.5px; color: var(--ink-2);
+    background: #fff; border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 6px 13px; cursor: pointer; transition: all .14s;
+  }
+  .moods button:hover { border-color: var(--mc); color: var(--mc); }
+  .moods button[aria-pressed="true"] { background: var(--mb); border-color: var(--mc); color: var(--mc); font-weight: 600; }
+
+  /* ===== 卡片区 ===== */
+  .j-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; align-items: start; }
+
+  /* 卷首大卡 */
+  .hero-card {
+    grid-column: 1 / -1;
+    background: #fff; border-radius: 16px; box-shadow: var(--card-shadow);
+    display: grid; grid-template-columns: 1.35fr 1fr; overflow: hidden;
+    cursor: pointer; transition: transform .18s, box-shadow .18s;
+    border-top: 4px solid var(--mc);
+  }
+  .hero-card:hover { transform: translateY(-3px); box-shadow: 0 16px 38px rgba(13,110,110,.18); }
+  .hero-card.draft { opacity: .9; }
+  .hero-card.draft .ex { font-style: italic; color: var(--mute); }
+  .hero-l { padding: 26px 30px; }
+  .hero-r { position: relative; background: linear-gradient(140deg, var(--mb), #fff); min-height: 250px; }
+  .hero-r svg { width: 100%; height: 100%; display: block; }
+  .hero-badge {
+    position: absolute; top: 14px; right: 16px;
+    font-family: var(--slab); font-weight: 700; font-size: 11px; letter-spacing: .14em;
+    color: var(--mc); border: 2px solid var(--mc); border-radius: 8px; padding: 3px 9px;
+    background: rgba(255,255,255,.85);
+  }
+  /* 卡片操作 */
+  .card-ops { display: flex; gap: 4px; }
+  .hero-ops { position: absolute; bottom: 14px; right: 16px; z-index: 2; opacity: 0; transition: opacity .16s; }
+  .hero-card:hover .hero-ops { opacity: 1; }
+  .card-ops button, .hero-ops button {
+    width: 28px; height: 28px; border: none; border-radius: 8px;
+    background: rgba(255,255,255,.94); color: var(--ink-2); font-size: 13px; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .card-ops button:hover, .hero-ops button:hover { color: var(--brand); }
+  .hero-ops button.del:hover, .card-ops button.del:hover { color: #D2543A; background: #FFF3F0; }
+  .mood-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 600; color: var(--mc); background: var(--mb);
+    border-radius: 999px; padding: 5px 13px;
+  }
+  .hero-card h2 {
+    font-family: var(--slab); font-weight: 600; font-size: 27px; color: var(--ink);
+    line-height: 1.3; margin: 14px 0 10px;
+  }
+  .hero-card .ex {
+    font-size: 14px; color: var(--ink-2); line-height: 1.85;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .hero-stats { margin-top: 18px; display: flex; gap: 22px; font-size: 12.5px; color: var(--mute); }
+  .hero-stats b { color: var(--ink); font-weight: 600; }
+  .hero-photos { margin-top: 16px; display: flex; gap: 8px; }
+  .hero-photos img { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; }
+
+  /* 普通卡 */
+  .j-card {
+    background: #fff; border-radius: 14px; box-shadow: var(--card-shadow);
+    border-top: 3px solid var(--mc); padding: 18px 20px 16px;
+    cursor: pointer; transition: transform .16s, box-shadow .16s;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .j-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(13,110,110,.15); }
+  .j-card.draft { opacity: .88; }
+  .jc-head { display: flex; align-items: center; gap: 9px; }
+  .mood-dot { width: 32px; height: 32px; border-radius: 10px; background: var(--mb); color: var(--mc); display: grid; place-items: center; font-size: 15px; flex: none; }
+  .jc-title { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); line-height: 1.35; flex: 1; min-width: 0; }
+  .draft-badge {
+    font-family: var(--slab); font-weight: 700; font-size: 10.5px; letter-spacing: .12em;
+    color: #8A9BA5; border: 2px solid #8A9BA5; border-radius: 7px; padding: 2px 7px; flex: none;
+  }
+  .jc-ex {
+    font-size: 13px; color: var(--ink-2); line-height: 1.75;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .j-card.draft .jc-ex { font-style: italic; color: var(--mute); }
+  .jc-photos { display: flex; gap: 6px; }
+  .jc-photos img { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; }
+  .jc-photos .more {
+    width: 38px; height: 38px; border-radius: 8px; background: var(--cloud); color: var(--mute);
+    display: grid; place-items: center; font-size: 11px; font-weight: 600;
+  }
+  .jc-foot { display: flex; align-items: center; gap: 14px; font-size: 11.5px; color: var(--mute); padding-top: 10px; border-top: 1.5px dashed var(--line); }
+  .jc-foot .arrow { margin-left: auto; color: var(--brand); font-size: 14px; transition: transform .16s; }
+  .j-card:hover .jc-foot .arrow { transform: translateX(4px); }
+  .jc-ops { display: flex; gap: 2px; }
+
+  /* 空态 */
+  .empty-state {
+    grid-column: 1 / -1; background: #fff; border-radius: 16px; box-shadow: var(--card-shadow);
+    padding: 58px 30px; text-align: center;
+  }
+  .empty-state .ic { font-size: 40px; margin-bottom: 10px; }
+  .empty-state .t { font-family: var(--slab); font-weight: 600; font-size: 18px; color: var(--ink); }
+  .empty-state .d { font-size: 13px; color: var(--mute); margin-top: 6px; }
+  .empty-state .d b { color: var(--stamp); font-weight: 500; }
+
+  /* ===== 抽屉 ===== */
+  .drawer-mask {
+    position: fixed; inset: 0; z-index: 92; background: rgba(10,32,34,.5);
+  }
+  .drawer-mask[hidden] { display: none; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 540px; max-width: 94vw; z-index: 93;
+    background: #fff; box-shadow: -18px 0 48px rgba(10,32,34,.24);
+    display: flex; flex-direction: column;
+    animation: slideIn .26s cubic-bezier(.4,0,.2,1);
+  }
+  .drawer[hidden] { display: none; }
+  @keyframes slideIn { from { transform: translateX(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+  .dr-head { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .dr-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .dr-head .x { margin-left: auto; width: 32px; height: 32px; border: none; background: var(--cloud); border-radius: 9px; color: var(--mute); cursor: pointer; font-size: 14px; }
+  .dr-body { flex: 1; overflow: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+  .dr-body label { font-size: 12px; font-weight: 600; color: var(--ink-2); display: block; margin-bottom: 6px; }
+  .dr-body input[type="text"], .dr-body textarea, .dr-body select {
+    width: 100%; font-family: var(--grot); font-size: 14px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; outline: none;
+  }
+  .dr-body textarea { min-height: 200px; resize: vertical; line-height: 1.8; }
+  .dr-body :is(input, textarea, select):focus { border-color: var(--brand-soft); background: #fff; box-shadow: 0 0 0 3px rgba(91,197,192,.16); }
+  .dr-body .cnt { text-align: right; font-size: 11.5px; color: var(--mute); margin-top: 4px; }
+
+  .mood-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mood-pick button {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--grot); font-size: 13px; color: var(--ink-2);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 8px 15px; cursor: pointer; transition: all .14s;
+  }
+  .mood-pick button[aria-pressed="true"] { color: var(--mc); background: var(--mb); border-color: var(--mc); font-weight: 600; }
+
+  .photo-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: 210px; overflow: auto; }
+  .pp {
+    position: relative; border-radius: 9px; overflow: hidden; cursor: pointer;
+    border: 2.5px solid transparent; line-height: 0; transition: border-color .14s;
+  }
+  .pp img { width: 100%; aspect-ratio: 1/1; object-fit: cover; }
+  .pp.on { border-color: var(--brand); }
+  .pp .tick {
+    position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--brand); color: #fff; font-size: 11px; display: none; place-items: center;
+  }
+  .pp.on .tick { display: grid; }
+  .pp-empty { grid-column: 1 / -1; font-size: 12.5px; color: var(--mute); padding: 14px 0; text-align: center; }
+
+  .dr-foot { padding: 16px 22px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .dr-foot .sp { flex: 1; }
+  .btn-primary-sm {
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: #fff;
+    background: var(--brand); border: none; padding: 11px 24px; border-radius: 10px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(13,110,110,.24);
+  }
+  .btn-primary-sm:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 18px; cursor: pointer;
+  }
+  .btn-plain:hover { border-color: var(--brand-soft); color: var(--brand); }
+  .draft-sw { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  .sw { position: relative; width: 40px; height: 23px; border-radius: 999px; background: #D5E5E3; transition: background .18s; border: none; cursor: pointer; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .sw.on { background: var(--stamp); }
+  .sw.on::after { transform: translateX(17px); }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30); max-width: 76vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 1100px) { .j-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) {
+    main { padding: 28px 24px 50px; }
+    .overview { grid-template-columns: 1fr 1fr; }
+    .hero-card { grid-template-columns: 1fr; }
+    .hero-r { min-height: 160px; }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 50px; }
+    h1 { font-size: 27px; }
+    .overview { grid-template-columns: 1fr 1fr; }
+    .hero-l { padding: 20px; }
+    .hero-card h2 { font-size: 22px; }
+    .photo-pick { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <p class="crumb"><a href="/trips/">我的旅行</a><span>/</span><a href="#" id="crumbTrip">行程详情</a><span>/</span><b>旅行游记</b></p>
+    <div class="page-head">
+      <div>
+        <h1>旅行游记<span class="en">Travel Journals</span></h1>
+        <p class="meta" id="pageMeta">正在加载…</p>
+      </div>
+      <button class="btn-write" id="btnWrite">✎ 写游记</button>
+    </div>
+
+    <!-- 总览 -->
+    <section class="overview">
+      <div class="ov">
+        <span class="ic" style="background:#E8F1F9;color:#3A7FA5;">📖</span>
+        <div><div class="v" id="ovCount">0</div><div class="k">篇游记</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#DCF2F0;color:#0D6E6E;">✎</span>
+        <div><div class="v" id="ovWords">0</div><div class="k">累计字数</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#FDEFF2;color:#C2566C;">🖼</span>
+        <div><div class="v" id="ovPhotos">0</div><div class="k">关联照片</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#FDF5E2;color:#B8830F;">✏</span>
+        <div><div class="v" id="ovDrafts">0</div><div class="k">草稿待完善</div></div>
+      </div>
+    </section>
+
+    <!-- 筛选 -->
+    <div class="toolbar">
+      <div class="seg" id="stateSeg" role="group" aria-label="按状态筛选">
+        <button type="button" data-s="all" aria-pressed="true">全部</button>
+        <button type="button" data-s="published" aria-pressed="false">已发布</button>
+        <button type="button" data-s="draft" aria-pressed="false">草稿</button>
+      </div>
+      <div class="moods" id="moodFilter" role="group" aria-label="按心情筛选">
+        <span class="lab">心情</span>
+      </div>
+    </div>
+
+    <!-- 卡片区 -->
+    <section class="j-grid" id="jGrid" aria-label="游记列表">
+      <p style="grid-column:1/-1;padding:44px 0;text-align:center;color:var(--mute);" id="loading">正在加载游记…</p>
+    </section>
+  </main>
+</div>
+
+<!-- 写游记抽屉 -->
+<div class="drawer-mask" id="drMask" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="写游记">
+  <div class="dr-head">
+    <span class="t" id="drTitle">写游记</span>
+    <button type="button" class="x" id="drClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="dr-body">
+    <div>
+      <label for="drName">标题</label>
+      <input type="text" id="drName" maxlength="120" placeholder="这一篇想叫什么？">
+    </div>
+    <div>
+      <label>心情</label>
+      <div class="mood-pick" id="drMoods"></div>
+    </div>
+    <div>
+      <label for="drContent">正文</label>
+      <textarea id="drContent" placeholder="记录当天发生了什么、看到什么、想到什么…"></textarea>
+      <div class="cnt" id="drCount">0 字</div>
+    </div>
+    <div>
+      <label>关联照片（可多选）</label>
+      <div class="photo-pick" id="drPhotos"></div>
+    </div>
+  </div>
+  <div class="dr-foot">
+    <span class="draft-sw" id="drDraftSw" role="button" tabindex="0">
+      <span class="sw on" id="drDraftToggle"></span><span id="drDraftLab">先存为草稿</span>
+    </span>
+    <span class="sp"></span>
+    <button type="button" class="btn-plain" id="drCancel">取消</button>
+    <button type="button" class="btn-primary-sm" id="drSave">保存并发布</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var qs = new URLSearchParams(location.search);
+    var tripId = qs.get('trip') || qs.get('id');
+    if (!tripId) { location.replace('/trips/'); return; }
+
+    /* ===== 壳 ===== */
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    /* ===== Toast ===== */
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+
+    /* ===== 常量 ===== */
+    var MOODS = [
+      { value: 'happy',   label: '开心', ic: '😄', c: '#FF8A4C', bg: '#FFF1E9' },
+      { value: 'excited', label: '兴奋', ic: '🤩', c: '#B8830F', bg: '#FDF5E2' },
+      { value: 'tired',   label: '疲惫', ic: '😮‍💨', c: '#6B4FC0', bg: '#EFEAFB' },
+      { value: 'sad',     label: '低落', ic: '🌧', c: '#5B6B7C', bg: '#EEF2F5' },
+      { value: 'relaxed', label: '放松', ic: '😌', c: '#0D6E6E', bg: '#DCF2F0' }
+    ];
+    function moodOf(v) {
+      for (var i = 0; i < MOODS.length; i++) if (MOODS[i].value === v) return MOODS[i];
+      return null;
+    }
+    var $ = function (id) { return document.getElementById(id); };
+    var state = { trip: null, journals: [], photos: [], stateFilter: 'all', moodFilter: null, editing: null, picked: [] };
+
+    /* ===== 工具 ===== */
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function wordCount(s) { return (s || '').replace(/\s/g, '').length; }
+    function fmtDate(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      return isNaN(d) ? '' : (d.getFullYear() + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '.' + ('0' + d.getDate()).slice(-2));
+    }
+
+    /* ===== 加载 ===== */
+    async function load() {
+      try {
+        var results = await Promise.allSettled([
+          apiGet('/trips/' + tripId),
+          apiGet('/trips/' + tripId + '/journals'),
+          apiGet('/trips/' + tripId + '/photos')
+        ]);
+        if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
+        state.journals = results[1].status === 'fulfilled' ? (results[1].value.journals || []) : [];
+        state.photos = results[2].status === 'fulfilled' ? (results[2].value.photos || []) : [];
+
+        document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
+        document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
+        document.title = 'Travel OS · ' + ((state.trip && state.trip.title) || '') + ' · 旅行游记';
+
+        buildMoodFilter();
+        render();
+
+        /* 从阅读页带 ?edit=<id> 回来时，自动打开编辑抽屉 */
+        var editId = qs.get('edit');
+        if (editId) {
+          var target = state.journals.find(function (x) { return x.id === editId; });
+          if (target) openDrawer(target);
+        }
+      } catch (err) {
+        showToast(humanError(err));
+        $('loading').textContent = '加载失败，请刷新重试';
+      }
+    }
+
+    /* ===== 总览 ===== */
+    function renderOverview() {
+      var words = 0, photos = 0, drafts = 0;
+      state.journals.forEach(function (j) {
+        words += wordCount(j.content);
+        photos += (j.photos || []).length;
+        if (j.isDraft) drafts++;
+      });
+      $('ovCount').textContent = state.journals.length;
+      $('ovWords').textContent = words.toLocaleString('zh-CN');
+      $('ovPhotos').textContent = photos;
+      $('ovDrafts').textContent = drafts;
+
+      var meta = $('pageMeta');
+      meta.innerHTML = '<b>' + escapeHtml((state.trip && state.trip.title) || '') + '</b> · ' + state.journals.length + ' 篇 · '
+        + words.toLocaleString('zh-CN') + ' 字'
+        + (drafts ? ' · <span style="color:#B8830F;font-weight:600;">' + drafts + ' 篇草稿</span>' : '');
+    }
+
+    /* ===== 心情筛选 ===== */
+    function buildMoodFilter() {
+      var counts = {};
+      MOODS.forEach(function (m) { counts[m.value] = 0; });
+      state.journals.forEach(function (j) { if (j.mood) counts[j.mood] = (counts[j.mood] || 0) + 1; });
+      var html = '<button type="button" data-m="" aria-pressed="' + (!state.moodFilter) + '">全部</button>';
+      MOODS.forEach(function (m) {
+        html += '<button type="button" data-m="' + m.value + '" style="--mc:' + m.c + ';--mb:' + m.bg + ';" aria-pressed="' + (state.moodFilter === m.value) + '">'
+          + m.ic + ' ' + m.label + (counts[m.value] ? ' ' + counts[m.value] : '') + '</button>';
+      });
+      $('moodFilter').innerHTML = '<span class="lab">心情</span>' + html;
+    }
+    $('moodFilter').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.moodFilter = b.getAttribute('data-m') || null;
+      buildMoodFilter();
+      render();
+    });
+    $('stateSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.stateFilter = b.getAttribute('data-s');
+      $('stateSeg').querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      render();
+    });
+
+    /* ===== 渲染 ===== */
+    function photosHtml(list, limit) {
+      var imgs = (list || []).slice(0, limit).map(function (p) {
+        return '<img src="' + escapeHtml(p.url) + '" alt="">';
+      }).join('');
+      var more = (list || []).length - limit;
+      return imgs + (more > 0 ? '<span class="more">+' + more + '</span>' : '');
+    }
+
+    function heroHtml(j) {
+      var m = moodOf(j.mood) || { c: '#0D6E6E', bg: '#DCF2F0', ic: '📖', label: '记录' };
+      var photos = j.photos || [];
+      return ''
+        + '<article class="hero-card' + (j.isDraft ? ' draft' : '') + '" data-jid="' + escapeHtml(j.id) + '" style="--mc:' + m.c + ';--mb:' + m.bg + ';">'
+        +   '<div class="hero-l">'
+        +     '<span class="mood-chip">' + m.ic + ' ' + m.label + '</span>'
+        +     '<h2>' + escapeHtml(j.title || '无题') + '</h2>'
+        +     '<p class="ex">' + escapeHtml((j.content || '').slice(0, 220)) + '</p>'
+        +     '<div class="hero-stats">'
+        +       '<span>📅 <b>' + fmtDate(j.createdAt) + '</b></span>'
+        +       '<span>✎ <b>' + wordCount(j.content).toLocaleString('zh-CN') + '</b> 字</span>'
+        +       '<span>🖼 <b>' + photos.length + '</b> 张照片</span>'
+        +       (j.isDraft ? '<span style="color:#B8830F;font-weight:600;">草稿</span>' : '')
+        +     '</div>'
+        +     (photos.length ? '<div class="hero-photos">' + photosHtml(photos, 4) + '</div>' : '')
+        +   '</div>'
+        +   '<div class="hero-r">'
+        +     '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">'
+        +       '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">'
+        +         '<stop offset="0%" stop-color="' + m.bg + '"/><stop offset="100%" stop-color="#fff"/></linearGradient></defs>'
+        +       '<rect width="400" height="300" fill="url(#hg)"/>'
+        +       '<path d="M0 210 Q90 160 180 196 T400 176 L400 300 L0 300Z" fill="' + m.c + '" opacity=".18"/>'
+        +       '<path d="M0 246 Q120 206 220 234 T400 216 L400 300 L0 300Z" fill="' + m.c + '" opacity=".28"/>'
+        +       '<circle cx="300" cy="86" r="30" fill="' + m.c + '" opacity=".22"/>'
+        +       '<path d="M60 150 q14 -20 28 0 q14 -20 28 0" stroke="' + m.c + '" stroke-width="2.5" fill="none" opacity=".5"/>'
+        +     '</svg>'
+        +     '<span class="hero-badge">卷首 · FEATURED</span>'
+        +     (j.isDraft ? '<span class="hero-badge" style="left:16px;right:auto;color:#8A9BA5;border-color:#8A9BA5;">DRAFT</span>' : '')
+        +     '<span class="hero-ops">'
+        +       '<button type="button" class="ed" title="编辑">✎</button>'
+        +       '<button type="button" class="del" title="删除">×</button>'
+        +     '</span>'
+        +   '</div>'
+        + '</article>';
+    }
+
+    function cardHtml(j) {
+      var m = moodOf(j.mood) || { c: '#0D6E6E', bg: '#DCF2F0', ic: '📖', label: '记录' };
+      var photos = j.photos || [];
+      return ''
+        + '<article class="j-card' + (j.isDraft ? ' draft' : '') + '" data-jid="' + escapeHtml(j.id) + '" style="--mc:' + m.c + ';--mb:' + m.bg + ';">'
+        +   '<div class="jc-head">'
+        +     '<span class="mood-dot">' + m.ic + '</span>'
+        +     '<span class="jc-title">' + escapeHtml(j.title || '无题') + '</span>'
+        +     (j.isDraft ? '<span class="draft-badge">DRAFT</span>' : '')
+        +   '</div>'
+        +   '<p class="jc-ex">' + escapeHtml((j.content || '').slice(0, 140)) + '</p>'
+        +   (photos.length ? '<div class="jc-photos">' + photosHtml(photos, 3) + '</div>' : '')
+        +   '<div class="jc-foot">'
+        +     '<span>📅 ' + fmtDate(j.createdAt) + '</span>'
+        +     '<span>✎ ' + wordCount(j.content) + ' 字</span>'
+        +     (photos.length ? '<span>🖼 ' + photos.length + '</span>' : '')
+        +     '<span class="card-ops">'
+        +       '<button type="button" class="ed" title="编辑">✎</button>'
+        +       '<button type="button" class="del" title="删除">×</button>'
+        +     '</span>'
+        +     '<span class="arrow">→</span>'
+        +   '</div>'
+        + '</article>';
+    }
+
+    function render() {
+      renderOverview();
+      var grid = $('jGrid');
+      var list = state.journals.filter(function (j) {
+        if (state.stateFilter === 'draft' && !j.isDraft) return false;
+        if (state.stateFilter === 'published' && j.isDraft) return false;
+        if (state.moodFilter && j.mood !== state.moodFilter) return false;
+        return true;
+      });
+      if (!state.journals.length) {
+        grid.innerHTML = ''
+          + '<div class="empty-state">'
+          +   '<div class="ic">📖</div>'
+          +   '<div class="t">还没有写过游记</div>'
+          +   '<div class="d">点击右上角 <b>「✎ 写游记」</b>，把当天的画面与心情留下来，可关联相册照片</div>'
+          + '</div>';
+        return;
+      }
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty-state" style="padding:36px 20px;"><div class="ic">🔍</div><div class="t" style="font-size:15px;">没有符合条件的游记</div></div>';
+        return;
+      }
+      var sorted = list.slice().sort(function (a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+      /* 卷首优先给已发布的游记；全是草稿时再退而取最新一篇 */
+      var published = sorted.filter(function (j) { return !j.isDraft; });
+      var hero = published.length ? published[0] : sorted[0];
+      var rest = sorted.filter(function (j) { return j !== hero; });
+      grid.innerHTML = heroHtml(hero) + rest.map(cardHtml).join('');
+    }
+
+    /* ===== 抽屉 ===== */
+    var DR = $('drawer'), DRM = $('drMask');
+    $('drMoods').innerHTML = MOODS.map(function (m) {
+      return '<button type="button" data-mood="' + m.value + '" style="--mc:' + m.c + ';--mb:' + m.bg + ';" aria-pressed="false">' + m.ic + ' ' + m.label + '</button>';
+    }).join('');
+    $('drMoods').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      var already = b.getAttribute('aria-pressed') === 'true';
+      $('drMoods').querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+      if (!already) b.setAttribute('aria-pressed', 'true');
+    });
+    function curMood() {
+      var on = $('drMoods').querySelector('button[aria-pressed="true"]');
+      return on ? on.getAttribute('data-mood') : null;
+    }
+
+    $('drContent').addEventListener('input', function () {
+      $('drCount').textContent = wordCount(this.value).toLocaleString('zh-CN') + ' 字';
+    });
+
+    function renderPhotoPick() {
+      var box = $('drPhotos');
+      if (!state.photos.length) {
+        box.innerHTML = '<div class="pp-empty">相册还是空的 · 先去「旅途影像」上传照片，再回来关联</div>';
+        return;
+      }
+      box.innerHTML = state.photos.map(function (p) {
+        return '<span class="pp' + (state.picked.indexOf(p.id) >= 0 ? ' on' : '') + '" data-pp="' + escapeHtml(p.id) + '">'
+          + '<img src="' + escapeHtml(p.url) + '" alt="">'
+          + '<span class="tick">✓</span>'
+          + '</span>';
+      }).join('');
+    }
+    $('drPhotos').addEventListener('click', function (e) {
+      var el = e.target.closest('[data-pp]');
+      if (!el) return;
+      var id = el.getAttribute('data-pp');
+      var i = state.picked.indexOf(id);
+      if (i >= 0) state.picked.splice(i, 1); else state.picked.push(id);
+      renderPhotoPick();
+    });
+
+    function openDrawer(journal) {
+      state.editing = journal || null;
+      state.picked = journal ? (journal.photos || []).map(function (p) { return p.id; }) : [];
+      $('drTitle').textContent = journal ? '编辑游记' : '写游记';
+      $('drName').value = journal ? (journal.title || '') : '';
+      $('drContent').value = journal ? (journal.content || '') : '';
+      $('drCount').textContent = wordCount($('drContent').value).toLocaleString('zh-CN') + ' 字';
+      $('drMoods').querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', journal && journal.mood === x.getAttribute('data-mood') ? 'true' : 'false');
+      });
+      var draft = journal ? Boolean(journal.isDraft) : false;
+      $('drDraftToggle').classList.toggle('on', draft);
+      syncDraftLab();
+      renderPhotoPick();
+      DRM.hidden = false;
+      DR.hidden = false;
+    }
+    function syncDraftLab() {
+      var on = $('drDraftToggle').classList.contains('on');
+      $('drSave').textContent = state.editing
+        ? '保存修改'
+        : (on ? '存为草稿' : '保存并发布');
+      $('drDraftLab').textContent = on ? '先存为草稿' : '直接发布';
+    }
+    function closeDrawer() { DR.hidden = true; DRM.hidden = true; state.editing = null; }
+
+    $('drDraftSw').addEventListener('click', function () {
+      $('drDraftToggle').classList.toggle('on');
+      syncDraftLab();
+    });
+    $('btnWrite').addEventListener('click', function () { openDrawer(null); });
+    $('drClose').addEventListener('click', closeDrawer);
+    $('drCancel').addEventListener('click', closeDrawer);
+    DRM.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !DR.hidden) closeDrawer();
+      if ((e.metaKey || e.ctrlKey) && e.key === 's' && !DR.hidden) { e.preventDefault(); $('drSave').click(); }
+    });
+
+    $('drSave').addEventListener('click', async function () {
+      var title = $('drName').value.trim();
+      var content = $('drContent').value.trim();
+      if (!title) { $('drName').focus(); showToast('请先写个标题'); return; }
+      if (!content) { $('drContent').focus(); showToast('正文还是空的'); return; }
+      var isDraft = $('drDraftToggle').classList.contains('on');
+      var body = { title: title, content: content, mood: curMood(), isDraft: isDraft, photoIds: state.picked };
+      var b = $('drSave');
+      b.disabled = true;
+      try {
+        if (state.editing) {
+          await apiPatch('/trips/' + tripId + '/journals/' + state.editing.id, body);
+          showToast(isDraft ? '已保存（草稿）' : '已保存并发布');
+        } else {
+          await apiPost('/trips/' + tripId + '/journals', body);
+          showToast(isDraft ? '草稿已保存' : '游记已发布');
+        }
+        closeDrawer();
+        await load();
+      } catch (err) { showToast(humanError(err)); }
+      b.disabled = false;
+    });
+
+    /* ===== 卡片点击 ===== */
+    $('jGrid').addEventListener('click', async function (e) {
+      var card = e.target.closest('[data-jid]');
+      if (!card) return;
+      var id = card.getAttribute('data-jid');
+      var journal = state.journals.find(function (x) { return x.id === id; });
+      if (!journal) return;
+
+      /* 编辑 */
+      if (e.target.closest('.card-ops .ed, .hero-ops .ed')) { openDrawer(journal); return; }
+
+      /* 删除 */
+      if (e.target.closest('.card-ops .del, .hero-ops .del')) {
+        if (!confirm('删除游记「' + (journal.title || '无题') + '」？')) return;
+        try {
+          await apiDelete('/trips/' + tripId + '/journals/' + id);
+          state.journals = state.journals.filter(function (x) { return x.id !== id; });
+          buildMoodFilter();
+          render();
+          showToast('已删除');
+        } catch (err) { showToast(humanError(err)); }
+        return;
+      }
+
+      /* 其余区域：进详情 */
+      location.href = '/journal-detail/?id=' + encodeURIComponent(id) + '&trip=' + encodeURIComponent(tripId);
+    });
+
+    /* ===== 启动 ===== */
+    load();
+  })();
+</script>
+</body>
+</html>

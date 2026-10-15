@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 签发旅程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  :root {
+    --st-draft:     #8A9BA5;
+    --st-planning:  #C08A2E;
+    --st-active:    #1E9A6E;
+    --st-completed: #0D6E6E;
+  }
+
+  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 110px; max-width: 1240px; }
+
+  .crumb { font-size: 13px; color: var(--mute); display: flex; gap: 7px; align-items: center; }
+  .crumb a { color: var(--mute); text-decoration: none; }
+  .crumb a:hover { color: var(--brand); }
+  .crumb b { color: var(--brand); font-weight: 600; }
+
+  .page-head { margin-top: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en {
+    display: block; font-size: 12px; font-family: var(--grot); font-weight: 500;
+    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px;
+  }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 双栏布局：左表单 + 右预览 ===== */
+  .layout {
+    margin-top: 26px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 30px;
+    align-items: start;
+  }
+  .form-col { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+
+  /* ===== 字段卡 ===== */
+  .fcard {
+    background: #fff; border-radius: var(--r-card, 14px);
+    box-shadow: var(--card-shadow); padding: 22px 24px 24px;
+  }
+  .fcard-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+  .fcard-head .no {
+    font-family: var(--slab); font-weight: 700; font-size: 13px; color: var(--stamp);
+    border: 1.5px solid var(--stamp); border-radius: 8px; padding: 2px 8px;
+  }
+  .fcard-head .t { font-family: var(--slab); font-weight: 600; font-size: 18px; color: var(--ink); }
+  .fcard-head .req { font-size: 12px; color: var(--stamp-deep); }
+  .fcard-head .hint { margin-left: auto; font-size: 12px; color: var(--mute); }
+
+  .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .frow + .frow { margin-top: 14px; }
+  .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .field.wide { grid-column: 1 / -1; }
+  .field label { font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+  .field label .opt { font-weight: 400; color: var(--mute); font-size: 11.5px; }
+
+  .control { position: relative; }
+  .control input[type="text"],
+  .control input[type="date"],
+  .control input[type="number"],
+  .control input[type="url"],
+  .control textarea {
+    width: 100%; font-family: var(--grot); font-size: 14.5px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 14px; outline: none; line-height: 1.55;
+    transition: border-color .16s, background .16s, box-shadow .16s;
+  }
+  .control textarea { resize: vertical; min-height: 96px; }
+  .control input:focus, .control textarea:focus {
+    border-color: var(--brand-soft); background: #fff;
+    box-shadow: 0 0 0 3px rgba(91,197,192,0.18);
+  }
+  .control input::placeholder, .control textarea::placeholder { color: var(--mute); }
+  .control input[type="date"] { min-height: 46px; }
+  .field.invalid .control input, .field.invalid .control textarea { border-color: #E06A4E; background: #FFF7F4; }
+  .err-msg { font-size: 12px; color: #D2543A; display: none; }
+  .field.invalid .err-msg { display: block; }
+
+  .counter { position: absolute; right: 12px; bottom: 9px; font-size: 11.5px; color: var(--mute); background: var(--cloud); padding: 0 4px; border-radius: 4px; }
+  .counter.warn { color: var(--stamp-deep); }
+
+  /* 预算快捷 */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chips button {
+    font-family: var(--grot); font-size: 12.5px; color: var(--ink-2);
+    background: var(--mist); border: 1px solid transparent; border-radius: 999px;
+    padding: 6px 13px; cursor: pointer; transition: all .15s;
+  }
+  .chips button:hover { background: #fff; border-color: var(--brand-soft); color: var(--brand); }
+  .chips button.clear { color: var(--mute); background: none; border: 1px dashed var(--mute); }
+
+  /* 状态分段 */
+  .seg { display: flex; gap: 6px; background: var(--cloud); border-radius: 11px; padding: 4px; }
+  .seg button {
+    flex: 1; font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: none; padding: 9px 4px; border-radius: 8px; cursor: pointer;
+    transition: background .16s, color .16s, box-shadow .16s;
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--brand); }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,.12); }
+  .seg button .sdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+
+  /* 封面行 */
+  .cover-row { display: flex; gap: 10px; }
+  .cover-row .control { flex: 1; }
+  .btn-ghost {
+    font-family: var(--grot); font-size: 13px; color: var(--brand);
+    background: var(--mist); border: none; border-radius: 10px; padding: 0 16px;
+    cursor: pointer; white-space: nowrap; transition: background .15s;
+  }
+  .btn-ghost:hover { background: #CBEAE7; }
+
+  /* 完成度清单 */
+  .check-card { background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow); padding: 18px 24px; }
+  .check-card .t { font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+  .check-card .t .pct { margin-left: auto; font-family: var(--grot); font-size: 13px; color: var(--brand); }
+  .cklist { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .ck {
+    display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--mute);
+    background: var(--cloud); border-radius: 9px; padding: 8px 10px;
+    transition: all .18s;
+  }
+  .ck .bx {
+    flex: none; width: 16px; height: 16px; border-radius: 5px;
+    border: 1.5px solid #C7DBDA; display: grid; place-items: center;
+    font-size: 10px; color: #fff; background: #fff; transition: all .18s;
+  }
+  .ck.on { color: var(--brand); background: var(--mist); font-weight: 500; }
+  .ck.on .bx { background: var(--brand); border-color: var(--brand); }
+  .ck.on .bx::after { content: "✓"; }
+
+  /* ===== 右侧实时预览 ===== */
+  .pv-col { position: sticky; top: 26px; }
+  .pv-label { font-size: 11px; letter-spacing: .18em; color: var(--mute); text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .pv-label::after { content: ""; flex: 1; border-top: 1px dashed #C7DBDA; }
+
+  .pv-ticket {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    box-shadow: var(--card-shadow-strong);
+  }
+  .pv-main { padding: 20px 22px 18px; }
+  .pv-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .pv-head .bp { font-size: 10px; letter-spacing: .26em; color: var(--mute); }
+  .pv-head .os { font-family: var(--slab); font-weight: 700; font-size: 13px; color: var(--brand); }
+
+  .pv-route { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .pv-route .apt { font-family: var(--slab); font-weight: 600; font-size: 26px; color: var(--brand); line-height: 1.1; max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-route .apt.to { text-align: right; color: var(--ink); }
+  .pv-route .mid { flex: 1; display: flex; align-items: center; gap: 6px; color: var(--stamp); }
+  .pv-route .mid .ln { flex: 1; border-top: 2px dashed #F3B596; }
+  .pv-route .mid .pl { font-size: 15px; }
+
+  .pv-title { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-title.empty { color: var(--mute); }
+  .pv-code { font-family: var(--grot); font-size: 11px; letter-spacing: .14em; color: var(--mute); margin-bottom: 14px; }
+
+  .pv-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .pv-f .k { font-size: 10px; letter-spacing: .12em; color: var(--mute); text-transform: uppercase; margin-bottom: 3px; }
+  .pv-f .v { font-family: var(--grot); font-weight: 600; font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv-f .v.empty { color: #C7DBDA; }
+
+  .pv-desc { font-size: 12.5px; color: var(--ink-2); line-height: 1.65; margin-top: 12px; max-height: 58px; overflow: hidden; }
+  .pv-desc.empty { color: #B9CFCE; }
+
+  /* 穿孔线 */
+  .pv-perf { position: relative; height: 0; border-top: 2px dashed #C9E8E6; }
+  .pv-perf::before, .pv-perf::after {
+    content: ""; position: absolute; top: -9px; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--cloud);
+    box-shadow: inset 0 0 0 1.5px #C9E8E6;
+  }
+  .pv-perf::before { left: -9px; }
+  .pv-perf::after { right: -9px; }
+
+  .pv-stub { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; padding: 16px 22px 18px; }
+  .pv-stub .l .k { font-size: 10px; letter-spacing: .14em; color: var(--mute); text-transform: uppercase; }
+  .pv-stub .l .v { font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--ink); margin-top: 2px; }
+  .pv-stamp {
+    transform: rotate(-6deg);
+    font-family: var(--slab); font-weight: 700; font-size: 13px; letter-spacing: .1em;
+    color: var(--st-draft); border: 2.5px solid currentColor; border-radius: 8px;
+    padding: 5px 12px; opacity: .9; white-space: nowrap;
+  }
+  .pv-stamp.s-planning  { color: var(--st-planning); }
+  .pv-stamp.s-active    { color: var(--st-active); }
+  .pv-stamp.s-completed { color: var(--st-completed); }
+
+  .pv-bar { height: 26px; margin-top: 12px;
+    background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px, var(--ink) 5px 6px, transparent 6px 10px, var(--ink) 10px 13px, transparent 13px 16px);
+    opacity: .8; border-radius: 3px;
+  }
+
+  .pv-tip { margin-top: 14px; font-size: 12px; color: var(--mute); line-height: 1.6; }
+  .pv-tip b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 底部操作条 ===== */
+  .actionbar {
+    position: fixed; left: var(--rail-w, 232px); right: 0; bottom: 0; z-index: 30;
+    background: rgba(255,255,255,0.92); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line);
+    padding: 14px 44px;
+    display: flex; align-items: center; gap: 12px;
+    transition: left 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] .actionbar { left: 76px; }
+  .actionbar .tip { font-size: 12.5px; color: var(--mute); }
+  .actionbar .sp { flex: 1; }
+  .btn-cancel {
+    font-family: var(--grot); font-size: 14px; color: var(--ink-2);
+    background: none; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 20px; cursor: pointer; transition: all .15s;
+  }
+  .btn-cancel:hover { border-color: var(--brand-soft); color: var(--brand); }
+  .btn-save {
+    font-family: var(--grot); font-weight: 600; font-size: 15px; color: #fff;
+    background: var(--stamp); border: none; padding: 12px 30px; border-radius: 10px;
+    cursor: pointer; box-shadow: var(--stamp-shadow);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .btn-save:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(255,138,76,.4); }
+  .btn-save:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30); max-width: 76vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 1120px) {
+    .layout { grid-template-columns: 1fr; }
+    .pv-col { position: static; order: -1; }
+    .pv-ticket { max-width: 460px; }
+  }
+  @media (max-width: 980px) {
+    main { padding: 28px 24px 120px; }
+    .actionbar { padding: 12px 24px; }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 130px; }
+    h1 { font-size: 27px; }
+    .frow { grid-template-columns: 1fr; }
+    .cklist { grid-template-columns: repeat(2, 1fr); }
+    .actionbar { left: 0 !important; padding: 11px 16px; }
+    .actionbar .tip { display: none; }
+    .pv-stamp { font-size: 11px; padding: 4px 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <p class="crumb"><a href="/trips/">我的旅行</a><span>/</span><b id="crumbCur">签发新旅程</b></p>
+    <div class="page-head">
+      <div>
+        <h1 id="pageTitle">签发新旅程<span class="en">Issue a Boarding Pass</span></h1>
+        <p class="meta" id="pageMeta">填好这张票，旅程就有了起跑线</p>
+      </div>
+    </div>
+
+    <div class="layout">
+
+      <!-- ===== 左：表单 ===== -->
+      <form class="form-col" id="tripForm" novalidate>
+
+        <section class="fcard">
+          <div class="fcard-head">
+            <span class="no">01</span><span class="t">基本信息</span>
+            <span class="req">标题必填</span>
+          </div>
+          <div class="frow">
+            <div class="field wide" id="fTitle">
+              <label for="inTitle">旅程标题 <span class="opt">会印在票面正中</span></label>
+              <div class="control">
+                <input type="text" id="inTitle" maxlength="120" placeholder="比如：赤峰之旅 / 川西环线自驾" autocomplete="off">
+              </div>
+              <span class="err-msg">请先给旅程起一个标题</span>
+            </div>
+            <div class="field wide">
+              <label for="inDest">目的地 <span class="opt">选填</span></label>
+              <div class="control">
+                <input type="text" id="inDest" maxlength="60" placeholder="比如：赤峰 玉龙沙湖" autocomplete="off">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="fcard">
+          <div class="fcard-head">
+            <span class="no">02</span><span class="t">时间与预算</span>
+            <span class="hint">结束不能早于开始</span>
+          </div>
+          <div class="frow">
+            <div class="field" id="fStart">
+              <label for="inStart">开始日期</label>
+              <div class="control"><input type="date" id="inStart"></div>
+            </div>
+            <div class="field" id="fEnd">
+              <label for="inEnd">结束日期</label>
+              <div class="control"><input type="date" id="inEnd"></div>
+              <span class="err-msg">结束日期不能早于开始日期</span>
+            </div>
+          </div>
+          <div class="frow">
+            <div class="field wide" id="fBudget">
+              <label for="inBudget">预算 <span class="opt">选填 · 仅本人可见，CNY</span></label>
+              <div class="control">
+                <input type="number" id="inBudget" min="0" step="100" placeholder="0" style="padding-right:52px;">
+                <span class="counter" id="cBudget">¥</span>
+              </div>
+            </div>
+            <div class="field wide">
+              <div class="chips" id="budgetChips" aria-label="预算快捷加额">
+                <button type="button" data-add="2000">+ 2,000</button>
+                <button type="button" data-add="5000">+ 5,000</button>
+                <button type="button" data-add="10000">+ 10,000</button>
+                <button type="button" data-add="20000">+ 20,000</button>
+                <button type="button" class="clear" data-add="clear">清零</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="fcard" id="cardStatus" hidden>
+          <div class="fcard-head">
+            <span class="no">03</span><span class="t">行程状态</span>
+            <span class="hint">新建旅程一律从「草稿」开始</span>
+          </div>
+          <div class="seg" role="group" aria-label="行程状态" id="statusSeg">
+            <button type="button" data-st="draft" aria-pressed="false"><span class="sdot" style="background:var(--st-draft);"></span>草稿</button>
+            <button type="button" data-st="planning" aria-pressed="false"><span class="sdot" style="background:var(--st-planning);"></span>规划中</button>
+            <button type="button" data-st="active" aria-pressed="false"><span class="sdot" style="background:var(--st-active);"></span>进行中</button>
+            <button type="button" data-st="completed" aria-pressed="false"><span class="sdot" style="background:var(--st-completed);"></span>已完成</button>
+          </div>
+        </section>
+
+        <section class="fcard">
+          <div class="fcard-head">
+            <span class="no">04</span><span class="t">封面与描述</span>
+            <span class="hint">都可以留空</span>
+          </div>
+          <div class="frow">
+            <div class="field wide">
+              <label for="inCover">封面图地址 <span class="opt">选填</span></label>
+              <div class="cover-row">
+                <div class="control">
+                  <input type="url" id="inCover" placeholder="https://… 图片直链" autocomplete="off">
+                </div>
+                <button type="button" class="btn-ghost" id="btnCover" title="用目的地生成一张随机封面">随机封面</button>
+              </div>
+            </div>
+            <div class="field wide" id="fDesc">
+              <label for="inDesc">旅程描述 <span class="opt">选填 · 印在票面副栏</span></label>
+              <div class="control">
+                <textarea id="inDesc" maxlength="500" rows="4" placeholder="这次想看什么、想感受什么，一两句就够…"></textarea>
+                <span class="counter" id="cDesc">0 / 500</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="check-card">
+          <div class="t">签发完成度<span class="pct" id="ckPct">0%</span></div>
+          <div class="cklist" id="cklist">
+            <span class="ck" data-ck="title"><span class="bx"></span>标题</span>
+            <span class="ck" data-ck="dest"><span class="bx"></span>目的地</span>
+            <span class="ck" data-ck="date"><span class="bx"></span>日期</span>
+            <span class="ck" data-ck="budget"><span class="bx"></span>预算</span>
+            <span class="ck" data-ck="desc"><span class="bx"></span>描述</span>
+          </div>
+        </section>
+      </form>
+
+      <!-- ===== 右：实时预览 ===== -->
+      <aside class="pv-col" aria-label="登机牌实时预览">
+        <p class="pv-label">Live Preview · 实时票面</p>
+        <div class="pv-ticket">
+          <div class="pv-main">
+            <div class="pv-head">
+              <span class="bp">BOARDING PASS</span>
+              <span class="os">Travel OS</span>
+            </div>
+            <div class="pv-route">
+              <span class="apt" id="pvFrom" style="color:var(--mute);font-size:19px;">待定</span>
+              <span class="mid" aria-hidden="true"><span class="ln"></span><span class="pl">&#9992;</span><span class="ln"></span></span>
+              <span class="apt to" id="pvTo">目的地</span>
+            </div>
+            <p class="pv-title empty" id="pvTitle">未命名旅程</p>
+            <p class="pv-code" id="pvCode">NEW · BOARDING PASS</p>
+            <div class="pv-fields">
+              <div class="pv-f"><div class="k">出发</div><div class="v empty" id="pvStart">— —</div></div>
+              <div class="pv-f"><div class="k">返回</div><div class="v empty" id="pvEnd">— —</div></div>
+              <div class="pv-f"><div class="k">天数</div><div class="v empty" id="pvDays">–</div></div>
+              <div class="pv-f"><div class="k">预算</div><div class="v empty" id="pvBudget">—</div></div>
+            </div>
+            <p class="pv-desc empty" id="pvDesc">旅程描述会显示在这里</p>
+          </div>
+          <div class="pv-perf" aria-hidden="true"></div>
+          <div class="pv-stub">
+            <div class="l">
+              <div class="k">Holder · 旅行者</div>
+              <div class="v" id="pvUser">…</div>
+              <div class="pv-bar" aria-hidden="true"></div>
+            </div>
+            <span class="pv-stamp" id="pvStamp">DRAFT</span>
+          </div>
+        </div>
+        <p class="pv-tip">票面会随左边表单<b>实时更新</b>；保存后可在详情页继续完善行程安排、费用与预订。</p>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<!-- 底部操作条 -->
+<div class="actionbar">
+  <span class="tip" id="barTip">改动只会在点击「保存」后生效</span>
+  <span class="sp"></span>
+  <button type="button" class="btn-cancel" id="btnCancel">取消</button>
+  <button type="submit" class="btn-save" id="btnSave" form="tripForm">签发旅程</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    /* ===== 顶栏用户 + 侧栏折叠 ===== */
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+    document.getElementById('pvUser').textContent = user.displayName || user.username || '旅行者';
+
+    var shell = document.querySelector('.shell');
+    var btn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    /* ===== Toast ===== */
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+
+    /* ===== 模式判定 ===== */
+    var qs = new URLSearchParams(location.search);
+    var tripId = qs.get('id');
+    var isEdit = Boolean(tripId);
+    var STATUS = {
+      draft:    { label: '草稿',   stamp: 'DRAFT',    cls: '' },
+      planning:  { label: '规划中', stamp: 'PLANNING', cls: 's-planning' },
+      active:    { label: '进行中', stamp: 'ONBOARD',  cls: 's-active' },
+      completed: { label: '已完成', stamp: 'ARRIVED',  cls: 's-completed' }
+    };
+    var curStatus = 'draft';
+
+    var $ = function (id) { return document.getElementById(id); };
+    var inTitle = $('inTitle'), inDest = $('inDest'), inStart = $('inStart'),
+        inEnd = $('inEnd'), inBudget = $('inBudget'), inCover = $('inCover'), inDesc = $('inDesc');
+
+    if (isEdit) {
+      document.title = 'Travel OS · 编辑旅程';
+      $('pageTitle').innerHTML = '编辑旅程<span class="en">Edit Boarding Pass</span>';
+      $('crumbCur').textContent = '编辑旅程';
+      $('pageMeta').textContent = '修改会同步到行程详情与列表';
+      $('cardStatus').hidden = false;
+      $('btnSave').textContent = '保存改动';
+      $('barTip').textContent = '改动只会在点击「保存改动」后生效';
+    }
+
+    /* ===== 工具 ===== */
+    function fmtMoney(n) {
+      if (n === '' || n == null || isNaN(Number(n))) return '';
+      return '¥ ' + Number(n).toLocaleString('zh-CN');
+    }
+    function fmtMonthDay(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      var m = ('0' + (d.getMonth() + 1)).slice(-2);
+      var day = ('0' + d.getDate()).slice(-2);
+      return m + ' / ' + day;
+    }
+    function daysBetween(a, b) {
+      if (!a || !b) return 0;
+      var d1 = new Date(a), d2 = new Date(b);
+      if (isNaN(d1) || isNaN(d2)) return 0;
+      return Math.round((d2 - d1) / 86400000) + 1;
+    }
+
+    /* ===== 实时预览 ===== */
+    function updatePreview() {
+      var title = inTitle.value.trim();
+      var dest = inDest.value.trim();
+      var t = $('pvTitle');
+      t.textContent = title || '未命名旅程';
+      t.classList.toggle('empty', !title);
+
+      $('pvTo').textContent = dest || '目的地';
+
+      var sv = fmtMonthDay(inStart.value), ev = fmtMonthDay(inEnd.value);
+      function setField(el, v) { el.textContent = v || '— —'; el.classList.toggle('empty', !v); }
+      setField($('pvStart'), sv);
+      setField($('pvEnd'), ev);
+
+      var days = daysBetween(inStart.value, inEnd.value);
+      var dv = $('pvDays');
+      dv.textContent = days ? days + ' 天' : '–';
+      dv.classList.toggle('empty', !days);
+
+      var bud = fmtMoney(inBudget.value);
+      var bv = $('pvBudget');
+      bv.textContent = bud || '—';
+      bv.classList.toggle('empty', !bud);
+
+      var desc = inDesc.value.trim();
+      var dp = $('pvDesc');
+      dp.textContent = desc || '旅程描述会显示在这里';
+      dp.classList.toggle('empty', !desc);
+
+      var st = STATUS[curStatus] || STATUS.draft;
+      var stamp = $('pvStamp');
+      stamp.textContent = isEdit ? st.stamp : 'DRAFT';
+      stamp.className = 'pv-stamp' + (isEdit ? ' ' + st.cls : '');
+
+      var code = $('pvCode');
+      if (!isEdit) {
+        code.textContent = 'NEW · BOARDING PASS';
+      } else {
+        var codeParts = [];
+        if (dest) codeParts.push(dest.toUpperCase());
+        if (inStart.value) codeParts.push(inStart.value.replace(/-/g, '.'));
+        codeParts.push(st.label.toUpperCase());
+        code.textContent = codeParts.join(' · ');
+      }
+      updateChecklist();
+    }
+
+    /* ===== 完成度清单 ===== */
+    function updateChecklist() {
+      var ok = {
+        title:  inTitle.value.trim().length > 0,
+        dest:   inDest.value.trim().length > 0,
+        date:   Boolean(inStart.value && inEnd.value && inEnd.value >= inStart.value),
+        budget: inBudget.value !== '' && Number(inBudget.value) >= 0,
+        desc:   inDesc.value.trim().length > 0
+      };
+      var n = 0, total = 0;
+      Object.keys(ok).forEach(function (k) {
+        total++;
+        if (ok[k]) n++;
+        var el = document.querySelector('.ck[data-ck="' + k + '"]');
+        if (el) el.classList.toggle('on', ok[k]);
+      });
+      $('ckPct').textContent = Math.round(n / total * 100) + '%';
+    }
+
+    /* ===== 输入绑定 ===== */
+    [inTitle, inDest, inStart, inEnd, inBudget, inCover, inDesc].forEach(function (el) {
+      el.addEventListener('input', updatePreview);
+      el.addEventListener('change', updatePreview);
+    });
+    inTitle.addEventListener('input', function () {
+      if (inTitle.value.trim()) $('fTitle').classList.remove('invalid');
+    });
+    inEnd.addEventListener('change', function () {
+      if (inStart.value && inEnd.value && inEnd.value < inStart.value) $('fEnd').classList.add('invalid');
+      else $('fEnd').classList.remove('invalid');
+    });
+    inStart.addEventListener('change', function () {
+      if (inEnd.value && inEnd.value < inStart.value) $('fEnd').classList.add('invalid');
+      else $('fEnd').classList.remove('invalid');
+    });
+
+    /* 预算快捷 */
+    $('budgetChips').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      var add = b.getAttribute('data-add');
+      if (add === 'clear') { inBudget.value = ''; }
+      else {
+        var cur = Number(inBudget.value) || 0;
+        inBudget.value = cur + Number(add);
+      }
+      updatePreview();
+    });
+
+    /* 状态分段（仅编辑显示） */
+    $('statusSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      curStatus = b.getAttribute('data-st');
+      document.querySelectorAll('#statusSeg button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      updatePreview();
+    });
+
+    /* 随机封面 */
+    $('btnCover').addEventListener('click', function () {
+      var seed = encodeURIComponent((inDest.value.trim() || inTitle.value.trim() || 'trip') + '-' + Math.floor(Math.random() * 90 + 10));
+      inCover.value = 'https://picsum.photos/seed/' + seed + '/800/600';
+      showToast('已生成随机封面，保存后生效');
+    });
+
+    /* ===== 编辑模式：加载行程 ===== */
+    async function loadTrip() {
+      try {
+        var data = await apiGet('/trips/' + tripId);
+        var t = data && data.trip;
+        if (!t) throw new Error('trip not found');
+        inTitle.value = t.title || '';
+        inDest.value = t.destination || '';
+        if (t.startDate) inStart.value = String(t.startDate).slice(0, 10);
+        if (t.endDate) inEnd.value = String(t.endDate).slice(0, 10);
+        if (t.budget != null) inBudget.value = Number(t.budget);
+        inCover.value = t.coverImageUrl || '';
+        inDesc.value = t.description || '';
+        if (t.status && STATUS[t.status]) curStatus = t.status;
+        document.querySelectorAll('#statusSeg button').forEach(function (x) {
+          x.setAttribute('aria-pressed', x.getAttribute('data-st') === curStatus ? 'true' : 'false');
+        });
+        $('cDesc').textContent = inDesc.value.length + ' / 500';
+        updatePreview();
+      } catch (err) {
+        showToast(humanError(err));
+        setTimeout(function () { location.replace('/trips/'); }, 1200);
+      }
+    }
+
+    /* ===== 保存 ===== */
+    document.getElementById('tripForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var title = inTitle.value.trim();
+      if (!title) { $('fTitle').classList.add('invalid'); inTitle.focus(); showToast('请先填写旅程标题'); return; }
+      if (inStart.value && inEnd.value && inEnd.value < inStart.value) {
+        $('fEnd').classList.add('invalid'); showToast('结束日期不能早于开始日期'); return;
+      }
+
+      var bud = inBudget.value.trim();
+      var payload = {
+        title: title,
+        destination: inDest.value.trim() || null,
+        startDate: inStart.value || null,
+        endDate: inEnd.value || null,
+        description: inDesc.value.trim() || null,
+        coverImageUrl: inCover.value.trim() || null
+      };
+      if (isEdit) {
+        payload.status = curStatus;
+        payload.budget = bud === '' ? null : bud;
+      }
+
+      var saveBtn = $('btnSave');
+      saveBtn.disabled = true;
+      var oldText = saveBtn.textContent;
+      saveBtn.textContent = isEdit ? '保存中…' : '签发中…';
+      try {
+        var newId = tripId;
+        if (isEdit) {
+          await apiPatch('/trips/' + tripId, payload);
+          showToast('已保存');
+        } else {
+          /* 注意：create 不接收 budget，创建成功后单独 PATCH 补写 */
+          var created = await apiPost('/trips', payload);
+          newId = created && created.trip && created.trip.id;
+          if (newId && bud !== '') {
+            try { await apiPatch('/trips/' + newId, { budget: bud }); } catch (e2) { /* 预算补写失败不阻断 */ }
+          }
+          showToast('旅程已签发');
+        }
+        setTimeout(function () {
+          location.href = '/trip-detail/' + (newId ? '?id=' + encodeURIComponent(newId) : '');
+        }, 700);
+      } catch (err) {
+        showToast(humanError(err));
+        saveBtn.disabled = false;
+        saveBtn.textContent = oldText;
+      }
+    });
+
+    document.getElementById('btnCancel').addEventListener('click', function () {
+      if (history.length > 1) history.back();
+      else location.href = isEdit ? '/trip-detail/?id=' + encodeURIComponent(tripId) : '/trips/';
+    });
+
+    /* ===== 启动 ===== */
+    if (isEdit) loadTrip(); else updatePreview();
+  })();
+</script>
+</body>
+</html>

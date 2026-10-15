@@ -1,0 +1,88 @@
+/* Travel OS · 全站设计令牌
+ * 由 travel-os-*.html 设计稿汇总抽离；
+ * 仅保留视觉令牌（颜色 / 字体 / 阴影 / 圆角 / 节奏），不依赖任何框架。
+ */
+
+:root {
+  /* 主色：清新海岛 teal */
+  --brand: #0D6E6E;
+  --brand-2: #137C79;
+  --brand-soft: #5BC5C0;
+  --brand-tint: #A7E3DF;
+  --mist: #DCF2F0;
+  --cloud: #F7FAFA;
+
+  /* 辅色 */
+  --stamp: #FF8A4C;      /* 强调橙（主操作、提醒） */
+  --stamp-soft: #FFD9C2;
+  --stamp-bg: #FFEDE6;
+  --stamp-deep: #B8451F;
+
+  /* 中性 */
+  --ink: #123A3C;
+  --ink-2: #3D6A6C;
+  --mute: #9BB0B5;
+  --line: #E4F1F1;
+
+  /* 状态点 */
+  --ok: #2EA66F;
+  --warn: #E8B23A;
+  --info: #3D7DBE;
+
+  /* 字体 */
+  --slab: "Fraunces", "Noto Sans SC", Georgia, serif;
+  --grot: "Space Grotesk", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* 阴影 / 圆角 / 节奏 */
+  --card-shadow: 0 8px 24px rgba(13, 110, 110, 0.10), 0 1px 2px rgba(13, 110, 110, 0.06);
+  --card-shadow-strong: 0 18px 48px rgba(13, 110, 110, 0.18), 0 2px 4px rgba(13, 110, 110, 0.08);
+  --stamp-shadow: 0 6px 18px rgba(255, 138, 76, 0.32);
+
+  --r-card: 14px;
+  --r-pill: 999px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--grot);
+  background: var(--cloud);
+  color: var(--ink);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: inherit; }
+
+/* ===== 通用工具 ===== */
+.btn-stamp {
+  font-family: var(--grot); font-weight: 600; font-size: 15px; color: #fff;
+  background: var(--stamp); border: none; border-radius: 11px;
+  padding: 15px 24px; cursor: pointer;
+  box-shadow: var(--stamp-shadow);
+  transition: transform .14s ease, box-shadow .14s ease;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-stamp:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(255,138,76,.4); }
+.btn-stamp:active { transform: translateY(0); }
+.btn-stamp:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+.alert {
+  display: flex; align-items: center; gap: 9px;
+  padding: 12px 16px; border-radius: 11px;
+  font-size: 13px;
+  background: var(--stamp-bg); border: 1.5px solid #F8D3C2; color: var(--stamp-deep);
+}
+.alert[hidden] { display: none; }
+
+.link {
+  font-family: var(--grot); font-size: 13.5px; color: var(--brand);
+  background: none; border: none; cursor: pointer; padding: 0;
+  border-bottom: 1px solid transparent; transition: border-color .16s;
+}
+.link:hover { border-bottom-color: var(--brand); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

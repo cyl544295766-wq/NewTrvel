@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 证件票据</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1240px; }
+
+  .crumb { font-size: 13px; color: var(--mute); display: flex; gap: 7px; align-items: center; }
+  .crumb a { color: var(--mute); text-decoration: none; }
+  .crumb a:hover { color: var(--brand); }
+  .crumb b { color: var(--brand); font-weight: 600; }
+
+  .page-head { margin-top: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en {
+    display: block; font-size: 12px; font-family: var(--grot); font-weight: 500;
+    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px;
+  }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 总览 ===== */
+  .overview { margin-top: 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .ov {
+    background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow);
+    padding: 16px 20px; display: flex; align-items: center; gap: 14px;
+  }
+  .ov .ic { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+  .ov .v { font-family: var(--grot); font-weight: 600; font-size: 22px; color: var(--ink); line-height: 1.2; }
+  .ov .k { font-size: 12px; color: var(--mute); margin-top: 2px; }
+
+  /* ===== 筛选 ===== */
+  .toolbar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .filters { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); flex-wrap: wrap; }
+  .filters button {
+    font-family: var(--grot); font-size: 13px; color: var(--ink-2);
+    background: none; border: none; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .filters button:hover { background: #F2FAF9; color: var(--brand); }
+  .filters button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+  .filters button .n { font-size: 11px; opacity: .72; margin-left: 3px; }
+  .search {
+    margin-left: auto; display: flex; align-items: center; gap: 9px;
+    background: #fff; padding: 0 16px; height: 40px; border-radius: 11px;
+    box-shadow: var(--card-shadow); min-width: 220px;
+  }
+  .search input { border: none; outline: none; font-family: var(--grot); font-size: 13.5px; color: var(--ink); background: none; width: 100%; }
+  .search input::placeholder { color: var(--mute); }
+
+  /* ===== 上传面板 ===== */
+  .form-panel {
+    margin-top: 20px; background: #fff; border-radius: var(--r-card, 14px);
+    box-shadow: var(--card-shadow); padding: 22px 24px; border-top: 3px solid var(--stamp);
+  }
+  .form-panel[hidden] { display: none; }
+  .fp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .fp-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .fp-head .hint { font-size: 12px; color: var(--mute); }
+  .fp-head .x { margin-left: auto; width: 30px; height: 30px; border: none; background: var(--cloud); border-radius: 8px; color: var(--mute); cursor: pointer; font-size: 14px; }
+  .fp-head .x:hover { color: var(--ink); }
+
+  .dropzone {
+    border: 2px dashed #B9DEDC; border-radius: 13px; background: var(--cloud);
+    padding: 26px 20px; text-align: center; cursor: pointer;
+    transition: border-color .16s, background .16s;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--brand-soft); background: #F0F8F7; }
+  .dropzone .ic { font-size: 30px; margin-bottom: 8px; }
+  .dropzone .t { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .dropzone .d { font-size: 12px; color: var(--mute); margin-top: 4px; }
+  .dropzone input[type="file"] { display: none; }
+  .file-chip {
+    display: none; align-items: center; gap: 10px; margin-top: 12px;
+    background: var(--mist); border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--brand);
+  }
+  .file-chip.show { display: flex; }
+  .file-chip .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip .sz { color: var(--mute); font-size: 12px; flex: none; }
+  .file-chip button { margin-left: auto; border: none; background: none; color: var(--mute); cursor: pointer; font-size: 13px; }
+  .file-chip button:hover { color: #D2543A; }
+
+  .fp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .fp-field { display: flex; flex-direction: column; gap: 6px; }
+  .fp-field label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .fp-field input {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; outline: none; width: 100%;
+  }
+  .fp-field input:focus { border-color: var(--brand-soft); background: #fff; box-shadow: 0 0 0 3px rgba(91,197,192,.16); }
+  .type-chips { display: flex; gap: 7px; flex-wrap: wrap; }
+  .type-chips button {
+    font-family: var(--grot); font-size: 12px; color: var(--ink-2);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 6px 12px; cursor: pointer; transition: all .14s;
+  }
+  .type-chips button[aria-pressed="true"] { color: var(--tc); background: var(--tb); border-color: var(--tc); font-weight: 600; }
+  .rem-switch { display: flex; align-items: center; gap: 10px; }
+  .sw { position: relative; width: 42px; height: 24px; border-radius: 999px; background: #D5E5E3; cursor: pointer; transition: background .18s; border: none; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .sw.on { background: var(--brand); }
+  .sw.on::after { transform: translateX(18px); }
+  .fp-actions { margin-top: 18px; display: flex; gap: 10px; justify-content: flex-end; }
+  .btn-primary-sm {
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: #fff;
+    background: var(--brand); border: none; padding: 11px 26px; border-radius: 10px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(13,110,110,.24); transition: transform .14s;
+  }
+  .btn-primary-sm:hover { transform: translateY(-1px); }
+  .btn-primary-sm:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink-2);
+    background: none; border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 11px 20px; cursor: pointer;
+  }
+  .btn-plain:hover { border-color: var(--brand-soft); color: var(--brand); }
+
+  /* ===== 文档卡 ===== */
+  .doc-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; }
+  .doc-card {
+    background: #fff; border-radius: 14px; box-shadow: var(--card-shadow);
+    padding: 16px 18px 14px 22px; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; gap: 8px;
+    transition: transform .16s, box-shadow .16s;
+  }
+  .doc-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(13,110,110,.14); }
+  .doc-card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+    background: var(--dc);
+  }
+  .doc-card.expired::before { background: #D2543A; }
+  .doc-card.soon::before { background: #B8830F; }
+
+  .dc-head { display: flex; align-items: flex-start; gap: 12px; }
+  .dc-ic {
+    flex: none; width: 42px; height: 42px; border-radius: 12px; background: var(--db);
+    color: var(--dc); display: grid; place-items: center; font-size: 19px;
+  }
+  .dc-title { font-family: var(--grot); font-weight: 600; font-size: 15px; color: var(--ink); line-height: 1.35; }
+  .dc-type { font-size: 11px; color: var(--dc); background: var(--db); border-radius: 999px; padding: 2px 9px; display: inline-block; margin-top: 4px; font-weight: 500; }
+  .dc-ops { margin-left: auto; display: flex; gap: 3px; opacity: 0; transition: opacity .16s; flex: none; }
+  .doc-card:hover .dc-ops { opacity: 1; }
+  .dc-ops button {
+    width: 27px; height: 27px; border: none; border-radius: 8px; background: none;
+    color: var(--mute); font-size: 12.5px; cursor: pointer;
+  }
+  .dc-ops button:hover { background: var(--cloud); color: var(--brand); }
+  .dc-ops button.del:hover { color: #D2543A; background: #FFF3F0; }
+
+  .dc-exp { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .dc-exp .lab { color: var(--mute); }
+  .dc-exp .soon { color: #B8830F; font-weight: 600; }
+  .dc-exp .over { color: #D2543A; font-weight: 600; }
+  .dc-notes { font-size: 12px; color: var(--mute); line-height: 1.55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .dc-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1.5px dashed var(--line); }
+  .rem-lab { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
+  .dc-view {
+    margin-left: auto; font-family: var(--grot); font-size: 12px; font-weight: 600;
+    color: var(--dc); background: var(--db); border: none; border-radius: 8px;
+    padding: 5px 13px; cursor: pointer; transition: filter .14s;
+  }
+  .dc-view:hover { filter: brightness(.96); }
+
+  /* 空态 */
+  .empty-state {
+    margin-top: 22px; background: #fff; border-radius: 16px; box-shadow: var(--card-shadow);
+    padding: 54px 30px; text-align: center;
+  }
+  .empty-state .ic { font-size: 38px; margin-bottom: 10px; }
+  .empty-state .t { font-family: var(--slab); font-weight: 600; font-size: 18px; color: var(--ink); }
+  .empty-state .d { font-size: 13px; color: var(--mute); margin-top: 6px; }
+  .empty-state .d b { color: var(--stamp); font-weight: 500; }
+
+  /* 预览浮层 */
+  .pv-mask {
+    position: fixed; inset: 0; z-index: 90; background: rgba(10,32,34,.78);
+    display: grid; place-items: center; padding: 30px;
+  }
+  .pv-mask[hidden] { display: none; }
+  .pv-box {
+    background: #fff; border-radius: 16px; max-width: min(860px, 92vw);
+    max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .pv-box .ph { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .pv-box .ph .t { font-weight: 600; font-size: 14.5px; color: var(--ink); }
+  .pv-box .ph .x { margin-left: auto; width: 30px; height: 30px; border: none; background: var(--cloud); border-radius: 8px; color: var(--mute); cursor: pointer; }
+  .pv-box .pb { overflow: auto; padding: 14px; display: grid; place-items: center; background: #F2F6F6; min-height: 200px; }
+  .pv-box img { max-width: 100%; max-height: 66vh; border-radius: 8px; }
+  .pv-box iframe { width: min(820px, 84vw); height: 66vh; border: none; border-radius: 8px; }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #fff; font-size: 13.5px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .22s, transform .22s; z-index: 99;
+    box-shadow: 0 12px 32px rgba(18,58,60,.30); max-width: 76vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 980px) {
+    main { padding: 28px 24px 50px; }
+    .overview { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 50px; }
+    h1 { font-size: 27px; }
+    .overview { grid-template-columns: 1fr 1fr; }
+    .fp-grid { grid-template-columns: 1fr; }
+    .dc-ops { opacity: 1; }
+    .search { margin-left: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <p class="crumb"><a href="/trips/">我的旅行</a><span>/</span><a href="#" id="crumbTrip">行程详情</a><span>/</span><b>证件票据</b></p>
+    <div class="page-head">
+      <div>
+        <h1>证件票据<span class="en">Travel Documents</span></h1>
+        <p class="meta" id="pageMeta">正在加载…</p>
+      </div>
+      <button class="btn-primary-sm" id="btnToggleForm" style="background:var(--stamp);box-shadow:0 6px 16px rgba(255,138,76,.30);">⤒ 上传文档</button>
+    </div>
+
+    <!-- 总览 -->
+    <section class="overview">
+      <div class="ov">
+        <span class="ic" style="background:#E9F2FD;color:#2F6FB5;">🗂</span>
+        <div><div class="v" id="ovTotal">0</div><div class="k">文档总数</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#FDF5E2;color:#B8830F;">⏳</span>
+        <div><div class="v" id="ovSoon">0</div><div class="k">7 天内到期</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#FFF3F0;color:#D2543A;">⚠</span>
+        <div><div class="v" id="ovOver">0</div><div class="k">已过期</div></div>
+      </div>
+      <div class="ov">
+        <span class="ic" style="background:#DCF2F0;color:#0D6E6E;">🔔</span>
+        <div><div class="v" id="ovRemind">0</div><div class="k">提醒已开启</div></div>
+      </div>
+    </section>
+
+    <!-- 筛选 -->
+    <div class="toolbar">
+      <div class="filters" id="filters" role="group" aria-label="按类型筛选"></div>
+      <label class="search">
+        <span aria-hidden="true" style="color:var(--mute);">🔍</span>
+        <input type="search" id="search" placeholder="搜索文档标题" aria-label="搜索文档">
+      </label>
+    </div>
+
+    <!-- 上传 / 编辑面板 -->
+    <section class="form-panel" id="formPanel" hidden>
+      <div class="fp-head">
+        <span class="t" id="fpTitle">上传文档</span>
+        <span class="hint" id="fpHint">支持 PDF / JPG / PNG / WebP · 单个 ≤ 10MB</span>
+        <button type="button" class="x" id="btnCloseForm" aria-label="关闭">✕</button>
+      </div>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="选择或拖拽文件">
+        <div class="ic">📄</div>
+        <div class="t">点击选择 或 拖拽文件到这里</div>
+        <div class="d">护照 / 签证 / 机票 / 酒店确认单 / 门票 / 保险单 …</div>
+        <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp">
+      </div>
+      <div class="file-chip" id="fileChip">
+        <span aria-hidden="true">📎</span>
+        <span class="nm" id="chipName"></span>
+        <span class="sz" id="chipSize"></span>
+        <button type="button" id="btnClearFile" title="移除文件">✕</button>
+      </div>
+      <div class="fp-grid">
+        <div class="fp-field">
+          <label>文档类型</label>
+          <div class="type-chips" id="typeChips"></div>
+        </div>
+        <div class="fp-field">
+          <label>标题（选填，默认用文件名）</label>
+          <input type="text" id="fTitle" maxlength="120" placeholder="如：蒙古签证">
+        </div>
+        <div class="fp-field">
+          <label>有效期 / 截止日（选填）</label>
+          <input type="date" id="fExpired">
+        </div>
+        <div class="fp-field">
+          <label>到期提醒</label>
+          <div class="rem-switch">
+            <button type="button" class="sw" id="fReminder" aria-pressed="false" aria-label="到期提醒开关"></button>
+            <span style="font-size:12.5px;color:var(--mute);" id="remLab">关闭 · 到期前不提醒</span>
+          </div>
+        </div>
+        <div class="fp-field" style="grid-column:1/-1;">
+          <label>备注（选填）</label>
+          <input type="text" id="fNotes" maxlength="200" placeholder="如：签证号 G12345，入境次数单次">
+        </div>
+      </div>
+      <div class="fp-actions">
+        <button type="button" class="btn-plain" id="btnCancelForm">取消</button>
+        <button type="button" class="btn-primary-sm" id="btnSaveDoc">保存</button>
+      </div>
+    </section>
+
+    <!-- 文档卡区 -->
+    <section class="doc-grid" id="docGrid" aria-label="文档列表">
+      <p style="grid-column:1/-1;padding:40px 0;text-align:center;color:var(--mute);" id="loading">正在加载文档…</p>
+    </section>
+  </main>
+</div>
+
+<!-- 预览浮层 -->
+<div class="pv-mask" id="pvMask" hidden>
+  <div class="pv-box">
+    <div class="ph">
+      <span class="t" id="pvTitle">预览</span>
+      <a class="btn-plain" id="pvOpen" target="_blank" rel="noopener" style="text-decoration:none;padding:6px 12px;font-size:12px;">新窗口打开</a>
+      <button type="button" class="x" id="pvClose" aria-label="关闭预览">✕</button>
+    </div>
+    <div class="pb" id="pvBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var qs = new URLSearchParams(location.search);
+    var tripId = qs.get('trip') || qs.get('id');
+    if (!tripId) { location.replace('/trips/'); return; }
+
+    /* ===== 壳：用户 + 侧栏 ===== */
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var btn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    /* ===== Toast ===== */
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+
+    /* ===== 常量 ===== */
+    var TYPES = [
+      { value: 'passport',  label: '护照',       ic: '🛂', c: '#2F6FB5', bg: '#E9F2FD' },
+      { value: 'visa',      label: '签证',       ic: '✅', c: '#6B4FC0', bg: '#EFEAFB' },
+      { value: 'flight',    label: '机票',       ic: '✈', c: '#2A8055', bg: '#E6F4EC' },
+      { value: 'hotel',     label: '酒店确认单', ic: '⌂', c: '#C1704A', bg: '#FCECE4' },
+      { value: 'ticket',    label: '门票',       ic: '▣', c: '#B8830F', bg: '#FDF5E2' },
+      { value: 'insurance', label: '保险',       ic: '🛡', c: '#3D8B64', bg: '#E9F8EE' },
+      { value: 'other',     label: '其他',       ic: '◆', c: '#5B6B7C', bg: '#EEF2F5' }
+    ];
+    function typeOf(v) {
+      for (var i = 0; i < TYPES.length; i++) if (TYPES[i].value === v) return TYPES[i];
+      return TYPES[6];
+    }
+    var $ = function (id) { return document.getElementById(id); };
+    var state = { trip: null, docs: [], filter: 'all', keyword: '', editingId: null, pendingFile: null };
+
+    /* ===== 工具 ===== */
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function dayDiff(dstr) {
+      if (!dstr) return null;
+      var d = new Date(dstr); if (isNaN(d)) return null;
+      var today = new Date();
+      d.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0);
+      return Math.round((d - today) / 86400000);
+    }
+    function fmtDate(dstr) {
+      if (!dstr) return '';
+      var d = new Date(dstr);
+      return isNaN(d) ? '' : (d.getFullYear() + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '.' + ('0' + d.getDate()).slice(-2));
+    }
+    function humanSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    /* ===== 加载 ===== */
+    async function load() {
+      try {
+        var results = await Promise.allSettled([
+          apiGet('/trips/' + tripId),
+          apiGet('/trips/' + tripId + '/documents')
+        ]);
+        if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
+        state.docs = results[1].status === 'fulfilled' ? (results[1].value.documents || []) : [];
+
+        document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
+        document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
+        document.title = 'Travel OS · ' + ((state.trip && state.trip.title) || '') + ' · 证件票据';
+        buildFilters();
+        render();
+      } catch (err) {
+        showToast(humanError(err));
+        document.getElementById('loading').textContent = '加载失败，请刷新重试';
+      }
+    }
+
+    /* ===== 筛选 chips ===== */
+    function buildFilters() {
+      var counts = { all: state.docs.length };
+      TYPES.forEach(function (t) { counts[t.value] = 0; });
+      state.docs.forEach(function (d) { counts[d.type] = (counts[d.type] || 0) + 1; });
+      var html = '<button type="button" data-f="all" aria-pressed="' + (state.filter === 'all') + '">全部<span class="n">' + counts.all + '</span></button>';
+      TYPES.forEach(function (t) {
+        html += '<button type="button" data-f="' + t.value + '" aria-pressed="' + (state.filter === t.value) + '">' + t.label + '<span class="n">' + counts[t.value] + '</span></button>';
+      });
+      $('filters').innerHTML = html;
+    }
+    $('filters').addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      state.filter = b.getAttribute('data-f');
+      buildFilters();
+      render();
+    });
+    $('search').addEventListener('input', function () {
+      state.keyword = this.value.trim().toLowerCase();
+      render();
+    });
+
+    /* ===== 渲染 ===== */
+    function renderOverview() {
+      var soon = 0, over = 0, rem = 0;
+      state.docs.forEach(function (d) {
+        var diff = dayDiff(d.expiredAt);
+        if (diff != null && diff < 0) over++;
+        else if (diff != null && diff < 7) soon++;
+        if (d.isReminder) rem++;
+      });
+      $('ovTotal').textContent = state.docs.length;
+      $('ovSoon').textContent = soon;
+      $('ovOver').textContent = over;
+      $('ovRemind').textContent = rem;
+
+      var meta = $('pageMeta');
+      meta.innerHTML = '<b>' + escapeHtml((state.trip && state.trip.title) || '') + '</b> · ' + state.docs.length + ' 份文档'
+        + (soon ? ' · <span style="color:#B8830F;font-weight:600;">' + soon + ' 份即将到期</span>' : '')
+        + (over ? ' · <span style="color:#D2543A;font-weight:600;">' + over + ' 份已过期</span>' : '');
+    }
+
+    function docCardHtml(d) {
+      var t = typeOf(d.type);
+      var diff = dayDiff(d.expiredAt);
+      var expired = diff != null && diff < 0;
+      var soon = diff != null && diff >= 0 && diff < 7;
+      var expHtml = '';
+      if (d.expiredAt) {
+        var lab = expired ? '已过期 ' + Math.abs(diff) + ' 天' : soon ? (diff === 0 ? '今天到期' : diff + ' 天后到期') : fmtDate(d.expiredAt);
+        expHtml = '<div class="dc-exp"><span class="lab">有效期</span>'
+          + '<span class="' + (expired ? 'over' : soon ? 'soon' : '') + '">' + lab + '</span>'
+          + '<span style="color:var(--mute);">' + (expired || soon ? '· ' + fmtDate(d.expiredAt) : '') + '</span></div>';
+      } else {
+        expHtml = '<div class="dc-exp"><span class="lab">有效期</span><span style="color:#B9CFCE;">长期有效</span></div>';
+      }
+      var isImg = /^data:image\//.test(d.url || '');
+      return ''
+        + '<article class="doc-card' + (expired ? ' expired' : soon ? ' soon' : '') + '" data-doc="' + escapeHtml(d.id) + '" style="--dc:' + t.c + ';--db:' + t.bg + ';">'
+        +   '<div class="dc-head">'
+        +     '<span class="dc-ic">' + t.ic + '</span>'
+        +     '<div style="min-width:0;">'
+        +       '<div class="dc-title">' + escapeHtml(d.title || t.label) + '</div>'
+        +       '<span class="dc-type">' + t.label + '</span>'
+        +     '</div>'
+        +     '<span class="dc-ops">'
+        +       '<button type="button" class="ed" title="编辑">✎</button>'
+        +       '<button type="button" class="del" title="删除">×</button>'
+        +     '</span>'
+        +   '</div>'
+        +   expHtml
+        +   (d.notes ? '<div class="dc-notes">' + escapeHtml(d.notes) + '</div>' : '')
+        +   '<div class="dc-foot">'
+        +     '<span class="rem-lab" data-remind="' + escapeHtml(d.id) + '" title="点击切换到期提醒">'
+        +       '<span class="sw' + (d.isReminder ? ' on' : '') + '"></span>' + (d.isReminder ? '提醒开' : '提醒关')
+        +     '</span>'
+        +     '<button type="button" class="dc-view" data-view="' + escapeHtml(d.id) + '">' + (isImg ? '查看图片' : '查看文件') + '</button>'
+        +   '</div>'
+        + '</article>';
+    }
+
+    function render() {
+      renderOverview();
+      var grid = $('docGrid');
+      var kw = state.keyword;
+      var list = state.docs.filter(function (d) {
+        if (state.filter !== 'all' && d.type !== state.filter) return false;
+        if (kw && !((d.title || '') + (d.notes || '')).toLowerCase().includes(kw)) return false;
+        return true;
+      });
+      if (!state.docs.length) {
+        grid.innerHTML = ''
+          + '<div class="empty-state" style="grid-column:1/-1;">'
+          +   '<div class="ic">🗂</div>'
+          +   '<div class="t">还没有上传文档</div>'
+          +   '<div class="d">点击右上角 <b>「⤒ 上传文档」</b>，护照 / 签证 / 机票确认单随手存，行程在手说走就走</div>'
+          + '</div>';
+        return;
+      }
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:34px 20px;"><div class="ic">🔍</div><div class="t" style="font-size:15px;">没有匹配的文档</div></div>';
+        return;
+      }
+      grid.innerHTML = list.map(docCardHtml).join('');
+    }
+
+    /* ===== 上传 / 编辑 ===== */
+    var CHIPS = $('typeChips');
+    CHIPS.innerHTML = TYPES.map(function (t) {
+      return '<button type="button" data-t="' + t.value + '" style="--tc:' + t.c + ';--tb:' + t.bg + ';" aria-pressed="' + (t.value === 'passport' ? 'true' : 'false') + '">' + t.ic + ' ' + t.label + '</button>';
+    }).join('');
+    CHIPS.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      CHIPS.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    });
+    function curType() {
+      var on = CHIPS.querySelector('button[aria-pressed="true"]');
+      return on ? on.getAttribute('data-t') : 'other';
+    }
+    function setType(v) {
+      CHIPS.querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x.getAttribute('data-t') === v ? 'true' : 'false');
+      });
+    }
+
+    $('fReminder').addEventListener('click', function () {
+      var on = this.classList.toggle('on');
+      this.setAttribute('aria-pressed', on ? 'true' : 'false');
+      $('remLab').textContent = on ? '开启 · 到期前 7 天提醒' : '关闭 · 到期前不提醒';
+    });
+
+    /* 文件选择（点击 / 拖拽） */
+    var dz = $('dropzone'), fi = $('fileInput');
+    dz.addEventListener('click', function () { fi.click(); });
+    dz.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fi.click(); } });
+    ['dragover', 'dragenter'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('drag'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('drag'); });
+    });
+    dz.addEventListener('drop', function (e) {
+      var f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) acceptFile(f);
+    });
+    fi.addEventListener('change', function () {
+      if (this.files && this.files[0]) acceptFile(this.files[0]);
+    });
+    function acceptFile(f) {
+      var okExt = /\.(pdf|jpe?g|png|webp)$/i.test(f.name);
+      if (!okExt) { showToast('仅支持 PDF、JPG、PNG、WebP 文件'); return; }
+      if (f.size > 10 * 1048576) { showToast('单个文档不能超过 10MB'); return; }
+      var reader = new FileReader();
+      reader.onload = function () {
+        state.pendingFile = { name: f.name, size: f.size, dataUrl: reader.result };
+        $('chipName').textContent = f.name;
+        $('chipSize').textContent = humanSize(f.size);
+        $('fileChip').classList.add('show');
+        dz.style.display = 'none';
+        if (!$('fTitle').value) $('fTitle').value = f.name.replace(/\.[^.]+$/, '');
+      };
+      reader.readAsDataURL(f);
+    }
+    $('btnClearFile').addEventListener('click', function () {
+      state.pendingFile = null;
+      $('fileChip').classList.remove('show');
+      dz.style.display = '';
+      fi.value = '';
+    });
+
+    function openForm(doc) {
+      state.editingId = doc ? doc.id : null;
+      $('fpTitle').textContent = doc ? '编辑文档' : '上传文档';
+      $('btnSaveDoc').textContent = doc ? '保存修改' : '上传保存';
+      $('fpHint').textContent = doc ? '保留原文件可不上传新文件' : '支持 PDF / JPG / PNG / WebP · 单个 ≤ 10MB';
+      dz.style.display = doc ? 'none' : '';
+      $('fileChip').classList.remove('show');
+      state.pendingFile = null;
+      fi.value = '';
+      if (doc) {
+        setType(doc.type);
+        $('fTitle').value = doc.title || '';
+        $('fExpired').value = doc.expiredAt ? String(doc.expiredAt).slice(0, 10) : '';
+        $('fNotes').value = doc.notes || '';
+        var on = Boolean(doc.isReminder);
+        $('fReminder').classList.toggle('on', on);
+        $('fReminder').setAttribute('aria-pressed', on ? 'true' : 'false');
+        $('remLab').textContent = on ? '开启 · 到期前 7 天提醒' : '关闭 · 到期前不提醒';
+      } else {
+        setType('passport');
+        $('fTitle').value = ''; $('fExpired').value = ''; $('fNotes').value = '';
+        $('fReminder').classList.remove('on');
+        $('fReminder').setAttribute('aria-pressed', 'false');
+        $('remLab').textContent = '关闭 · 到期前不提醒';
+      }
+      $('formPanel').hidden = false;
+      $('formPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function closeForm() { $('formPanel').hidden = true; state.editingId = null; }
+
+    $('btnToggleForm').addEventListener('click', function () { openForm(null); });
+    $('btnCloseForm').addEventListener('click', closeForm);
+    $('btnCancelForm').addEventListener('click', closeForm);
+
+    $('btnSaveDoc').addEventListener('click', async function () {
+      var b = $('btnSaveDoc');
+      if (!state.editingId && !state.pendingFile) { showToast('请先选择要上传的文件'); return; }
+      var body = {
+        type: curType(),
+        title: $('fTitle').value.trim() || null,
+        notes: $('fNotes').value.trim() || null,
+        expiredAt: $('fExpired').value || null,
+        isReminder: $('fReminder').classList.contains('on')
+      };
+      if (state.pendingFile) body.url = state.pendingFile.dataUrl;
+      b.disabled = true;
+      try {
+        if (state.editingId) {
+          await apiPatch('/trips/' + tripId + '/documents/' + state.editingId, body);
+          showToast('已保存修改');
+        } else {
+          await apiPost('/trips/' + tripId + '/documents', body);
+          showToast('文档已上传');
+        }
+        closeForm();
+        await load();
+      } catch (err) { showToast(humanError(err)); }
+      b.disabled = false;
+    });
+
+    /* ===== 卡片操作 ===== */
+    $('docGrid').addEventListener('click', async function (e) {
+      var card = e.target.closest('.doc-card');
+      if (!card) return;
+      var id = card.getAttribute('data-doc');
+      var doc = state.docs.find(function (x) { return x.id === id; });
+      if (!doc) return;
+
+      /* 提醒开关 */
+      var rem = e.target.closest('[data-remind]');
+      if (rem) {
+        try {
+          await apiPatch('/trips/' + tripId + '/documents/' + id, { isReminder: !doc.isReminder });
+          doc.isReminder = !doc.isReminder;
+          render();
+          showToast(doc.isReminder ? '已开启到期提醒' : '已关闭到期提醒');
+        } catch (err) { showToast(humanError(err)); }
+        return;
+      }
+
+      /* 预览 */
+      var view = e.target.closest('[data-view]');
+      if (view) { openPreview(doc); return; }
+
+      /* 编辑 */
+      if (e.target.closest('.ed')) { openForm(doc); return; }
+
+      /* 删除 */
+      if (e.target.closest('.del')) {
+        if (!confirm('删除文档「' + (doc.title || typeOf(doc.type).label) + '」？文件不可恢复。')) return;
+        try {
+          await apiDelete('/trips/' + tripId + '/documents/' + id);
+          state.docs = state.docs.filter(function (x) { return x.id !== id; });
+          buildFilters();
+          render();
+          showToast('已删除');
+        } catch (err) { showToast(humanError(err)); }
+      }
+    });
+
+    /* ===== 预览 ===== */
+    function openPreview(doc) {
+      $('pvTitle').textContent = doc.title || typeOf(doc.type).label;
+      $('pvOpen').href = doc.url;
+      var body = $('pvBody');
+      if (/^data:image\//.test(doc.url)) {
+        body.innerHTML = '<img alt="文档预览" src="' + encodeURI(doc.url) + '">';
+      } else if (/^data:application\/pdf/.test(doc.url)) {
+        body.innerHTML = '<iframe src="' + encodeURI(doc.url) + '"></iframe>';
+      } else {
+        body.innerHTML = '<div style="color:var(--mute);font-size:13px;">该文件类型不支持内嵌预览，请用「新窗口打开」</div>';
+      }
+      $('pvMask').hidden = false;
+    }
+    $('pvClose').addEventListener('click', function () { $('pvMask').hidden = true; });
+    $('pvMask').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('pvMask').hidden) $('pvMask').hidden = true;
+    });
+
+    /* ===== 启动 ===== */
+    load();
+  })();
+</script>
+</body>
+</html>

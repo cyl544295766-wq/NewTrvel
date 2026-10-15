@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 行程地图</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  /* ===== 骨架：侧栏 + 全高地图舞台（本页不滚动，地图铺满主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    height: 100vh;
+    overflow: hidden;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 地图舞台 ===== */
+  .stage { position: relative; min-width: 0; min-height: 0; background: #E4F1F0; }
+  #mapStage { position: absolute; inset: 0; }
+
+  /* ===== 玻璃 HUD 基类 ===== */
+  .glass {
+    background: rgba(255,255,255,.94);
+    backdrop-filter: blur(14px) saturate(1.35);
+    -webkit-backdrop-filter: blur(14px) saturate(1.35);
+    border: 1px solid rgba(201,232,230,.92);
+    box-shadow: 0 12px 32px rgba(13,110,110,.16), 0 1px 2px rgba(13,110,110,.08);
+  }
+
+  /* ---- 返回胶囊 ---- */
+  .back-pill {
+    position: absolute; left: 18px; top: 18px; z-index: 31;
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600;
+    color: var(--brand); text-decoration: none;
+    border-radius: 999px; padding: 7px 15px 7px 11px;
+    transition: transform .14s, color .14s;
+  }
+  .back-pill:hover { transform: translateY(-1px); color: var(--brand-2); }
+
+  /* ---- 行程信息卡 ---- */
+  .trip-card {
+    position: absolute; left: 18px; top: 64px; z-index: 30;
+    width: 296px; border-radius: 16px; padding: 15px 18px 14px;
+  }
+  .tc-eyebrow {
+    font-family: var(--grot); font-size: 10px; font-weight: 600;
+    letter-spacing: .2em; color: var(--mute); text-transform: uppercase;
+  }
+  .tc-title {
+    font-family: var(--slab); font-weight: 600; font-size: 21px; line-height: 1.2;
+    color: var(--brand); margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tc-dates { font-family: var(--grot); font-size: 12px; color: var(--ink-2); margin-top: 5px; }
+  .tc-dates .km { color: var(--mute); }
+  .tc-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    margin-top: 12px; padding-top: 11px; border-top: 1px dashed #D8ECEB;
+  }
+  .tc-stats .st b {
+    display: block; font-family: var(--grot); font-weight: 600; font-size: 17px;
+    color: var(--ink); line-height: 1.15; letter-spacing: -.01em;
+  }
+  .tc-stats .st span { display: block; font-size: 10.5px; color: var(--mute); margin-top: 2px; }
+
+  /* ---- 每日行程面板 ---- */
+  .day-panel {
+    position: absolute; left: 18px; z-index: 30;
+    width: 296px; border-radius: 16px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dp-head {
+    display: flex; align-items: center; gap: 7px; flex: none;
+    padding: 13px 16px 11px; border-bottom: 1px dashed #D8ECEB;
+  }
+  .dp-title { font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--ink); }
+  .dp-n { font-family: var(--grot); font-size: 11px; color: var(--mute); }
+  .dp-reset {
+    margin-left: auto; font-family: var(--grot); font-size: 11px; font-weight: 600;
+    color: var(--brand); background: var(--mist); border: none; border-radius: 999px;
+    padding: 5px 11px; cursor: pointer; transition: background .14s;
+  }
+  .dp-reset:hover { background: #CDEBE9; }
+  .dp-reset[hidden] { display: none; }
+  .dp-close {
+    display: none; margin-left: auto; width: 28px; height: 28px; border: none;
+    background: var(--cloud); border-radius: 8px; color: var(--mute); cursor: pointer; font-size: 13px;
+  }
+  .dp-body { flex: 1 1 auto; overflow-y: auto; padding: 7px 8px 10px; }
+  .dp-body::-webkit-scrollbar { width: 6px; }
+  .dp-body::-webkit-scrollbar-thumb { background: #CFE7E5; border-radius: 3px; }
+
+  .day-block { border-radius: 11px; transition: background .16s; }
+  .day-block + .day-block { margin-top: 2px; }
+  .day-block.is-focus { background: #EEF9F8; }
+  .db-head {
+    width: 100%; display: flex; align-items: center; gap: 9px;
+    background: none; border: none; text-align: left; cursor: pointer;
+    padding: 9px 10px 6px; border-radius: 10px;
+  }
+  .db-head:hover { background: #F2FAF9; }
+  .db-dot {
+    flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 20%, transparent);
+  }
+  .day-block.is-empty .db-dot { background: #C6D8DA; box-shadow: 0 0 0 3px #EDF4F4; }
+  .db-lab { flex: none; font-family: var(--slab); font-weight: 700; font-size: 14px; color: var(--ink); }
+  .db-day { flex: none; font-family: var(--grot); font-size: 11.5px; color: var(--mute); }
+  .db-caret { margin-left: auto; flex: none; color: var(--mute); font-size: 13px; }
+  .db-meta {
+    display: block; padding: 0 10px 8px 29px;
+    font-family: var(--grot); font-size: 10.5px; color: var(--mute);
+  }
+  .db-meta b { color: var(--ink-2); font-weight: 600; }
+
+  .db-places { list-style: none; margin: 0; padding: 0 8px 9px; }
+  .pl {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 8px; border-radius: 9px; cursor: pointer;
+    transition: background .14s;
+  }
+  .pl:hover { background: #F2FAF9; }
+  .pl.is-hot { background: #E8F6F5; }
+  .pl-no {
+    flex: none; width: 19px; height: 19px; border-radius: 50%;
+    background: var(--c); color: #fff;
+    font-family: var(--grot); font-size: 10px; font-weight: 600;
+    display: grid; place-items: center;
+    box-shadow: 0 2px 5px color-mix(in srgb, var(--c) 32%, transparent);
+  }
+  .pl-nm {
+    flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink-2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pl-tp {
+    flex: none; font-size: 9.5px; font-weight: 600; border-radius: 999px;
+    padding: 2px 7px; color: var(--tc); background: var(--tb);
+  }
+  .db-empty {
+    padding: 2px 10px 10px 29px; font-size: 11px; color: var(--mute); line-height: 1.5;
+  }
+  .db-empty a { color: var(--brand); text-decoration: none; border-bottom: 1px dashed var(--brand-soft); }
+
+  /* ---- 右上控制 ---- */
+  .hud-tr { position: absolute; right: 18px; top: 18px; z-index: 30; display: flex; gap: 8px; }
+  .seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; }
+  .seg button {
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+    background: none; border: none; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .seg button:hover { color: var(--brand); }
+  .seg button[aria-pressed="true"] { background: var(--brand); color: #fff; box-shadow: 0 3px 10px rgba(13,110,110,.3); }
+  .round-btn {
+    width: 42px; height: 42px; border-radius: 999px; cursor: pointer;
+    color: var(--brand); font-size: 16px; display: grid; place-items: center;
+    transition: transform .14s;
+  }
+  .round-btn:hover { transform: translateY(-1px); }
+
+  /* ---- 移动端面板开关 ---- */
+  .fbtn {
+    position: absolute; left: 14px; bottom: 14px; z-index: 31;
+    display: none; align-items: center; gap: 7px;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600; color: var(--brand);
+    border-radius: 999px; padding: 10px 16px; cursor: pointer;
+    transition: opacity .2s, transform .2s;
+  }
+  .fbtn.is-hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+
+  /* ---- 底部提示 ---- */
+  .map-notice {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+    z-index: 30; padding: 8px 18px; max-width: 84vw; text-align: center;
+    font-family: var(--grot); font-size: 11.5px; color: #8A5A16;
+    background: rgba(255,251,243,.96); backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid #F0DFB9; border-radius: 999px;
+    box-shadow: 0 8px 22px rgba(13,110,110,.14);
+  }
+  .map-notice[hidden] { display: none; }
+
+  /* ---- 加载 / 错误遮罩 ---- */
+  .veil {
+    position: absolute; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px;
+    background: linear-gradient(180deg, #F3FAF9 0%, #E4F2F1 100%);
+    text-align: center; padding: 26px;
+  }
+  .veil[hidden] { display: none; }
+  .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid #CFE7E5; border-top-color: var(--brand);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .veil-ic { font-size: 40px; line-height: 1; }
+  .veil-t { margin: 0; font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .veil-s { margin: 0; font-size: 12.5px; color: var(--mute); max-width: 340px; line-height: 1.65; }
+  .btn-retry {
+    margin-top: 3px; font-family: var(--grot); font-weight: 600; font-size: 13.5px; color: #fff;
+    background: var(--brand); border: none; border-radius: 10px; padding: 10px 26px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(13,110,110,.24); transition: transform .14s;
+  }
+  .btn-retry:hover { transform: translateY(-1px); }
+
+  /* ===== 地图标注（DOM marker） ===== */
+  .mk-wrap { position: relative; display: block; }
+  .mk-dot {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--c); color: #fff;
+    display: grid; place-items: center;
+    font-family: var(--grot); font-weight: 600; font-size: 11.5px;
+    border: 2px solid #fff;
+    box-shadow: 0 3px 10px rgba(13,110,110,.34);
+    transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s;
+    cursor: pointer;
+  }
+  .mk-wrap:hover .mk-dot,
+  .mk-wrap.hot .mk-dot { transform: scale(1.26); box-shadow: 0 7px 18px rgba(13,110,110,.46); }
+  .mk-lab {
+    position: absolute; left: 50%; bottom: calc(100% + 1px);
+    transform: translateX(-50%) translateY(4px);
+    white-space: nowrap; padding: 3px 9px; border-radius: 8px;
+    background: rgba(15,52,54,.95); color: #fff;
+    font-family: var(--grot); font-size: 11px; font-weight: 500;
+    opacity: 0; pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,.22);
+    transition: opacity .16s, transform .16s;
+  }
+  .mk-wrap:hover .mk-lab,
+  .mk-wrap.hot .mk-lab { opacity: 1; transform: translateX(-50%) translateY(-3px); }
+  /* 按天聚焦时其它天的标点淡化（AMap 2.0 的 Marker 无 setOpacity，故在 DOM 层处理） */
+  .mk-wrap { transition: opacity .22s; }
+  .mk-wrap.dim { opacity: .22; }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 980px) {
+    .trip-card { width: 258px; padding: 13px 16px 12px; }
+    .tc-title { font-size: 19px; }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .side {
+      flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 10px 14px; border-right: none; border-bottom: 1px solid #C9E8E6;
+    }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0 0 0 2px; font-size: 19px; }
+    .brand small { display: none; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 3px; flex-wrap: wrap; }
+    .nav a { padding: 7px 9px; font-size: 13px; }
+    .nav a .txt { display: inline !important; }
+    .nav a[aria-current="page"] .dot { display: none; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: none !important; }
+
+    .back-pill { left: 12px; top: 12px; }
+    .trip-card { left: 12px; top: 56px; width: calc(100% - 24px); max-width: 330px; }
+    .hud-tr { right: 12px; top: 12px; }
+    .hud-tr .seg { display: none; }
+    .fbtn { display: inline-flex; }
+
+    /* 每日行程 → 底部抽屉 */
+    .day-panel {
+      left: 12px; right: 12px; width: auto; top: auto !important;
+      bottom: 12px; max-height: 58vh;
+      transform: translateY(calc(100% + 28px)); opacity: 0; pointer-events: none;
+      transition: transform .28s cubic-bezier(.4,0,.2,1), opacity .22s;
+    }
+    .day-panel.open { transform: none; opacity: 1; pointer-events: auto; }
+    .dp-reset { display: none; }
+    .dp-close { display: block; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell" id="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/" aria-current="page"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span><span class="dot"></span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div id="mapStage" role="application" aria-label="行程地点地图"></div>
+
+    <a class="glass back-pill" id="btnBack" href="/trips/">
+      <span aria-hidden="true">&#8592;</span><span>返回行程</span>
+    </a>
+
+    <section class="glass trip-card" id="tripCard" aria-label="行程概览">
+      <div class="tc-eyebrow">Route Map</div>
+      <h1 class="tc-title" id="tcTitle">正在加载…</h1>
+      <div class="tc-dates" id="tcDates">—</div>
+      <div class="tc-stats">
+        <div class="st"><b id="stPoints">—</b><span>地点</span></div>
+        <div class="st"><b id="stKm">—</b><span>总里程 · 公里</span></div>
+        <div class="st"><b id="stTime">—</b><span>驾车时长 · 时:分</span></div>
+      </div>
+    </section>
+
+    <section class="glass day-panel" id="dayPanel" aria-label="每日行程">
+      <div class="dp-head">
+        <span class="dp-title">每日行程</span>
+        <span class="dp-n" id="dpN"></span>
+        <button type="button" class="dp-reset" id="dpReset" hidden>重置聚焦</button>
+        <button type="button" class="dp-close" id="dpClose" aria-label="收起面板">&#10005;</button>
+      </div>
+      <div class="dp-body" id="dayList"></div>
+    </section>
+
+    <div class="hud-tr">
+      <div class="glass seg" id="layerSeg" role="group" aria-label="底图切换">
+        <button type="button" data-layer="normal" aria-pressed="true">标准</button>
+        <button type="button" data-layer="satellite" aria-pressed="false">卫星</button>
+      </div>
+      <button type="button" class="glass round-btn" id="btnFit" title="回到全览" aria-label="回到全览">
+        <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6.5 2.2H2.2v4.3M10.5 14.8h4.3v-4.3M14.8 6.5V2.2h-4.3M2.2 10.5v4.3h4.3"/>
+        </svg>
+      </button>
+    </div>
+
+    <button type="button" class="glass fbtn" id="btnPanel" aria-expanded="false">&#9776; 每日行程</button>
+
+    <div class="map-notice" id="routeNotice" hidden></div>
+
+    <div class="veil" id="veilLoad">
+      <div class="spinner"></div>
+      <p class="veil-t">正在加载地图…</p>
+      <p class="veil-s">首次加载需从高德服务器取瓦片，稍候片刻</p>
+    </div>
+
+    <div class="veil" id="veilErr" hidden>
+      <div class="veil-ic">&#128506;</div>
+      <p class="veil-t" id="errTitle">地图加载失败</p>
+      <p class="veil-s" id="errSub">请检查网络连接或高德 Key 配置</p>
+      <button type="button" class="btn-retry" id="btnRetry">重新加载</button>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script src="../assets/js/amap.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  /* ---------- 小工具 ---------- */
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toDate(v) {
+    if (!v) return null;
+    var d = (v instanceof Date) ? v : new Date(v);
+    if (isNaN(d.getTime())) {
+      var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return null;
+      d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    return d;
+  }
+  function fmtMD(v) {
+    var d = toDate(v);
+    return d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+  }
+  function fmtYMD(v) {
+    var d = toDate(v);
+    return d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+  }
+  function fmtWeek(v) {
+    var d = toDate(v);
+    return d ? WD[d.getDay()] : '';
+  }
+  function fmtDist(m) {
+    if (m == null || !isFinite(m)) return '—';
+    if (m < 1000) return Math.round(m) + ' 米';
+    return (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' 公里';
+  }
+  function fmtDur(sec) {
+    if (sec == null || !isFinite(sec)) return '—';
+    var h = Math.floor(sec / 3600);
+    var mi = Math.round((sec % 3600) / 60);
+    if (h <= 0) return mi + ' 分钟';
+    if (mi === 0) return h + ' 小时';
+    return h + ' 小时 ' + mi + ' 分';
+  }
+  /* 概览卡用的紧凑写法（列宽有限，避免换行）：里程取整、时长 h:mm */
+  function compactKm(m) {
+    if (m == null || !isFinite(m)) return '—';
+    if (m < 1000) return String(Math.round(m));
+    return String(Math.round(m / 1000));
+  }
+  function compactDur(sec) {
+    if (sec == null || !isFinite(sec)) return '—';
+    var h = Math.floor(sec / 3600);
+    var mi = Math.round((sec % 3600) / 60);
+    if (h <= 0) return mi + ' 分';
+    return h + ':' + (mi < 10 ? '0' : '') + mi;
+  }
+  function hasCoord(p) {
+    if (!p) return false;
+    var lng = Number(p.longitude), lat = Number(p.latitude);
+    return p.longitude != null && p.latitude != null
+      && isFinite(lng) && isFinite(lat)
+      && Math.abs(lng) <= 180 && Math.abs(lat) <= 90;
+  }
+  function cssEscape(s) {
+    if (window.CSS && CSS.escape) return CSS.escape(s);
+    return String(s).replace(/["\\]/g, '\\$&');
+  }
+
+  /* ---------- 参数与登录态 ---------- */
+  var qs = new URLSearchParams(location.search);
+  var tripId = qs.get('trip') || qs.get('id') || '';
+  var detailUrl = tripId ? '/trip-detail/?id=' + encodeURIComponent(tripId) : '/trips/';
+
+  if (!tripId) {
+    $('veilLoad').hidden = true;
+    $('veilErr').hidden = false;
+    $('errTitle').textContent = '缺少行程参数';
+    $('errSub').textContent = '请从行程详情页的「地图」模块进入。';
+    $('btnRetry').textContent = '返回我的旅行';
+    $('btnRetry').addEventListener('click', function () { location.href = '/trips/'; });
+  } else {
+    $('btnBack').setAttribute('href', detailUrl);
+  }
+
+  var state = {
+    trip: null,
+    days: [],
+    places: {},
+    markers: [],
+    polylines: [],
+    overlays: [],
+    stats: {},
+    failedDays: [],
+    focus: null,
+    hotTimer: null,
+    map: null,
+    AMap: null,
+    sat: null,
+    road: null
+  };
+
+  /* ---------- 侧栏 ---------- */
+  (function initRail() {
+    var shell = $('shell');
+    var btn = $('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function apply(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    apply(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      apply(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+  })();
+
+  (function initUser() {
+    var u = getCurrentUser();
+    if (!u) return;
+    var nm = u.displayName || u.username || '?';
+    $('avatar').textContent = nm.slice(0, 1).toUpperCase();
+    $('who').textContent = nm;
+  })();
+
+  /* ---------- HUD ---------- */
+  function buildHud() {
+    var t = state.trip || {};
+    $('tcTitle').textContent = t.title || '未命名行程';
+    $('tcTitle').setAttribute('title', t.title || '');
+    var sd = toDate(t.startDate), ed = toDate(t.endDate);
+    var dates = (sd && ed)
+      ? fmtYMD(sd) + ' — ' + fmtMD(ed)
+      : (sd ? fmtYMD(sd) + ' 起' : '日期待定');
+    var span = (sd && ed) ? (Math.round((ed - sd) / 86400000) + 1) : 0;
+    $('tcDates').innerHTML = escapeHtml(dates)
+      + (span > 0 ? ' <span class="km">· ' + span + ' 天跨度</span>' : '');
+  }
+
+  function buildPanel() {
+    var html = [];
+    var colored = 0;
+
+    state.days.forEach(function (day) {
+      var pts = (day.places || []).filter(hasCoord);
+      var isEmpty = pts.length === 0;
+      var color = TravelOSAmap.dayColor(isEmpty ? 0 : colored);
+      if (!isEmpty) colored++;
+
+      html.push('<div class="day-block' + (isEmpty ? ' is-empty' : '')
+        + '" data-day="' + day.dayIndex + '" style="--c:' + color + '">');
+      html.push('<button type="button" class="db-head" aria-expanded="true">');
+      html.push('<span class="db-dot" aria-hidden="true"></span>');
+      html.push('<span class="db-lab">D' + day.dayIndex + '</span>');
+      html.push('<span class="db-day">' + escapeHtml(fmtMD(day.date)) + ' ' + escapeHtml(fmtWeek(day.date)) + '</span>');
+      html.push('<span class="db-caret" aria-hidden="true">&#8249;</span>');
+      html.push('</button>');
+
+      if (isEmpty) {
+        html.push('<div class="db-empty">该天暂无带坐标的地点 ');
+        html.push('<a href="/itinerary/?trip=' + encodeURIComponent(tripId) + '">去行程安排补充</a></div>');
+      } else {
+        html.push('<span class="db-meta" data-meta="' + day.dayIndex + '"><b>' + pts.length + '</b> 个点 · 路线计算中…</span>');
+        html.push('<ol class="db-places">');
+        pts.forEach(function (p, pi) {
+          var ts = TravelOSAmap.typeStyle(p.type);
+          html.push('<li class="pl" data-pid="' + escapeHtml(p.id) + '" tabindex="0" role="button"'
+            + ' title="在地图上定位「' + escapeHtml(p.name) + '」">'
+            + '<span class="pl-no">' + (pi + 1) + '</span>'
+            + '<span class="pl-nm">' + escapeHtml(p.name) + '</span>'
+            + '<span class="pl-tp" style="--tc:' + ts.c + ';--tb:' + ts.bg + ';">' + ts.label + '</span>'
+            + '</li>');
+        });
+        html.push('</ol>');
+      }
+      html.push('</div>');
+    });
+
+    $('dayList').innerHTML = html.join('');
+    $('dpN').textContent = state.days.length + ' 天';
+
+    $('dayList').querySelectorAll('.day-block').forEach(function (block) {
+      if (block.classList.contains('is-empty')) return;
+      var dayIndex = Number(block.getAttribute('data-day'));
+      block.querySelector('.db-head').addEventListener('click', function () {
+        toggleFocus(dayIndex);
+      });
+    });
+
+    $('dayList').querySelectorAll('.pl').forEach(function (li) {
+      var pid = li.getAttribute('data-pid');
+      li.addEventListener('mouseenter', function () { setHot(pid, true); });
+      li.addEventListener('mouseleave', function () { setHot(pid, false); });
+      li.addEventListener('click', function () { focusPlace(pid); });
+      li.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusPlace(pid); }
+      });
+    });
+  }
+
+  function updateDayMeta(dayIndex) {
+    var el = $('dayList').querySelector('[data-meta="' + dayIndex + '"]');
+    if (!el) return;
+    var st = state.stats[dayIndex] || {};
+    var out = ['<b>' + (st.points || 0) + '</b> 个点'];
+    if (st.timeSec != null) {
+      out.push('<b>' + escapeHtml(fmtDist(st.distanceM)) + '</b>');
+      out.push(escapeHtml(fmtDur(st.timeSec)));
+    } else if (state.failedDays.indexOf(dayIndex) >= 0) {
+      out.push('直线示意（路线未返回）');
+    } else {
+      out.push('路线计算中…');
+    }
+    el.innerHTML = out.join(' · ');
+  }
+
+  /* ---------- 地图 ---------- */
+  function createMap() {
+    var AMap = state.AMap;
+    var map = new AMap.Map('mapStage', {
+      zoom: 5,
+      center: [113, 40],
+      resizeEnable: true,
+      viewMode: '2D'
+    });
+    state.map = map;
+
+    state.sat = new AMap.TileLayer.Satellite({ zIndex: 5 });
+    state.road = new AMap.TileLayer.RoadNet({ zIndex: 6, opacity: 0.9 });
+    map.add([state.sat, state.road]);
+    state.sat.hide();
+    state.road.hide();
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { map.resize(); }).observe($('stage'));
+    } else {
+      window.addEventListener('resize', function () { map.resize(); });
+    }
+  }
+
+  function setLayer(which) {
+    if (!state.sat) return;
+    if (which === 'satellite') { state.sat.show(); state.road.show(); }
+    else { state.sat.hide(); state.road.hide(); }
+    $('layerSeg').querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-layer') === which ? 'true' : 'false');
+    });
+  }
+
+  function markerContent(name, no, color) {
+    var wrap = document.createElement('div');
+    wrap.className = 'mk-wrap';
+    wrap.style.setProperty('--c', color);
+    var lab = document.createElement('span');
+    lab.className = 'mk-lab';
+    lab.textContent = name || '';
+    var dot = document.createElement('span');
+    dot.className = 'mk-dot';
+    dot.textContent = String(no);
+    wrap.appendChild(lab);
+    wrap.appendChild(dot);
+    return wrap;
+  }
+
+  function addMarkers() {
+    var AMap = state.AMap;
+    var colored = 0;
+
+    state.days.forEach(function (day) {
+      var pts = (day.places || []).filter(hasCoord);
+      if (!pts.length) return;
+      var color = TravelOSAmap.dayColor(colored);
+      colored++;
+      state.stats[day.dayIndex] = { points: pts.length, distanceM: null, timeSec: null };
+
+      pts.forEach(function (p, pi) {
+        var lng = Number(p.longitude), lat = Number(p.latitude);
+        var el = markerContent(p.name, pi + 1, color);
+        var marker = new AMap.Marker({
+          position: [lng, lat],
+          content: el,
+          offset: new AMap.Pixel(-13, -13),
+          zIndex: 70 + pi,
+          extData: { placeId: p.id, dayIndex: day.dayIndex }
+        });
+        el.addEventListener('click', function () { focusPlace(p.id); });
+        el.addEventListener('mouseenter', function () { setHot(p.id, true); });
+        el.addEventListener('mouseleave', function () { setHot(p.id, false); });
+
+        state.map.add(marker);
+        state.markers.push({ marker: marker, el: el, dayIndex: day.dayIndex, pid: p.id });
+        state.overlays.push(marker);
+        state.places[p.id] = { marker: marker, el: el, lng: lng, lat: lat, name: p.name };
+      });
+    });
+  }
+
+  function addRoutes() {
+    var AMap = state.AMap;
+    var jobs = [];
+    var colored = 0;
+
+    state.days.forEach(function (day) {
+      var pts = (day.places || []).filter(hasCoord);
+      if (!pts.length) return;
+      var color = TravelOSAmap.dayColor(colored);
+      colored++;
+      if (pts.length < 2) return;
+
+      var path = pts.map(function (p) { return [Number(p.longitude), Number(p.latitude)]; });
+
+      jobs.push(planDriving(AMap, path).then(function (r) {
+        pushPolyline(day.dayIndex, r.path, color, false);
+        var st = state.stats[day.dayIndex];
+        if (st) { st.distanceM = r.distanceM; st.timeSec = r.timeSec; }
+      }).catch(function () {
+        state.failedDays.push(day.dayIndex);
+        pushPolyline(day.dayIndex, path, color, true);
+      }));
+    });
+
+    return Promise.all(jobs);
+  }
+
+  function pushPolyline(dayIndex, path, color, dashed) {
+    var AMap = state.AMap;
+    var opts = {
+      path: path,
+      strokeColor: color,
+      strokeWeight: dashed ? 3 : 5,
+      strokeOpacity: dashed ? 0.62 : 0.9,
+      lineJoin: 'round',
+      lineCap: 'round',
+      zIndex: 40,
+      showDir: !dashed
+    };
+    if (dashed) { opts.strokeStyle = 'dashed'; opts.strokeDasharray = [7, 8]; }
+    var pl = new AMap.Polyline(opts);
+    state.map.add(pl);
+    state.polylines.push({ day: dayIndex, pl: pl, dashed: dashed });
+    state.overlays.push(pl);
+  }
+
+  /** 用高德驾车规划取真实路径与时长/里程（waypoints 上限 16） */
+  function planDriving(AMap, path) {
+    return new Promise(function (resolve, reject) {
+      var driving = new AMap.Driving({ policy: 0, hideMarkers: true });
+      var origin = path[0];
+      var dest = path[path.length - 1];
+      var waypoints = path.slice(1, -1).slice(0, 16).map(function (p) {
+        return new AMap.LngLat(p[0], p[1]);
+      });
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        reject(new Error('timeout'));
+      }, 12000);
+
+      driving.search(
+        new AMap.LngLat(origin[0], origin[1]),
+        new AMap.LngLat(dest[0], dest[1]),
+        { waypoints: waypoints },
+        function (status, result) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          if (status !== 'complete') { reject(new Error(status || 'failed')); return; }
+          var route = result && result.routes && result.routes[0];
+          var line = extractPath(route);
+          if (line.length < 2) { reject(new Error('empty path')); return; }
+          resolve({
+            path: line,
+            timeSec: Number(route.time) || 0,
+            distanceM: Number(route.distance) || 0
+          });
+        }
+      );
+    });
+  }
+
+  /** 兼容不同版本结果结构：优先 route.path，否则拼 route.steps[].path */
+  function extractPath(route) {
+    if (!route) return [];
+    if (Array.isArray(route.path) && route.path.length >= 2) return route.path;
+    var segs = [];
+    (route.steps || []).forEach(function (step) {
+      if (Array.isArray(step.path)) segs = segs.concat(step.path);
+    });
+    return segs;
+  }
+
+  /* ---------- 联动交互 ---------- */
+  function toggleFocus(dayIndex) {
+    state.focus = (state.focus === dayIndex) ? null : dayIndex;
+    applyFocus();
+    if (state.focus != null) fitDay(state.focus);
+  }
+
+  function applyFocus() {
+    var focus = state.focus;
+    state.polylines.forEach(function (it) {
+      var on = (focus == null || it.day === focus);
+      var base = it.dashed ? 0.62 : 0.9;
+      it.pl.setOptions({ strokeOpacity: on ? base : 0.1 });
+    });
+    state.markers.forEach(function (rec) {
+      var on = (focus == null || rec.dayIndex === focus);
+      rec.el.classList.toggle('dim', !on);
+    });
+    $('dayList').querySelectorAll('.day-block').forEach(function (block) {
+      var di = Number(block.getAttribute('data-day'));
+      block.classList.toggle('is-focus', focus != null && di === focus);
+    });
+    $('dpReset').hidden = (focus == null);
+  }
+
+  function fitDay(dayIndex) {
+    var pts = [];
+    state.days.forEach(function (d) {
+      if (d.dayIndex !== dayIndex) return;
+      (d.places || []).filter(hasCoord).forEach(function (p) {
+        pts.push([Number(p.longitude), Number(p.latitude)]);
+      });
+    });
+    if (!pts.length) return;
+    if (pts.length === 1) { state.map.setZoomAndCenter(12, pts[0], false, 420); return; }
+    var lngs = pts.map(function (p) { return p[0]; });
+    var lats = pts.map(function (p) { return p[1]; });
+    state.map.setCenter([
+      (Math.min.apply(null, lngs) + Math.max.apply(null, lngs)) / 2,
+      (Math.min.apply(null, lats) + Math.max.apply(null, lats)) / 2
+    ]);
+    state.map.setFitView(null, false, [30, 30, 30, 30], 15);
+  }
+
+  function focusPlace(pid) {
+    var rec = state.places[pid];
+    if (!rec || !state.map) return;
+    state.map.setZoomAndCenter(13, [rec.lng, rec.lat], false, 420);
+    setHot(pid, true);
+    var li = $('dayList').querySelector('.pl[data-pid="' + cssEscape(pid) + '"]');
+    if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (state.hotTimer) clearTimeout(state.hotTimer);
+    state.hotTimer = setTimeout(function () { setHot(pid, false); }, 2800);
+  }
+
+  function setHot(pid, on) {
+    var rec = state.places[pid];
+    if (!rec) return;
+    if (on) rec.el.classList.add('hot'); else rec.el.classList.remove('hot');
+    var li = $('dayList').querySelector('.pl[data-pid="' + cssEscape(pid) + '"]');
+    if (li) { if (on) li.classList.add('is-hot'); else li.classList.remove('is-hot'); }
+  }
+
+  function updateTotals() {
+    var pts = 0, dist = 0, time = 0, anyDist = false;
+    Object.keys(state.stats).forEach(function (k) {
+      var s = state.stats[k];
+      pts += s.points || 0;
+      if (s.distanceM != null) { dist += s.distanceM; anyDist = true; }
+      if (s.timeSec != null) time += s.timeSec;
+      updateDayMeta(Number(k));
+    });
+    $('stPoints').textContent = String(pts);
+    $('stKm').textContent = anyDist ? compactKm(dist) : '—';
+    $('stTime').textContent = anyDist ? compactDur(time) : '—';
+
+    var notice = $('routeNotice');
+    if (state.failedDays.length) {
+      notice.hidden = false;
+      notice.textContent = '第 ' + state.failedDays.join('、') + ' 天的驾车路线未返回，已用虚线示意';
+    } else {
+      notice.hidden = true;
+    }
+  }
+
+  function fitPad() {
+    return window.innerWidth < 980 ? [70, 24, 60, 24] : [172, 130, 60, 320];
+  }
+
+  /** 让每日面板紧贴行程卡下方（行程名换行也不会重叠） */
+  function layoutPanelTop() {
+    var panel = $('dayPanel');
+    if (window.innerWidth <= 720) { panel.style.top = ''; return; }
+    var card = $('tripCard');
+    panel.style.top = (card.offsetTop + card.offsetHeight + 16) + 'px';
+  }
+
+  /* ---------- 遮罩 ---------- */
+  function showErr(title, sub, retryLabel) {
+    $('veilLoad').hidden = true;
+    $('veilErr').hidden = false;
+    $('errTitle').textContent = title;
+    $('errSub').textContent = sub;
+    if (retryLabel) $('btnRetry').textContent = retryLabel;
+  }
+
+  /* ---------- 主流程 ---------- */
+  function run() {
+    $('veilLoad').hidden = false;
+    $('veilErr').hidden = true;
+
+    var pAmap = TravelOSAmap.load(['AMap.Driving']);
+    var pTrip = apiGet('/trips/' + encodeURIComponent(tripId)).catch(function (e) { return { __err: e }; });
+    var pRoute = apiGet('/trips/' + encodeURIComponent(tripId) + '/route').catch(function (e) { return { __err: e }; });
+
+    Promise.all([pAmap, pTrip, pRoute]).then(function (out) {
+      state.AMap = out[0];
+      var tripRes = out[1];
+      var routeRes = out[2];
+
+      var err = (tripRes && tripRes.__err) || (routeRes && routeRes.__err);
+      state.trip = (tripRes && !tripRes.__err) ? (tripRes.trip || tripRes) : null;
+      if (err && (err.status === 404 || err.status === 403) && !state.trip) {
+        showErr('找不到这个行程', '它可能已被删除，或你没有查看权限。', '返回我的旅行');
+        $('btnRetry').onclick = function () { location.href = '/trips/'; };
+        return;
+      }
+      state.days = (routeRes && !routeRes.__err && routeRes.route) ? routeRes.route : [];
+
+      buildHud();
+      buildPanel();
+      layoutPanelTop();
+      createMap();
+      addMarkers();
+
+      if (!state.markers.length) {
+        $('veilLoad').hidden = true;
+        $('routeNotice').hidden = false;
+        $('routeNotice').textContent = '这个行程还没有带坐标的地点，先去「行程安排」补充地点后再回来';
+        $('stPoints').textContent = '0';
+        return;
+      }
+
+      addRoutes().then(function () {
+        updateTotals();
+        state.map.setFitView(state.overlays, false, fitPad(), 16);
+        $('veilLoad').hidden = true;
+      });
+    }).catch(function (e) {
+      var msg = String((e && e.message) || e);
+      if (/Security|jsCode|INVALID_USER|白名单|domain|域名/i.test(msg)) {
+        showErr('高德 Key 校验未通过',
+          '当前页面域名可能不在 Key 的白名单内。请在控制台把 127.0.0.1 / localhost 加入白名单后重试。');
+      } else if (/网络|network|连接/i.test(msg)) {
+        showErr('高德地图加载失败', '无法连接高德服务器，请检查网络后重试。');
+      } else {
+        showErr('地图加载失败', msg);
+      }
+      $('btnRetry').onclick = function () { location.reload(); };
+    });
+  }
+
+  /* ---------- UI 绑定 ---------- */
+  $('layerSeg').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-layer]');
+    if (!b) return;
+    setLayer(b.getAttribute('data-layer'));
+  });
+
+  $('btnFit').addEventListener('click', function () {
+    if (!state.map || !state.overlays.length) return;
+    state.focus = null;
+    applyFocus();
+    state.map.setFitView(state.overlays, false, fitPad(), 16);
+  });
+
+  $('dpReset').addEventListener('click', function () {
+    state.focus = null;
+    applyFocus();
+    if (state.map && state.overlays.length) state.map.setFitView(state.overlays, false, fitPad(), 16);
+  });
+
+  (function initMobilePanel() {
+    var panel = $('dayPanel');
+    var btn = $('btnPanel');
+    function setOpen(open) {
+      panel.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.classList.toggle('is-hidden', open);
+    }
+    btn.addEventListener('click', function () {
+      setOpen(true);
+      if (state.map) setTimeout(function () { state.map.resize(); }, 300);
+    });
+    $('dpClose').addEventListener('click', function () {
+      setOpen(false);
+      if (state.map) state.map.resize();
+    });
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > 720) setOpen(false);
+      layoutPanelTop();
+    });
+    layoutPanelTop();
+  })();
+
+  if (tripId && requireLogin('/login/')) {
+    run();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 旅程详情</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<style>
+  :root {
+    --brand: #0D6E6E;
+    --brand-soft: #5BC5C0;
+    --mist: #DCF2F0;
+    --cloud: #F7FAFA;
+    --stamp: #FF8A4C;
+    --mute: #9BB0B5;
+    --ink: #123A3C;
+    --slab: "Fraunces", "Noto Sans SC", serif;
+    --grot: "Space Grotesk", "Noto Sans SC", sans-serif;
+    --card-shadow: 0 8px 24px rgba(13,110,110,0.10), 0 1px 2px rgba(13,110,110,0.06);
+
+    --st-draft:     #8A9BA5;
+    --st-planning:  #C08A2E;
+    --st-active:    #1E9A6E;
+    --st-completed: #0D6E6E;
+    --st-archived:  #8A9BA5;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--grot); background: var(--cloud); color: var(--ink);
+    line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== 骨架 ===== */
+  .shell {
+    display: grid; grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh; transition: grid-template-columns .24s cubic-bezier(.4,0,.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px; display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: #3D6A6C; text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: #3D6A6C; display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  main { padding: 30px 44px 52px; max-width: 1240px; }
+
+  /* ===== 顶部操作条 ===== */
+  .topbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .back {
+    width: 38px; height: 38px; border-radius: 10px; border: none; flex: none;
+    background: #fff; color: var(--brand); cursor: pointer; font-size: 16px;
+    display: grid; place-items: center; box-shadow: var(--card-shadow);
+    text-decoration: none;
+    transition: transform .16s ease, background .16s;
+  }
+  .back:hover { transform: translateX(-2px); background: var(--mist); }
+  .crumb {
+    font-size: 13px; color: var(--mute); display: flex; align-items: center; gap: 8px;
+  }
+  .crumb b { color: var(--brand); font-weight: 600; }
+  .topbar .actions { margin-left: auto; display: flex; gap: 9px; flex-wrap: wrap; }
+  .act {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--grot); font-size: 13.5px; font-weight: 500;
+    color: #3D6A6C; background: #fff; border: none;
+    padding: 10px 16px; border-radius: 10px; cursor: pointer;
+    box-shadow: var(--card-shadow);
+    transition: color .16s, background .16s, transform .16s;
+  }
+  .act:hover { color: var(--brand); background: var(--mist); transform: translateY(-1px); }
+  .act.primary { background: var(--stamp); color: #fff; box-shadow: 0 6px 16px rgba(255,138,76,.3); }
+  .act.primary:hover { background: #FF7A36; color: #fff; }
+
+  /* ===== 主票：登机牌档案 ===== */
+  .pass {
+    margin-top: 22px; background: #fff; border-radius: 18px;
+    display: grid; grid-template-columns: 1fr 208px;
+    position: relative; box-shadow: 0 10px 30px rgba(13,110,110,0.12);
+    overflow: hidden;
+  }
+  .pass::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px;
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 60%, #A7E3DF 100%);
+  }
+  .pass-main { padding: 32px 34px 28px; }
+
+  .route { display: flex; align-items: center; gap: 16px; }
+  .route .pt-name {
+    font-family: var(--slab); font-weight: 700; font-size: 42px; line-height: 1.05;
+    color: var(--brand); letter-spacing: .01em;
+  }
+  .route .line {
+    flex: 1; min-width: 40px; height: 1.5px; position: relative;
+    background: repeating-linear-gradient(90deg, var(--brand-soft) 0 6px, transparent 6px 12px);
+  }
+  .route .line::after {
+    content: "✈"; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    font-size: 15px; color: var(--brand-soft); background: #fff; padding: 0 6px;
+  }
+
+  .pass-title { font-size: 16px; margin-top: 8px; color: #3D6A6C; }
+  .pass-title .code {
+    font-size: 11px; letter-spacing: .14em; color: var(--stamp); font-weight: 600;
+    background: #FFF1E8; border-radius: 5px; padding: 2px 8px; margin-left: 8px; vertical-align: 1px;
+  }
+
+  .fields {
+    display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 0; margin-top: 24px; border-top: 1px solid #EEF5F5; padding-top: 20px;
+  }
+  .field { padding-right: 18px; }
+  .field + .field { border-left: 1px solid #EEF5F5; padding-left: 18px; }
+  .field .k { font-size: 10.5px; letter-spacing: .14em; color: var(--mute); }
+  .field .v { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); margin-top: 4px; }
+  .field .v.plain { font-family: var(--grot); font-weight: 500; font-size: 15px; }
+  .field .v.warn { color: var(--stamp); }
+
+  .desc {
+    margin-top: 20px; padding: 15px 18px; border-radius: 11px;
+    background: #F5FBFB; font-size: 14px; color: #3D6A6C; line-height: 1.65;
+  }
+  .desc .k { font-size: 10.5px; letter-spacing: .14em; color: var(--mute); display: block; margin-bottom: 5px; }
+  .desc.empty { color: var(--mute); font-style: italic; }
+
+  /* ===== 票根 ===== */
+  .pass-stub {
+    background: var(--mist); padding: 30px 22px 24px;
+    display: flex; flex-direction: column; gap: 12px;
+    position: relative;
+  }
+  .pass-stub::before {
+    content: ""; position: absolute; left: 0; top: 18px; bottom: 18px;
+    border-left: 1.5px dashed #A9D8D5;
+  }
+  .pass-stub::after {
+    content: ""; position: absolute; left: -9px; top: -9px;
+    width: 17px; height: 17px; border-radius: 50%; background: var(--cloud);
+    box-shadow: 0 calc(100% + 17px) 0 -0.5px var(--cloud);
+  }
+
+  .stub-status {
+    align-self: flex-start; font-size: 11.5px; font-weight: 600;
+    border: 1.5px solid currentColor; border-radius: 5px;
+    padding: 3px 10px; transform: rotate(-4deg);
+  }
+  .st-draft     { color: var(--st-draft); }
+  .st-planning  { color: var(--st-planning); }
+  .st-active    { color: var(--st-active); }
+  .st-completed { color: var(--st-completed); }
+  .st-archived  { color: var(--st-archived); }
+
+  .stub-days-label { font-size: 10px; letter-spacing: .22em; color: var(--mute); margin-top: 6px; }
+  .stub-days { font-family: var(--slab); font-weight: 700; font-size: 46px; line-height: 1; color: var(--brand); }
+  .stub-days small { font-size: 15px; font-weight: 500; color: var(--brand-soft); }
+
+  .stub-members { margin-top: auto; }
+  .stub-members .k { font-size: 10px; letter-spacing: .18em; color: var(--mute); margin-bottom: 7px; }
+  .avatars { display: flex; }
+  .avatars span {
+    width: 32px; height: 32px; border-radius: 50%; margin-left: -8px;
+    border: 2px solid var(--mist); display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; color: #fff;
+  }
+  .avatars span:first-child { margin-left: 0; }
+  .avatars span:nth-child(2) { background: #E0A43C; }
+  .avatars span:nth-child(3) { background: #7FA8C9; }
+  .avatars span:nth-child(4) { background: #C2566C; }
+  .avatars span:nth-child(5) { background: #6B4FC0; }
+  .avatars span.more { background: #fff; color: var(--brand); border-color: var(--mist); }
+
+  /* ===== Tab ===== */
+  .tabs {
+    display: flex; gap: 4px; margin-top: 26px;
+    background: #fff; padding: 5px; border-radius: 12px;
+    box-shadow: var(--card-shadow); width: fit-content;
+  }
+  .tabs button {
+    font-family: var(--grot); font-size: 14px; color: #3D6A6C;
+    background: none; border: none; padding: 9px 20px; border-radius: 9px;
+    cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .tabs button:hover { background: #F2FAF9; color: var(--brand); }
+  .tabs button[aria-selected="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+
+  /* ===== 8 模块宫格 ===== */
+  .module-panel {
+    background: #fff; border-radius: 16px; margin-top: 18px;
+    box-shadow: var(--card-shadow); padding: 22px 24px 26px;
+  }
+  .sec-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+  }
+  .sec-head .bar { width: 4px; height: 16px; border-radius: 2px; background: var(--brand-soft); flex: none; }
+  .sec-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
+  .sec-head .hint { font-size: 12.5px; color: var(--mute); margin-left: auto; }
+
+  .modules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+  .module {
+    display: flex; flex-direction: column; gap: 9px;
+    padding: 17px 16px; border-radius: 13px; border: 1.5px solid #EDF6F6;
+    background: #FCFEFE; cursor: pointer; text-align: left;
+    font-family: var(--grot);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .module:hover {
+    transform: translateY(-3px); border-color: transparent;
+    box-shadow: 0 12px 26px rgba(13,110,110,0.14);
+  }
+  .module .ic {
+    width: 38px; height: 38px; border-radius: 11px;
+    display: grid; place-items: center; font-size: 17px;
+  }
+  .module .nm { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+  .module .hint { font-size: 12px; color: var(--mute); }
+  .module .nm .badge {
+    font-size: 11px; font-weight: 600; color: var(--brand);
+    background: var(--mist); border-radius: 20px; padding: 1px 8px; margin-left: 6px;
+    vertical-align: 1px;
+  }
+  .module .nm .badge.warn { color: #C1704A; background: #FDEBE1; }
+  .module .nm .badge.dim  { color: var(--mute); background: #F0F4F6; }
+  .module .link-broken {
+    font-size: 11px; color: var(--mute); margin-top: 2px;
+  }
+
+  /* ===== 天气 ===== */
+  .weather-panel { margin-top: 18px; }
+  .weathers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 11px; }
+  .weather {
+    background: #FCFEFE; border: 1.5px solid #EDF6F6; border-radius: 13px;
+    padding: 15px 12px; text-align: center;
+  }
+  .weather .d { font-size: 11px; letter-spacing: .1em; color: var(--mute); }
+  .weather .ic2 { font-size: 22px; margin: 7px 0 5px; }
+  .weather .t {
+    font-family: var(--slab); font-weight: 700; font-size: 19px; color: var(--brand);
+  }
+  .weather .t small { font-size: 11px; font-weight: 500; color: var(--brand-soft); }
+
+  .weather-empty {
+    background: #FCFEFE; border: 1.5px dashed #C9E8E6; border-radius: 13px;
+    padding: 28px; text-align: center; color: var(--mute); font-size: 13px;
+  }
+  .weather-empty .ic { font-size: 26px; margin-bottom: 8px; }
+
+  /* ===== 成员 ===== */
+  .invite-row { display: flex; gap: 11px; flex-wrap: wrap; margin-bottom: 20px; }
+  .invite-row input, .invite-row select {
+    font-family: var(--grot); font-size: 14px; color: var(--ink);
+    background: #F5FBFB; border: 1.5px solid #E4F1F1; border-radius: 10px;
+    padding: 11px 15px; outline: none;
+    transition: border-color .16s;
+  }
+  .invite-row input { flex: 1; min-width: 180px; }
+  .invite-row input:focus, .invite-row select:focus { border-color: var(--brand-soft); }
+  .invite-row input::placeholder { color: var(--mute); }
+
+  .member-list { display: flex; flex-direction: column; }
+  .member {
+    display: flex; align-items: center; gap: 13px;
+    padding: 13px 4px;
+  }
+  .member + .member { border-top: 1px solid #F2F8F8; }
+  .member .av {
+    width: 40px; height: 40px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-size: 15px; font-weight: 600; color: #fff;
+  }
+  .member .nm { font-size: 14.5px; font-weight: 500; }
+  .member .un { font-size: 12.5px; color: var(--mute); }
+  .member .role {
+    margin-left: auto; font-size: 12px; font-weight: 500;
+    padding: 4px 12px; border-radius: 7px;
+  }
+  .role.owner  { background: #FDF5E2; color: #B8830F; }
+  .role.admin  { background: var(--mist); color: var(--brand); }
+  .role.member { background: #EAF7EF; color: #3E8F63; }
+  .role.viewer { background: #F0F4F6; color: #6E8A94; }
+
+  .member .acts { display: flex; gap: 6px; margin-left: 10px; }
+  .member .acts button {
+    background: none; border: none; cursor: pointer; color: var(--mute);
+    font-size: 12px; padding: 4px 8px; border-radius: 6px;
+    transition: background .16s, color .16s;
+  }
+  .member .acts button:hover { background: var(--mist); color: var(--brand); }
+  .member .acts .danger:hover { background: #FFEDE6; color: #D2542A; }
+
+  .pane[hidden] { display: none; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+    background: #123A3C; color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 9px; box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  .skeleton {
+    background: linear-gradient(90deg, #F2FAF9 0%, #E8F6F5 50%, #F2FAF9 100%);
+    background-size: 200% 100%; animation: skel 1.4s infinite linear;
+    border-radius: 8px; color: transparent;
+  }
+  @keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 1100px) {
+    .fields { grid-template-columns: repeat(2, 1fr); row-gap: 18px; }
+    .field:nth-child(odd) { border-left: none; padding-left: 0; }
+    .modules { grid-template-columns: repeat(3, 1fr); }
+    .weathers { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .pass { grid-template-columns: 1fr; }
+    .pass-stub { padding: 22px 24px; }
+    .pass-stub::before { left: 18px; right: 18px; top: 0; bottom: auto; border-left: none; border-top: 1.5px dashed #A9D8D5; }
+    .pass-stub::after { display: none; }
+    .pass-stub { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 18px; }
+    .stub-days-label { display: none; }
+    .stub-members { margin-top: 0; justify-self: end; }
+    .modules { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
+    .nav a .txt { display: inline !important; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: inline !important; }
+    main { padding: 20px 16px 40px; }
+    .topbar .actions { width: 100%; margin-left: 0; }
+    .act { flex: 1; justify-content: center; }
+    .pass-main { padding: 26px 20px 22px; }
+    .route .pt-name { font-size: 32px; }
+    .fields { grid-template-columns: 1fr; }
+    .field { border-left: none !important; padding-left: 0 !important; padding-right: 0; }
+    .weathers { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span><span class="dot"></span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <!-- 顶栏：返回 + 操作 -->
+    <div class="topbar">
+      <a href="/trips/" class="back" aria-label="返回我的旅行">&#8592;</a>
+      <div class="crumb">
+        <span>我的旅行</span> <span aria-hidden="true">/</span>
+        <b id="crumbTitle">…</b>
+      </div>
+      <div class="actions">
+        <button class="act" id="btnPdf">&#8689; 导出 PDF</button>
+        <button class="act" id="btnArchive">&#9636; 归档</button>
+        <button class="act" id="btnEdit">&#9998; 编辑</button>
+        <button class="act primary" id="btnAi">&#10022; AI 助手</button>
+      </div>
+    </div>
+
+    <!-- 主体加载占位 -->
+    <section class="pass" id="pass" hidden></section>
+
+    <div class="tabs" role="tablist" aria-label="详情分组" id="tabs" hidden>
+      <button role="tab" aria-selected="true" aria-controls="pane-overview" id="tab-overview">概览</button>
+      <button role="tab" aria-selected="false" aria-controls="pane-members" id="tab-members">成员</button>
+    </div>
+
+    <div id="pane-overview" class="pane" role="tabpanel" aria-labelledby="tab-overview" hidden>
+      <section class="module-panel">
+        <div class="sec-head">
+          <span class="bar"></span>
+          <span class="t">旅行模块</span>
+          <span class="hint">点击进入对应模块</span>
+        </div>
+        <div class="modules" id="modules"></div>
+      </section>
+
+      <section class="module-panel weather-panel">
+        <div class="sec-head">
+          <span class="bar" style="background:#E0A43C;"></span>
+          <span class="t">行程天气</span>
+          <span class="hint" id="weatherHint">…</span>
+        </div>
+        <div id="weatherBox">
+          <p style="padding:24px 0;text-align:center;color:var(--mute);" class="skeleton">…</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="pane-members" class="pane" role="tabpanel" aria-labelledby="tab-members" hidden>
+      <section class="module-panel">
+        <div class="sec-head">
+          <span class="bar"></span>
+          <span class="t">邀请成员</span>
+          <span class="hint" id="roleHint">需要 owner 或 admin 权限</span>
+        </div>
+        <div class="invite-row">
+          <input type="text" placeholder="输入用户名" aria-label="输入要邀请的用户名" id="inviteUser" disabled>
+          <select aria-label="选择角色" id="inviteRole" disabled>
+            <option value="admin">管理员</option>
+            <option value="member" selected>成员</option>
+            <option value="viewer">观察者</option>
+          </select>
+          <button class="act primary" id="btnInvite" disabled style="box-shadow:none;">＋ 邀请</button>
+        </div>
+
+        <div class="member-list" id="memberList"></div>
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    // 侧栏折叠
+    var shell = document.querySelector('.shell');
+    var btn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(c) {
+      shell.setAttribute('data-collapsed', c ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', c ? 'false' : 'true');
+      btn.setAttribute('aria-label', c ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (c) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+    }
+
+    var STATUS = {
+      draft:     { label: '草稿',    cls: 'st-draft' },
+      planning:  { label: '规划中',  cls: 'st-planning' },
+      active:    { label: '进行中',  cls: 'st-active' },
+      completed: { label: '已完成',  cls: 'st-completed' },
+      archived:  { label: '已归档',  cls: 'st-archived' }
+    };
+
+    function escapeHtml(s) {
+      return (s == null ? '' : String(s))
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtMonthDay(iso) {
+      if (!iso) return '';
+      var d = new Date(iso); if (isNaN(d)) return '';
+      var mm = String(d.getMonth() + 1).padStart(2, '0');
+      var dd = String(d.getDate()).padStart(2, '0');
+      return mm + ' / ' + dd;
+    }
+    function fmtDateLong(iso) {
+      if (!iso) return '';
+      var d = new Date(iso); if (isNaN(d)) return '';
+      return d.getFullYear() + ' / ' + fmtMonthDay(iso);
+    }
+    function fmtMoney(s) {
+      var n = parseFloat(s);
+      if (!isFinite(n)) return '¥ 0';
+      return '¥ ' + n.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+    }
+    function daysBetween(s, e) {
+      if (!s || !e) return 0;
+      var a = new Date(s), b = new Date(e);
+      if (isNaN(a) || isNaN(b)) return 0;
+      return Math.max(1, Math.round((b - a) / 86400000));
+    }
+    function codeFor(trip) {
+      var d = (trip.destination || '').trim();
+      if (!d) return 'TRIP';
+      var first = Array.from(d)[0];
+      return first.toUpperCase() + ' · ' + d.slice(0, 6);
+    }
+    function getQueryId() {
+      var m = location.search.match(/[?&]id=([^&]+)/);
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+
+    var tripId = getQueryId();
+    if (!tripId) {
+      showToast('缺少旅程 id');
+      setTimeout(function () { location.replace('/trips/'); }, 800);
+      return;
+    }
+
+    // ===== 拉数据 =====
+    var state = { trip: null, members: [], days: [], expenses: null, weather: [] };
+
+    async function loadAll() {
+      try {
+        var results = await Promise.allSettled([
+          apiGet('/trips/' + tripId),
+          apiGet('/trips/' + tripId + '/members'),
+          apiGet('/trips/' + tripId + '/days'),
+          apiGet('/trips/' + tripId + '/expenses'),
+          apiGet('/trips/' + tripId + '/weather'),
+        ]);
+        var d0 = results[0].status === 'fulfilled' ? results[0].value : null;
+        var d1 = results[1].status === 'fulfilled' ? results[1].value : null;
+        var d2 = results[2].status === 'fulfilled' ? results[2].value : null;
+        var d3 = results[3].status === 'fulfilled' ? results[3].value : null;
+        var d4 = results[4].status === 'fulfilled' ? results[4].value : null;
+
+        state.trip = d0 && d0.trip;
+        if (!state.trip) {
+          showToast('找不到该旅程');
+          setTimeout(function () { location.replace('/trips/'); }, 1000);
+          return;
+        }
+        state.members  = (d1 && d1.members) || [];
+        state.days     = (d2 && d2.days) || [];
+        state.expenses = d3 || { expenses: [], summary: { totalAmount: '0.00', currency: 'CNY' } };
+        state.weather  = (d4 && d4.weather) || [];
+
+        render();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    // ===== 渲染 =====
+    function render() {
+      var t = state.trip;
+      var st = STATUS[t.status] || STATUS.draft;
+      var days = t.startDate && t.endDate ? daysBetween(t.startDate, t.endDate) : 0;
+      var codeText = t.status === 'draft' ? 'DRAFT' : codeFor(t);
+      var spent = state.expenses && state.expenses.summary && parseFloat(state.expenses.summary.totalAmount) || 0;
+
+      document.getElementById('crumbTitle').textContent = t.title || '未命名旅程';
+      document.title = 'Travel OS · ' + (t.title || '旅程详情');
+
+      // 主票 HTML
+      var html = ''
+        + '<div class="pass-main">'
+        +   '<div class="route">'
+        +     '<span class="pt-name">' + escapeHtml(t.destination || '待定') + '</span>'
+        +     '<span class="line" aria-hidden="true"></span>'
+        +   '</div>'
+        +   '<p class="pass-title">' + escapeHtml(t.title || '未命名旅程') + '<span class="code">' + escapeHtml(codeText) + '</span></p>'
+        +   '<div class="fields">'
+        +     '<div class="field"><div class="k">开始日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.startDate) || '日期待定') + '</div></div>'
+        +     '<div class="field"><div class="k">结束日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.endDate) || '日期待定') + '</div></div>'
+        +     '<div class="field"><div class="k">预算</div><div class="v">' + escapeHtml(fmtMoney(t.budget || 0)) + '</div></div>'
+        +     '<div class="field"><div class="k">已花费</div><div class="v' + (spent > 0 ? ' warn' : '') + '">' + escapeHtml(fmtMoney(spent)) + '</div></div>'
+        +   '</div>'
+        +   '<div class="desc' + (t.description ? '' : ' empty') + '">'
+        +     '<span class="k">描述</span>'
+        +     (t.description ? escapeHtml(t.description) : '点击「编辑」添加一段描述，让大家知道这次旅程想看什么、想感受什么')
+        +   '</div>'
+        + '</div>'
+        + renderStub(t, st, days);
+      document.getElementById('pass').innerHTML = html;
+      document.getElementById('pass').hidden = false;
+      document.getElementById('tabs').hidden = false;
+      document.getElementById('pane-overview').hidden = false;
+
+      renderModules(t);
+      renderWeather();
+      renderMembers();
+
+      bindTopActions();
+    }
+
+    function renderStub(t, st, days) {
+      var members = state.members.slice(0, 4);
+      var more = state.members.length - members.length;
+      var av = members.map(function (m, i) {
+        var letter = (m.displayName || m.username || '?').charAt(0).toUpperCase();
+        return '<span title="' + escapeHtml(m.displayName || m.username) + '">' + escapeHtml(letter) + '</span>';
+      }).join('');
+      if (more > 0) av += '<span class="more">+' + more + '</span>';
+      return ''
+        + '<div class="pass-stub">'
+        +   '<span class="stub-status ' + st.cls + '">' + st.label + '</span>'
+        +   '<div>'
+        +     '<div class="stub-days-label">DAYS</div>'
+        +     '<div class="stub-days">' + (days || '–') + (days ? '<small>天</small>' : '') + '</div>'
+        +   '</div>'
+        +   '<div class="stub-members">'
+        +     '<div class="k">同行 ' + state.members.length + ' 人</div>'
+        +     '<div class="avatars">' + av + '</div>'
+        +   '</div>'
+        + '</div>';
+    }
+
+    function renderModules(t) {
+      // 各模块统计
+      var placesCount = 0, bookingsCount = 0;
+      state.days.forEach(function (d) {
+        placesCount += (d.places || []).length;
+        bookingsCount += (d.bookings || []).length;
+      });
+      var expenseCount = (state.expenses && state.expenses.expenses || []).length;
+
+      var modules = [
+        { name: '行程安排', hint: '每日安排', badge: placesCount + ' 项', bg: '#E9F2FD', fg: '#2F6FB5', icon: '☰', link: '/itinerary/?trip=' + encodeURIComponent(tripId) },
+        { name: '费用',     hint: '记账结算', badge: expenseCount + ' 笔', bg: '#E9F8EE', fg: '#2A8055', icon: '¥', link: '/expenses/?trip=' + encodeURIComponent(tripId) },
+        { name: '地图',     hint: '地点标记', badge: placesCount + ' 点', bg: '#FDF5E2', fg: '#B8830F', icon: '◉', link: '/map/?trip=' + encodeURIComponent(tripId) },
+        { name: '照片',     hint: '旅途影像', badge: null, bg: '#FDEFF2', fg: '#C2566C', icon: '▣', link: '/photos/?trip=' + encodeURIComponent(tripId) },
+        { name: '文档',     hint: '证件票据', badge: null, bg: '#EFEAFB', fg: '#6B4FC0', icon: '▤', link: '/documents/?trip=' + encodeURIComponent(tripId) },
+        { name: '打包清单', hint: '行囊准备', badge: null, bg: '#E6F4EC', fg: '#3D8B64', icon: '◫', link: '/packing/?trip=' + encodeURIComponent(tripId) },
+        { name: '预订',     hint: '机票酒店', badge: bookingsCount + ' 单', bg: '#FCECE4', fg: '#C1704A', icon: '▷', link: '/bookings/?trip=' + encodeURIComponent(tripId) },
+        { name: '游记',     hint: '记录时刻', badge: null, bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
+      ];
+
+      var target = document.getElementById('modules');
+      target.innerHTML = modules.map(function (m) {
+        var badge = m.badge != null
+          ? '<span class="badge">' + escapeHtml(m.badge) + '</span>'
+          : '<span class="badge dim">–</span>';
+        return ''
+          + '<button class="module" data-link="' + escapeHtml(m.link) + '">'
+          + '<span class="ic" style="background:' + m.bg + ';color:' + m.fg + ';">' + m.icon + '</span>'
+          + '<span class="nm">' + m.name + badge + '</span>'
+          + '<span class="hint">' + m.hint + '</span>'
+          + '</button>';
+      }).join('');
+    }
+
+    function renderWeather() {
+      var hint = (state.trip.destination || '目的地') + ' · 未来 6 天';
+      document.getElementById('weatherHint').textContent = hint;
+      var box = document.getElementById('weatherBox');
+      if (!state.weather || state.weather.length === 0) {
+        box.innerHTML = '<div class="weather-empty"><div class="ic">⛅</div>暂无天气数据</div>';
+        return;
+      }
+      box.innerHTML = '<div class="weathers">' + state.weather.slice(0, 6).map(function (w) {
+        var d = w.date || '';
+        var dt = new Date(d);
+        var md = isNaN(dt) ? d : fmtMonthDay(d);
+        var ic = w.icon || '☀';
+        var tmin = w.tempMin != null ? w.tempMin : (w.temp != null ? w.temp : '');
+        var tmax = w.tempMax != null ? w.tempMax : (w.temp != null ? w.temp : '');
+        var txt = '';
+        if (tmin !== '' && tmax !== '' && tmin !== tmax) txt = tmin + '<small>°</small> / ' + tmax + '<small>°</small>';
+        else if (tmax !== '') txt = tmax + '<small>°</small>';
+        else txt = '–';
+        return '<div class="weather"><div class="d">' + escapeHtml(md) + '</div><div class="ic2">' + ic + '</div><div class="t">' + txt + '</div></div>';
+      }).join('') + '</div>';
+    }
+
+    function renderMembers() {
+      var t = state.trip;
+      var canInvite = t.currentUserRole === 'owner' || t.currentUserRole === 'admin';
+      ['inviteUser', 'inviteRole', 'btnInvite'].forEach(function (id) {
+        document.getElementById(id).disabled = !canInvite;
+      });
+      document.getElementById('roleHint').textContent = canInvite
+        ? '你的角色：' + (t.currentUserRole || 'owner')
+        : '仅 owner / admin 可邀请,你的角色：' + (t.currentUserRole || 'viewer');
+
+      document.getElementById('memberList').innerHTML = state.members.map(function (m) {
+        var roleCls = (m.role === 'owner' ? 'owner' : (m.role === 'admin' ? 'admin' : (m.role === 'member' ? 'member' : 'viewer')));
+        var roleLabel = ({owner: '所有者', admin: '管理员', member: '成员', viewer: '观察者'})[m.role] || m.role;
+        var letter = (m.displayName || m.username || '?').charAt(0).toUpperCase();
+        var acts = '';
+        if (canInvite && m.role !== 'owner' && m.userId !== t.ownerId) {
+          acts = '<div class="acts">'
+               +   '<button data-act="role" data-mid="' + escapeHtml(m.id) + '" data-mrole="' + escapeHtml(m.role) + '">角色</button>'
+               +   '<button class="danger" data-act="remove" data-mid="' + escapeHtml(m.id) + '">移除</button>'
+               + '</div>';
+        }
+        return '<div class="member" data-id="' + escapeHtml(m.id) + '">'
+             +   '<span class="av" style="background:var(--brand-soft);">' + escapeHtml(letter) + '</span>'
+             +   '<div><div class="nm">' + escapeHtml(m.displayName || m.username) + '</div>'
+             +   '<div class="un">@' + escapeHtml(m.username) + '</div></div>'
+             +   '<span class="role ' + roleCls + '">' + roleLabel + '</span>'
+             +   acts
+             + '</div>';
+      }).join('');
+    }
+
+    function bindTopActions() {
+      document.getElementById('btnPdf').onclick = async function () {
+        try {
+          showToast('正在生成 PDF…');
+          var url = '/api/trips/' + tripId + '/export/pdf';
+          var res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + getToken() }, credentials: 'omit' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          var blob = await res.blob();
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = (state.trip.title || 'trip') + '.pdf';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+          showToast('PDF 已下载');
+        } catch (err) {
+          showToast(humanError(err));
+        }
+      };
+
+      document.getElementById('btnArchive').onclick = async function () {
+        if (!confirm('归档后该旅程将不会出现在主列表里，确定归档？')) return;
+        try {
+          await apiPatch('/trips/' + tripId + '/archive', {});
+          showToast('已归档');
+          setTimeout(function () { location.replace('/trips/'); }, 800);
+        } catch (err) {
+          showToast(humanError(err));
+        }
+      };
+
+      document.getElementById('btnEdit').onclick = function () {
+        location.href = '/trip-form/?id=' + encodeURIComponent(tripId);
+      };
+
+      document.getElementById('btnAi').onclick = function () {
+        showToast('AI 助手：稍后接入');
+      };
+    }
+
+    // 模块点击跳转
+    document.getElementById('modules').addEventListener('click', function (e) {
+      var btn = e.target.closest('.module');
+      if (!btn) return;
+      var link = btn.getAttribute('data-link');
+      if (link) location.href = link;
+    });
+
+    // Tab 切换
+    document.querySelectorAll('.tabs button').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach(function (t) { t.setAttribute('aria-selected', 'false'); });
+        tab.setAttribute('aria-selected', 'true');
+        document.querySelectorAll('.pane').forEach(function (p) { p.hidden = true; });
+        document.getElementById(tab.getAttribute('aria-controls')).hidden = false;
+      });
+    });
+
+    // 邀请成员
+    document.getElementById('btnInvite').onclick = async function () {
+      var u = document.getElementById('inviteUser').value.trim();
+      var role = document.getElementById('inviteRole').value;
+      if (!u) return showToast('请输入用户名');
+      try {
+        await apiPost('/trips/' + tripId + '/members', { username: u, role: role });
+        document.getElementById('inviteUser').value = '';
+        showToast('已邀请 ' + u);
+        // 重新拉成员
+        var r = await apiGet('/trips/' + tripId + '/members');
+        state.members = (r && r.members) || [];
+        renderMembers();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    };
+
+    // 成员行操作
+    document.getElementById('memberList').addEventListener('click', async function (e) {
+      var btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      var mid = btn.getAttribute('data-mid');
+      var act = btn.getAttribute('data-act');
+      try {
+        if (act === 'remove') {
+          if (!confirm('移除该成员？')) return;
+          await apiDelete('/trips/' + tripId + '/members/' + mid);
+          showToast('已移除');
+        } else if (act === 'role') {
+          var cur = btn.getAttribute('data-mrole');
+          var next = cur === 'admin' ? 'member' : (cur === 'member' ? 'viewer' : 'admin');
+          await apiPatch('/trips/' + tripId + '/members/' + mid + '/role', { role: next });
+          showToast('已改为' + ({admin: '管理员', member: '成员', viewer: '观察者'})[next]);
+        }
+        var r = await apiGet('/trips/' + tripId + '/members');
+        state.members = (r && r.members) || [];
+        renderMembers();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    });
+
+    loadAll();
+  })();
+</script>
+</body>
+</html>
