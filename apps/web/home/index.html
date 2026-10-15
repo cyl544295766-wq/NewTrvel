@@ -3,51 +3,684 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Travel OS · 首页</title>
+<title>Travel OS · 总览</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
 <style>
-  body { padding: 32px; }
-  .placeholder-card {
-    max-width: 720px; margin: 80px auto; text-align: center;
-    background: #fff; border-radius: var(--r-card);
-    box-shadow: var(--card-shadow); padding: 64px 40px;
+  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
   }
-  h1 { font-family: var(--slab); color: var(--brand); font-size: 28px; }
-  p  { color: var(--mute); margin: 12px 0 24px; }
-  .actions { display: flex; gap: 12px; justify-content: center; }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+
+  .side {
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    position: relative;
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .nav a .badge {
+    margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
+    display: inline-grid; place-items: center;
+    font-family: var(--grot); font-size: 10.5px; font-weight: 600;
+    color: #fff; background: var(--stamp); border-radius: 999px;
+  }
+  .nav a .badge[hidden] { display: none; }
+
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .nav a .badge { position: absolute; top: 3px; right: 10px; margin: 0; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 34px 44px 64px; max-width: 1240px; }
+
+  /* ---- 页头 ---- */
+  .hero-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
+  .greet { font-family: var(--slab); font-weight: 600; font-size: 32px; line-height: 1.15; color: var(--brand); }
+  .greet .en {
+    display: block; font-family: var(--grot); font-size: 11px; font-weight: 500;
+    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 9px;
+  }
+  .today { font-family: var(--grot); font-size: 13.5px; color: var(--ink-2); margin-top: 11px; }
+  .today b { color: var(--brand); font-weight: 600; }
+  .today .sep { color: var(--mute); margin: 0 7px; }
+
+  .btn-issue {
+    display: inline-flex; align-items: center; gap: 8px; flex: none;
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: #fff;
+    background: var(--stamp); border: none; text-decoration: none;
+    padding: 12px 24px; border-radius: 11px; cursor: pointer;
+    box-shadow: var(--stamp-shadow);
+    transition: transform .14s, box-shadow .14s;
+  }
+  .btn-issue:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(255,138,76,.4); }
+
+  /* ---- 下一段旅程：登机牌 Hero ---- */
+  .hero-pass {
+    margin-top: 26px; position: relative;
+    display: grid; grid-template-columns: 1fr 224px;
+    background: #fff; border-radius: 18px;
+    box-shadow: var(--card-shadow-strong); overflow: hidden;
+  }
+  .hero-pass::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+    background: var(--stamp);
+  }
+  .hp-main { padding: 24px 30px 24px 32px; min-width: 0; }
+  .hp-eyebrow {
+    font-family: var(--grot); font-size: 10px; font-weight: 600;
+    letter-spacing: .2em; color: var(--mute); text-transform: uppercase;
+  }
+  .hp-route { display: flex; align-items: center; gap: 16px; margin-top: 15px; }
+  .hp-apt {
+    font-family: var(--slab); font-weight: 600; font-size: 27px; color: var(--ink);
+    white-space: nowrap; max-width: 42%; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hp-apt.from { color: var(--mute); font-size: 21px; }
+  .hp-line { flex: 1 1 auto; height: 2px; position: relative; min-width: 40px;
+    background: repeating-linear-gradient(90deg, #CBEAE8 0 7px, transparent 7px 13px); }
+  .hp-line::after {
+    content: '✈'; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    color: var(--brand); font-size: 13px; background: #fff; padding: 0 7px; line-height: 1;
+  }
+  .hp-title {
+    font-family: var(--grot); font-weight: 600; font-size: 15.5px; color: var(--ink);
+    margin-top: 16px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  }
+  .hp-title .fav { color: var(--stamp); font-size: 13px; }
+  .hp-meta { font-family: var(--grot); font-size: 12.5px; color: var(--mute); margin-top: 6px; }
+  .hp-actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .hp-go {
+    font-family: var(--grot); font-weight: 600; font-size: 13px; color: var(--brand);
+    background: var(--mist); border: none; border-radius: 9px; padding: 9px 16px;
+    text-decoration: none; cursor: pointer; transition: background .14s;
+  }
+  .hp-go:hover { background: #CDEBE9; }
+  .hp-go.ghost { background: none; color: var(--ink-2); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .hp-go.ghost:hover { color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand-soft); }
+
+  .hp-stub {
+    border-left: 2px dashed #DCEDEC; padding: 24px 20px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: linear-gradient(155deg, #F2FAF9 0%, #fff 70%);
+  }
+  .hp-stamp {
+    font-family: var(--slab); font-weight: 700; font-size: 14px; letter-spacing: .1em;
+    padding: 5px 12px; border: 2.5px solid currentColor; border-radius: 9px;
+    transform: rotate(-4deg); white-space: nowrap;
+  }
+  .hp-days-n { font-family: var(--slab); font-weight: 700; font-size: 36px; line-height: 1; color: var(--brand); }
+  .hp-days-k { font-family: var(--grot); font-size: 10.5px; color: var(--mute); letter-spacing: .12em; }
+  .hp-code {
+    font-family: var(--grot); font-size: 11px; color: var(--mute);
+    border-top: 1px dashed #DCEDEC; padding-top: 11px; width: 100%; text-align: center;
+    letter-spacing: .06em;
+  }
+
+  /* 空态（还没有任何行程） */
+  .hero-empty {
+    margin-top: 26px; border-radius: 18px; padding: 46px 32px; text-align: center;
+    background: linear-gradient(160deg, #F4FBFA, #fff);
+    border: 2px dashed #C9E8E6;
+  }
+  .hero-empty .ic { font-size: 40px; line-height: 1; }
+  .hero-empty h2 { font-family: var(--slab); font-weight: 600; font-size: 21px; color: var(--brand); margin-top: 16px; }
+  .hero-empty p { font-size: 13.5px; color: var(--mute); margin-top: 9px; }
+
+  /* ---- 统计四联 ---- */
+  .stats { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat {
+    background: #fff; border-radius: var(--r-card); box-shadow: var(--card-shadow);
+    padding: 17px 19px; display: flex; align-items: center; gap: 14px;
+  }
+  .stat .ic { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+  .stat .v { font-family: var(--grot); font-weight: 600; font-size: 23px; line-height: 1.1; color: var(--ink); letter-spacing: -.01em; }
+  .stat .v .u { font-size: 12px; font-weight: 500; color: var(--mute); margin-left: 3px; }
+  .stat .k { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
+
+  /* ---- 两列布局 ---- */
+  .cols { margin-top: 20px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+  .panel {
+    background: #fff; border-radius: var(--r-card); box-shadow: var(--card-shadow);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 15px 20px 13px; border-bottom: 1px dashed #DCEDEC;
+  }
+  .panel-head .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--ink); }
+  .panel-head .n { font-family: var(--grot); font-size: 11px; color: var(--mute); }
+  .panel-head .link {
+    margin-left: auto; font-family: var(--grot); font-size: 12px; font-weight: 600;
+    color: var(--brand); text-decoration: none;
+  }
+  .panel-head .link:hover { text-decoration: underline; }
+  .panel-body { padding: 8px; }
+
+  /* 最近旅行行卡 */
+  .trip-row {
+    display: flex; align-items: center; gap: 13px;
+    padding: 11px 12px; border-radius: 11px; cursor: pointer;
+    transition: background .14s;
+  }
+  .trip-row:hover { background: #F2FAF9; }
+  .trip-thumb {
+    flex: none; width: 46px; height: 46px; border-radius: 11px;
+    display: grid; place-items: center; overflow: hidden;
+    font-family: var(--slab); font-weight: 700; font-size: 15px;
+    background-size: cover; background-position: center;
+  }
+  .trip-info { flex: 1 1 auto; min-width: 0; }
+  .trip-name {
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: var(--ink);
+    display: flex; align-items: center; gap: 7px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .trip-name .fav { color: var(--stamp); font-size: 12px; flex: none; }
+  .trip-sub { font-family: var(--grot); font-size: 11.5px; color: var(--mute); margin-top: 4px; }
+  .trip-status {
+    flex: none; font-family: var(--slab); font-weight: 700; font-size: 10.5px;
+    letter-spacing: .08em; padding: 3px 9px; border: 2px solid currentColor;
+    border-radius: 7px; opacity: .85;
+  }
+
+  /* 最近照片 */
+  .photo-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; }
+  .photo-cell {
+    aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--cloud);
+    cursor: pointer; position: relative;
+  }
+  .photo-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-cell .cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 14px 8px 6px; font-family: var(--grot); font-size: 10.5px; color: #fff;
+    background: linear-gradient(transparent, rgba(10,40,42,.72));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* 快捷入口 */
+  .quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 12px; }
+  .quick {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 11px 4px; border-radius: 11px; text-decoration: none;
+    transition: background .14s;
+  }
+  .quick:hover { background: #F2FAF9; }
+  .quick .qi { font-size: 17px; line-height: 1; }
+  .quick .qn { font-family: var(--grot); font-size: 10.5px; color: var(--ink-2); text-align: center; }
+
+  /* 空态（面板内） */
+  .empty {
+    padding: 32px 20px; text-align: center;
+    font-size: 12.5px; color: var(--mute); line-height: 1.7;
+  }
+  .empty .ic { font-size: 26px; display: block; margin-bottom: 9px; opacity: .55; }
+  .empty a { color: var(--brand); text-decoration: none; border-bottom: 1px dashed var(--brand-soft); }
+
+  /* ---- 响应式 ---- */
+  @media (max-width: 1080px) {
+    .cols { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr; }
+    .side {
+      flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 10px 14px; border-right: none; border-bottom: 1px solid #C9E8E6;
+    }
+    .rail-toggle { display: none; }
+    .brand { display: block !important; padding: 0 0 0 2px; font-size: 19px; }
+    .brand small { display: none; }
+    .brand-mark { display: none !important; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 3px; flex-wrap: wrap; }
+    .nav a { padding: 7px 9px; font-size: 13px; }
+    .nav a .txt { display: inline !important; }
+    .nav a[aria-current="page"] .dot { display: none; }
+    .nav a .badge { position: static; transform: none; }
+    .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
+    .side-foot .who { display: none !important; }
+
+    main { padding: 22px 16px 50px; }
+    .greet { font-size: 25px; }
+    .hero-pass { grid-template-columns: 1fr; }
+    .hp-stub { border-left: none; border-top: 2px dashed #DCEDEC; flex-direction: row; justify-content: space-between; padding: 16px 20px; }
+    .hp-days-n { font-size: 28px; }
+    .hp-code { display: none; }
+    .hp-main { padding: 20px 20px 20px 24px; }
+    .hp-apt { font-size: 22px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .quick-grid { grid-template-columns: repeat(4, 1fr); }
+    .photo-strip { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
+<div class="shell" id="shell">
 
-<div class="placeholder-card">
-  <h1>欢迎回来 · 首页待落地</h1>
-  <p>登录链路已通；首页内容（行程驾驶舱 / 登机牌 Hero / 统计卡）将在套用 travel-os-home.html 时填上。</p>
-  <div class="actions">
-    <button class="btn-stamp" id="goTrips">查看我的行程</button>
-    <button class="link" id="logout">退出登录</button>
-  </div>
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/" aria-current="page"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span><span class="dot"></span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span><span class="badge" id="navUnread" hidden>0</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+    </div>
+  </aside>
+
+  <main>
+    <header class="hero-head">
+      <div>
+        <h1 class="greet" id="greet">你好<span class="en">Dashboard</span></h1>
+        <p class="today" id="today">正在加载…</p>
+      </div>
+      <a class="btn-issue" href="/trip-form/">&#10022; 签发新旅程</a>
+    </header>
+
+    <div id="heroSlot" aria-live="polite"></div>
+
+    <section class="stats" id="stats" hidden>
+      <div class="stat">
+        <span class="ic" style="background:#E9F2FD;color:#2F6FB5;">&#9992;</span>
+        <div><div class="v" id="stTrips">0</div><div class="k">旅行次数</div></div>
+      </div>
+      <div class="stat">
+        <span class="ic" style="background:#FDF5E2;color:#B8830F;">&#9635;</span>
+        <div><div class="v" id="stDays">0<span class="u">天</span></div><div class="k">累计在途</div></div>
+      </div>
+      <div class="stat">
+        <span class="ic" style="background:#FDEFF2;color:#C2566C;">&#165;</span>
+        <div><div class="v" id="stSpent">0</div><div class="k">累计花费</div></div>
+      </div>
+      <div class="stat">
+        <span class="ic" style="background:#E9F8EE;color:#2A8055;">&#9635;</span>
+        <div><div class="v" id="stPacking">0<span class="u">件</span></div><div class="k">待打包</div></div>
+      </div>
+    </section>
+
+    <div class="cols">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="t">最近的旅行</span>
+          <span class="n" id="tripCount"></span>
+          <a class="link" href="/trips/">查看全部 →</a>
+        </div>
+        <div class="panel-body" id="tripList"></div>
+      </section>
+
+      <div>
+        <section class="panel">
+          <div class="panel-head">
+            <span class="t">最近的照片</span>
+            <span class="n" id="photoCount"></span>
+            <a class="link" href="/photos/" id="photoMore">相册 →</a>
+          </div>
+          <div id="photoBody"></div>
+        </section>
+
+        <section class="panel" style="margin-top:16px;">
+          <div class="panel-head"><span class="t">快捷入口</span></div>
+          <div class="quick-grid" id="quickGrid"></div>
+        </section>
+      </div>
+    </div>
+  </main>
 </div>
 
 <script src="../assets/js/api.js"></script>
 <script>
-  if (!requireLogin('/login/')) {
-    // 已自动跳走
-  } else {
-    var user = getCurrentUser();
-    document.querySelector('h1').textContent =
-      '欢迎回来，' + (user && (user.displayName || user.username) || '旅行者') + ' · 首页待落地';
-    document.getElementById('goTrips').addEventListener('click', function () {
-      location.href = '/trips/';
-    });
-    document.getElementById('logout').addEventListener('click', function () {
-      apiPost('/auth/logout').catch(function () {});
-      clearAuth();
-      location.replace('/login/');
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  /* ---------- 工具 ---------- */
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  function toDate(v) {
+    if (!v) return null;
+    var d = (v instanceof Date) ? v : new Date(v);
+    if (isNaN(d.getTime())) {
+      var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return null;
+      d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    return d;
+  }
+  function fmtMD(v) {
+    var d = toDate(v);
+    return d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+  }
+  function fmtYMD(v) {
+    var d = toDate(v);
+    return d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+  }
+  function daysBetween(a, b) {
+    var s = toDate(a), e = toDate(b);
+    if (!s || !e) return 0;
+    return Math.round((e - s) / 86400000) + 1;
+  }
+  function money(v) {
+    var n = Number(v || 0);
+    return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  /* 状态映射（与 trips 页一致，含数据库真实的 completed / archived） */
+  var STATUS = {
+    draft:     { label: 'DRAFT',    cls: 'st-draft',     c: '#8A9BA5' },
+    planning:  { label: 'PLANNING', cls: 'st-planning',  c: '#C08A2E' },
+    active:    { label: 'ONBOARD',  cls: 'st-active',    c: '#1E9A6E' },
+    completed: { label: 'ARRIVED',  cls: 'st-completed', c: '#0D6E6E' },
+    archived:  { label: 'ARCHIVED', cls: 'st-archived',  c: '#9BB0B5' }
+  };
+  function statusOf(v) { return STATUS[v] || STATUS.draft; }
+
+  /* ---------- 侧栏 ---------- */
+  (function initRail() {
+    var shell = $('shell');
+    var btn = $('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function apply(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    apply(saved === 'true');
+    btn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      apply(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+  })();
+
+  function greeting() {
+    var h = new Date().getHours();
+    if (h < 6) return '夜深了';
+    if (h < 11) return '早上好';
+    if (h < 14) return '中午好';
+    if (h < 18) return '下午好';
+    return '晚上好';
+  }
+
+  function initUser() {
+    var u = getCurrentUser() || {};
+    var nm = u.displayName || u.username || '旅行者';
+    $('avatar').textContent = nm.slice(0, 1).toUpperCase();
+    $('who').textContent = nm;
+    $('greet').innerHTML = escapeHtml(greeting() + '，' + nm)
+      + '<span class="en">Dashboard</span>';
+  }
+
+  function initToday(d) {
+    var now = new Date();
+    var text = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日 '
+      + WD[now.getDay()];
+    var extra = '';
+    if (d) {
+      var st = d.stats || {};
+      var bits = [];
+      if (st.tripCount != null) bits.push('<b>' + st.tripCount + '</b> 段旅程');
+      if (st.unreadNotificationCount > 0) bits.push('<b>' + st.unreadNotificationCount + '</b> 条未读通知');
+      if (bits.length) extra = '<span class="sep">·</span>' + bits.join('<span class="sep">·</span>');
+    }
+    $('today').innerHTML = escapeHtml(text) + extra;
+  }
+
+  /* ---------- 下一段旅程（登机牌 Hero） ---------- */
+  function renderHero(d) {
+    var upcoming = (d.upcomingTrips || [])[0];
+    var recent = (d.recentTrips || [])[0];
+    var trip = upcoming || recent;
+    var slot = $('heroSlot');
+
+    if (!trip) {
+      slot.innerHTML = ''
+        + '<div class="hero-empty">'
+        +   '<div class="ic">&#9992;</div>'
+        +   '<h2>还没有任何旅程</h2>'
+        +   '<p>签发第一段旅程，登机牌就会出现在这里。</p>'
+        + '</div>';
+      return;
+    }
+
+    var st = statusOf(trip.status);
+    var days = daysBetween(trip.startDate, trip.endDate);
+    var isNext = !!upcoming;
+    var eyebrow = isNext ? 'Next Departure · 下一段旅程' : 'Last Trip · 最近一段旅程';
+    var dest = trip.destination || trip.title || '未命名旅程';
+    var dateText = trip.startDate
+      ? fmtYMD(trip.startDate) + ' — ' + fmtMD(trip.endDate)
+      : '日期待定';
+
+    var html = [];
+    html.push('<section class="hero-pass">');
+    html.push('  <div class="hp-main">');
+    html.push('    <div class="hp-eyebrow">' + escapeHtml(eyebrow) + '</div>');
+    html.push('    <div class="hp-route">');
+    html.push('      <span class="hp-apt from">待定</span>');
+    html.push('      <span class="hp-line" aria-hidden="true"></span>');
+    html.push('      <span class="hp-apt" title="' + escapeHtml(dest) + '">' + escapeHtml(dest) + '</span>');
+    html.push('    </div>');
+    html.push('    <div class="hp-title">' + escapeHtml(trip.title || '未命名旅程')
+      + (trip.isFavorite ? '<span class="fav" aria-label="已收藏">&#9733;</span>' : '') + '</div>');
+    html.push('    <div class="hp-meta">' + escapeHtml(dateText)
+      + (days > 0 ? ' · ' + days + ' 天' : '') + '</div>');
+    html.push('    <div class="hp-actions">');
+    html.push('      <a class="hp-go" href="/trip-detail/?id=' + encodeURIComponent(trip.id) + '">查看行程 →</a>');
+    html.push('      <a class="hp-go ghost" href="/itinerary/?trip=' + encodeURIComponent(trip.id) + '">行程安排</a>');
+    html.push('      <a class="hp-go ghost" href="/map/?trip=' + encodeURIComponent(trip.id) + '">看地图</a>');
+    html.push('    </div>');
+    html.push('  </div>');
+    html.push('  <div class="hp-stub">');
+    html.push('    <span class="hp-stamp ' + st.cls + '" style="color:' + st.c + '">' + st.label + '</span>');
+    html.push('    <div style="text-align:center;">');
+    html.push('      <div class="hp-days-n">' + (days > 0 ? days : '—') + '</div>');
+    html.push('      <div class="hp-days-k">DAYS</div>');
+    html.push('    </div>');
+    html.push('    <div class="hp-code">' + escapeHtml(trip.destination || 'TRIP') + ' · ' + escapeHtml(String(trip.id).slice(-6).toUpperCase()) + '</div>');
+    html.push('  </div>');
+    html.push('</section>');
+    slot.innerHTML = html.join('');
+  }
+
+  /* ---------- 统计 ---------- */
+  function renderStats(d) {
+    var s = d.stats || {};
+    $('stTrips').textContent = String(s.tripCount || 0);
+    $('stDays').innerHTML = String(s.totalDays || 0) + '<span class="u">天</span>';
+    $('stSpent').textContent = money(s.totalExpenseAmount);
+    $('stPacking').innerHTML = String(s.pendingPackingItemCount || 0) + '<span class="u">件</span>';
+    $('stats').hidden = false;
+
+    var unread = Number(s.unreadNotificationCount || 0);
+    var badge = $('navUnread');
+    if (unread > 0) { badge.textContent = unread > 99 ? '99+' : String(unread); badge.hidden = false; }
+    else { badge.hidden = true; }
+  }
+
+  /* ---------- 最近的旅行 ---------- */
+  function renderTrips(d) {
+    var list = d.recentTrips || [];
+    var host = $('tripList');
+    $('tripCount').textContent = list.length ? list.length + ' 段' : '';
+
+    if (!list.length) {
+      host.innerHTML = '<div class="empty"><span class="ic">&#9992;</span>'
+        + '还没有旅行记录<br><a href="/trip-form/">签发第一段旅程</a></div>';
+      return;
+    }
+
+    var html = [];
+    list.forEach(function (t) {
+      var st = statusOf(t.status);
+      var days = daysBetween(t.startDate, t.endDate);
+      var dest = t.destination || t.title || '?';
+      var initial = Array.from(dest).slice(0, 2).join('');
+      var sub = (t.startDate ? fmtMD(t.startDate) + ' — ' + fmtMD(t.endDate) : '日期待定')
+        + (days > 0 ? ' · ' + days + ' 天' : '');
+      html.push('<div class="trip-row" data-id="' + escapeHtml(t.id) + '" role="link" tabindex="0"'
+        + ' title="打开「' + escapeHtml(t.title || '未命名旅程') + '」">');
+      html.push('  <span class="trip-thumb" style="background:#E8F6F5;color:' + st.c + ';">'
+        + escapeHtml(initial) + '</span>');
+      html.push('  <span class="trip-info">');
+      html.push('    <span class="trip-name">' + escapeHtml(t.title || '未命名旅程')
+        + (t.isFavorite ? '<span class="fav" aria-label="已收藏">&#9733;</span>' : '') + '</span>');
+      html.push('    <span class="trip-sub">' + escapeHtml(sub) + '</span>');
+      html.push('  </span>');
+      html.push('  <span class="trip-status ' + st.cls + '" style="color:' + st.c + '">' + st.label + '</span>');
+      html.push('</div>');
+    });
+    host.innerHTML = html.join('');
+
+    host.querySelectorAll('.trip-row').forEach(function (row) {
+      var id = row.getAttribute('data-id');
+      function go() { location.href = '/trip-detail/?id=' + encodeURIComponent(id); }
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+      });
+    });
+  }
+
+  /* ---------- 最近的照片 ---------- */
+  function renderPhotos(d) {
+    var list = (d.recentPhotos || []).slice(0, 6);
+    var host = $('photoBody');
+    $('photoCount').textContent = list.length ? list.length + ' 张' : '';
+
+    if (!list.length) {
+      host.innerHTML = '<div class="empty"><span class="ic">&#9635;</span>'
+        + '还没有照片<br>在行程里上传后这里会出现</div>';
+      $('photoMore').hidden = true;
+      return;
+    }
+
+    /* 「相册 →」跳到照片最多那张所属的行程 */
+    var first = list[0];
+    $('photoMore').setAttribute('href', first.tripId ? '/photos/?trip=' + encodeURIComponent(first.tripId) : '/photos/');
+
+    var html = ['<div class="photo-strip">'];
+    list.forEach(function (p) {
+      var src = p.thumbnailUrl || p.url || '';
+      var link = p.tripId ? '/photos/?trip=' + encodeURIComponent(p.tripId) : '/photos/';
+      html.push('<a class="photo-cell" href="' + link + '" title="' + escapeHtml(p.alt || p.tripTitle || '照片') + '">');
+      if (src) html.push('<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(p.alt || '') + '" loading="lazy">');
+      html.push(p.tripTitle ? '<span class="cap">' + escapeHtml(p.tripTitle) + '</span>' : '');
+      html.push('</a>');
+    });
+    html.push('</div>');
+    host.innerHTML = html.join('');
+  }
+
+  /* ---------- 快捷入口 ---------- */
+  function renderQuick(d) {
+    var trip = (d.upcomingTrips || [])[0] || (d.recentTrips || [])[0];
+    var q = trip ? '?trip=' + encodeURIComponent(trip.id) : '';
+    var items = [
+      { ic: '☰', n: '行程安排', href: '/itinerary/' + q },
+      { ic: '◉', n: '行程地图', href: '/map/' + q },
+      { ic: '¥', n: '费用记账', href: '/expenses/' + q },
+      { ic: '▤', n: '打包清单', href: '/packing/' + q },
+      { ic: '🎫', n: '预订管理', href: '/bookings/' + q },
+      { ic: '◫', n: '凭证速查', href: '/vouchers/' + q },
+      { ic: '▣', n: '证件文档', href: '/documents/' + q },
+      { ic: '✎', n: '旅行游记', href: '/journals/' + q }
+    ];
+    var html = [];
+    items.forEach(function (it) {
+      html.push('<a class="quick" href="' + it.href + '">'
+        + '<span class="qi" aria-hidden="true">' + it.ic + '</span>'
+        + '<span class="qn">' + escapeHtml(it.n) + '</span></a>');
+    });
+    $('quickGrid').innerHTML = html.join('');
+  }
+
+  /* ---------- 启动 ---------- */
+  if (requireLogin('/login/')) {
+    initUser();
+    initToday(null);
+    apiGet('/dashboard').then(function (d) {
+      renderHero(d);
+      renderStats(d);
+      renderTrips(d);
+      renderPhotos(d);
+      renderQuick(d);
+      initToday(d);
+    }).catch(function (err) {
+      $('today').innerHTML = '<span style="color:#D2543A;">' + escapeHtml(humanError(err)) + '</span>';
+      $('heroSlot').innerHTML = '<div class="hero-empty">'
+        + '<div class="ic">&#9888;</div><h2>暂时读不到总览数据</h2>'
+        + '<p>' + escapeHtml(humanError(err)) + '</p></div>';
+      renderQuick({});
+    });
+  }
+})();
 </script>
 </body>
 </html>

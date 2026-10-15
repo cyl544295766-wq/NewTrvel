@@ -39,6 +39,7 @@ done
 
 | 脚本 | 覆盖页面 | 关键断言 |
 | --- | --- | --- |
+| `verify-home.cjs` | `/home/` | 总览工作台：问候与日期、下一段旅程登机牌、统计四联与 `/api/dashboard` 一致、最近旅行状态章（含 archived/completed 不回落）、最近照片、快捷入口 8 个、点行进详情、侧栏折叠与移动端 |
 | `verify-trip-detail.cjs` | `/trip-detail/` | 登机牌票面四字段、8 个模块磁贴、成员 tab、天气降级、移动端 |
 | `verify-trip-form.cjs` | `/trip-form/` | 新建链路（预览实时更新 → 创建 → 跳详情）、编辑链路（预填 → 改状态 → 保存） |
 | `verify-itinerary.cjs` | `/itinerary/` | 勾选完成 → 进度环与总览联动、加地点、行内编辑、上下移 reorder、天标题 |
