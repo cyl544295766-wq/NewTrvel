@@ -1,8 +1,11 @@
 -- CreateEnum
-CREATE TYPE "UserStatus" AS ENUM ('active', 'disabled');
+DO $$ BEGIN
+  CREATE TYPE "UserStatus" AS ENUM ('active', 'disabled');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
     "id" TEXT NOT NULL,
     "username" TEXT NOT NULL,
     "display_name" TEXT NOT NULL,
@@ -17,4 +20,4 @@ CREATE TABLE "users" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users"("username");

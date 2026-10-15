@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE "trip_places" ADD COLUMN "is_completed" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "trip_places" ADD COLUMN IF NOT EXISTS "is_completed" BOOLEAN NOT NULL DEFAULT false;

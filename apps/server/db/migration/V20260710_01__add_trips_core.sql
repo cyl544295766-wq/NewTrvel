@@ -1,11 +1,17 @@
 -- CreateEnum
-CREATE TYPE "TripStatus" AS ENUM ('draft', 'planning', 'active', 'completed', 'archived');
+DO $$ BEGIN
+  CREATE TYPE "TripStatus" AS ENUM ('draft', 'planning', 'active', 'completed', 'archived');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "TripMemberRole" AS ENUM ('owner', 'admin', 'member', 'viewer');
+DO $$ BEGIN
+  CREATE TYPE "TripMemberRole" AS ENUM ('owner', 'admin', 'member', 'viewer');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "trips" (
+CREATE TABLE IF NOT EXISTS "trips" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
@@ -23,7 +29,7 @@ CREATE TABLE "trips" (
 );
 
 -- CreateTable
-CREATE TABLE "trip_members" (
+CREATE TABLE IF NOT EXISTS "trip_members" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -35,13 +41,22 @@ CREATE TABLE "trip_members" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "trip_members_trip_id_user_id_key" ON "trip_members"("trip_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "trip_members_trip_id_user_id_key" ON "trip_members"("trip_id", "user_id");
 
 -- AddForeignKey
-ALTER TABLE "trips" ADD CONSTRAINT "trips_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trips" ADD CONSTRAINT "trips_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_members" ADD CONSTRAINT "trip_members_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_members" ADD CONSTRAINT "trip_members_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_members" ADD CONSTRAINT "trip_members_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_members" ADD CONSTRAINT "trip_members_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

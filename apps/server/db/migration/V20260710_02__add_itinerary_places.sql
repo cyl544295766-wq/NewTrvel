@@ -1,8 +1,11 @@
 -- CreateEnum
-CREATE TYPE "TripPlaceType" AS ENUM ('attraction', 'hotel', 'restaurant', 'transport', 'shopping', 'custom');
+DO $$ BEGIN
+  CREATE TYPE "TripPlaceType" AS ENUM ('attraction', 'hotel', 'restaurant', 'transport', 'shopping', 'custom');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "trip_days" (
+CREATE TABLE IF NOT EXISTS "trip_days" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "date" TIMESTAMP(3) NOT NULL,
@@ -16,7 +19,7 @@ CREATE TABLE "trip_days" (
 );
 
 -- CreateTable
-CREATE TABLE "trip_places" (
+CREATE TABLE IF NOT EXISTS "trip_places" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "trip_day_id" TEXT,
@@ -36,22 +39,31 @@ CREATE TABLE "trip_places" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "trip_days_trip_id_date_key" ON "trip_days"("trip_id", "date");
+CREATE UNIQUE INDEX IF NOT EXISTS "trip_days_trip_id_date_key" ON "trip_days"("trip_id", "date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "trip_days_trip_id_day_index_key" ON "trip_days"("trip_id", "day_index");
+CREATE UNIQUE INDEX IF NOT EXISTS "trip_days_trip_id_day_index_key" ON "trip_days"("trip_id", "day_index");
 
 -- CreateIndex
-CREATE INDEX "trip_places_trip_id_idx" ON "trip_places"("trip_id");
+CREATE INDEX IF NOT EXISTS "trip_places_trip_id_idx" ON "trip_places"("trip_id");
 
 -- CreateIndex
-CREATE INDEX "trip_places_trip_day_id_idx" ON "trip_places"("trip_day_id");
+CREATE INDEX IF NOT EXISTS "trip_places_trip_day_id_idx" ON "trip_places"("trip_day_id");
 
 -- AddForeignKey
-ALTER TABLE "trip_days" ADD CONSTRAINT "trip_days_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_days" ADD CONSTRAINT "trip_days_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_places" ADD CONSTRAINT "trip_places_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_places" ADD CONSTRAINT "trip_places_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_places" ADD CONSTRAINT "trip_places_trip_day_id_fkey" FOREIGN KEY ("trip_day_id") REFERENCES "trip_days"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_places" ADD CONSTRAINT "trip_places_trip_day_id_fkey" FOREIGN KEY ("trip_day_id") REFERENCES "trip_days"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

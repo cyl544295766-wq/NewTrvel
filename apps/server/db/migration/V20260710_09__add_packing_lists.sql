@@ -1,8 +1,11 @@
 -- CreateEnum
-CREATE TYPE "PackingListCategory" AS ENUM ('clothing', 'toiletries', 'electronics', 'medicine', 'documents', 'other');
+DO $$ BEGIN
+  CREATE TYPE "PackingListCategory" AS ENUM ('clothing', 'toiletries', 'electronics', 'medicine', 'documents', 'other');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "packing_lists" (
+CREATE TABLE IF NOT EXISTS "packing_lists" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -14,7 +17,7 @@ CREATE TABLE "packing_lists" (
 );
 
 -- CreateTable
-CREATE TABLE "packing_items" (
+CREATE TABLE IF NOT EXISTS "packing_items" (
     "id" TEXT NOT NULL,
     "packing_list_id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -27,13 +30,19 @@ CREATE TABLE "packing_items" (
 );
 
 -- CreateIndex
-CREATE INDEX "packing_lists_trip_id_idx" ON "packing_lists"("trip_id");
+CREATE INDEX IF NOT EXISTS "packing_lists_trip_id_idx" ON "packing_lists"("trip_id");
 
 -- CreateIndex
-CREATE INDEX "packing_items_packing_list_id_idx" ON "packing_items"("packing_list_id");
+CREATE INDEX IF NOT EXISTS "packing_items_packing_list_id_idx" ON "packing_items"("packing_list_id");
 
 -- AddForeignKey
-ALTER TABLE "packing_lists" ADD CONSTRAINT "packing_lists_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "packing_lists" ADD CONSTRAINT "packing_lists_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "packing_items" ADD CONSTRAINT "packing_items_packing_list_id_fkey" FOREIGN KEY ("packing_list_id") REFERENCES "packing_lists"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "packing_items" ADD CONSTRAINT "packing_items_packing_list_id_fkey" FOREIGN KEY ("packing_list_id") REFERENCES "packing_lists"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

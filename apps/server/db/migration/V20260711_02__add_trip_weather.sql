@@ -1,4 +1,4 @@
-CREATE TABLE "trip_weather" (
+CREATE TABLE IF NOT EXISTS "trip_weather" (
   "id" TEXT NOT NULL,
   "trip_id" TEXT NOT NULL,
   "trip_day_id" TEXT,
@@ -15,9 +15,13 @@ CREATE TABLE "trip_weather" (
   CONSTRAINT "trip_weather_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "trip_weather_trip_id_idx" ON "trip_weather"("trip_id");
-CREATE INDEX "trip_weather_trip_id_date_idx" ON "trip_weather"("trip_id", "date");
+CREATE INDEX IF NOT EXISTS "trip_weather_trip_id_idx" ON "trip_weather"("trip_id");
 
-ALTER TABLE "trip_weather"
-  ADD CONSTRAINT "trip_weather_trip_id_fkey"
-  FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+CREATE INDEX IF NOT EXISTS "trip_weather_trip_id_date_idx" ON "trip_weather"("trip_id", "date");
+
+DO $$ BEGIN
+  ALTER TABLE "trip_weather"
+    ADD CONSTRAINT "trip_weather_trip_id_fkey"
+    FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

@@ -1,8 +1,11 @@
 -- CreateEnum
-CREATE TYPE "TripExpenseCategory" AS ENUM ('transport', 'hotel', 'food', 'ticket', 'shopping', 'activity', 'other');
+DO $$ BEGIN
+  CREATE TYPE "TripExpenseCategory" AS ENUM ('transport', 'hotel', 'food', 'ticket', 'shopping', 'activity', 'other');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- CreateTable
-CREATE TABLE "trip_expenses" (
+CREATE TABLE IF NOT EXISTS "trip_expenses" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "payer_user_id" TEXT NOT NULL,
@@ -19,7 +22,7 @@ CREATE TABLE "trip_expenses" (
 );
 
 -- CreateTable
-CREATE TABLE "trip_expense_shares" (
+CREATE TABLE IF NOT EXISTS "trip_expense_shares" (
     "id" TEXT NOT NULL,
     "expense_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -31,25 +34,37 @@ CREATE TABLE "trip_expense_shares" (
 );
 
 -- CreateIndex
-CREATE INDEX "trip_expenses_trip_id_idx" ON "trip_expenses"("trip_id");
+CREATE INDEX IF NOT EXISTS "trip_expenses_trip_id_idx" ON "trip_expenses"("trip_id");
 
 -- CreateIndex
-CREATE INDEX "trip_expenses_payer_user_id_idx" ON "trip_expenses"("payer_user_id");
+CREATE INDEX IF NOT EXISTS "trip_expenses_payer_user_id_idx" ON "trip_expenses"("payer_user_id");
 
 -- CreateIndex
-CREATE INDEX "trip_expense_shares_user_id_idx" ON "trip_expense_shares"("user_id");
+CREATE INDEX IF NOT EXISTS "trip_expense_shares_user_id_idx" ON "trip_expense_shares"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "trip_expense_shares_expense_id_user_id_key" ON "trip_expense_shares"("expense_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "trip_expense_shares_expense_id_user_id_key" ON "trip_expense_shares"("expense_id", "user_id");
 
 -- AddForeignKey
-ALTER TABLE "trip_expenses" ADD CONSTRAINT "trip_expenses_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_expenses" ADD CONSTRAINT "trip_expenses_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_expenses" ADD CONSTRAINT "trip_expenses_payer_user_id_fkey" FOREIGN KEY ("payer_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_expenses" ADD CONSTRAINT "trip_expenses_payer_user_id_fkey" FOREIGN KEY ("payer_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_expense_shares" ADD CONSTRAINT "trip_expense_shares_expense_id_fkey" FOREIGN KEY ("expense_id") REFERENCES "trip_expenses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_expense_shares" ADD CONSTRAINT "trip_expense_shares_expense_id_fkey" FOREIGN KEY ("expense_id") REFERENCES "trip_expenses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "trip_expense_shares" ADD CONSTRAINT "trip_expense_shares_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "trip_expense_shares" ADD CONSTRAINT "trip_expense_shares_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

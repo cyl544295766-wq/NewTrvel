@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "photos" (
+CREATE TABLE IF NOT EXISTS "photos" (
     "id" TEXT NOT NULL,
     "trip_id" TEXT NOT NULL,
     "trip_day_id" TEXT,
@@ -15,19 +15,28 @@ CREATE TABLE "photos" (
 );
 
 -- CreateIndex
-CREATE INDEX "photos_trip_id_idx" ON "photos"("trip_id");
+CREATE INDEX IF NOT EXISTS "photos_trip_id_idx" ON "photos"("trip_id");
 
 -- CreateIndex
-CREATE INDEX "photos_trip_day_id_idx" ON "photos"("trip_day_id");
+CREATE INDEX IF NOT EXISTS "photos_trip_day_id_idx" ON "photos"("trip_day_id");
 
 -- CreateIndex
-CREATE INDEX "photos_trip_place_id_idx" ON "photos"("trip_place_id");
+CREATE INDEX IF NOT EXISTS "photos_trip_place_id_idx" ON "photos"("trip_place_id");
 
 -- AddForeignKey
-ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_id_fkey" FOREIGN KEY ("trip_id") REFERENCES "trips"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_day_id_fkey" FOREIGN KEY ("trip_day_id") REFERENCES "trip_days"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_day_id_fkey" FOREIGN KEY ("trip_day_id") REFERENCES "trip_days"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AddForeignKey
-ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_place_id_fkey" FOREIGN KEY ("trip_place_id") REFERENCES "trip_places"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "photos" ADD CONSTRAINT "photos_trip_place_id_fkey" FOREIGN KEY ("trip_place_id") REFERENCES "trip_places"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
