@@ -117,3 +117,59 @@ function consumeRedirect(defaultPath = '/home/') {
   }
   return defaultPath;
 }
+
+/**
+ * 全站统一的退出登录（侧栏退出按钮 / 账户页共用，与登录鉴权逻辑一致）。
+ * 流程：
+ *   1. 未登录（无 token）：直接跳登录页，不调接口（边界情况）
+ *   2. 已登录：调 POST /auth/logout 清服务端 Cookie，失败自动重试一次
+ *   3. 无论接口成败都清除本地 token 与用户缓存（JWT 无状态，本地清理即完成登出）
+ *   4. 重试仍失败时通过 onNotice 提示（如 toast），不阻塞跳转
+ * @param {{redirectUrl?: string, onNotice?: (msg: string) => void}} opts
+ */
+async function performLogout(opts = {}) {
+  const redirectUrl = opts.redirectUrl || '/login/';
+  if (!isLoggedIn()) {
+    location.replace(redirectUrl);
+    return;
+  }
+  let serverOk = false;
+  for (let attempt = 0; attempt < 2 && !serverOk; attempt++) {
+    try {
+      await apiPost('/auth/logout', {});
+      serverOk = true;
+    } catch (e) {
+      if (attempt === 0) await new Promise(r => setTimeout(r, 600)); // 稍候重试一次
+    }
+  }
+  clearAuth();
+  if (!serverOk && typeof opts.onNotice === 'function') {
+    opts.onNotice('云端登出未成功（网络原因），本地登录凭证已清除');
+  }
+  location.replace(redirectUrl);
+}
+
+/* 自动接线：为页面上的退出按钮绑定统一逻辑（#sideLogout 侧栏 / #btnLogout 账户页）。
+ * 按钮只负责 DOM，行为全部收敛到这里，避免各页实现漂移。 */
+(function () {
+  function wireLogoutButtons() {
+    ['sideLogout', 'btnLogout'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el || el.dataset.logoutBound) return;
+      el.dataset.logoutBound = '1';
+      el.addEventListener('click', function () {
+        if (!confirm('退出当前账户？需要重新登录才能继续使用。')) return;
+        performLogout({
+          onNotice: function (msg) {
+            if (typeof showToast === 'function') showToast(msg);
+          },
+        });
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireLogoutButtons);
+  } else {
+    wireLogoutButtons();
+  }
+})();
