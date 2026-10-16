@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Travel OS · 总览</title>
+<title>Travel OS · 首页</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
 <style>
-  /* ===== 骨架（与全站统一：侧栏 + 主区） ===== */
+  /* ===== 骨架：与「我的旅行」一致的折叠侧栏 ===== */
   .shell {
     display: grid;
     grid-template-columns: var(--rail-w, 232px) 1fr;
@@ -23,14 +23,14 @@
     background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
     padding: 18px 14px 20px;
     display: flex; flex-direction: column; gap: 6px;
-    border-right: 1px solid #C9E8E6; overflow: hidden;
+    border-right: 1px solid #C9E8E6;
+    overflow: hidden;
   }
   .rail-toggle {
     align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
     display: grid; place-items: center; border: none; border-radius: 9px;
     background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
-    cursor: pointer; flex: none;
-    transition: background .16s, transform .24s;
+    cursor: pointer; flex: none; transition: background .16s, transform .24s;
   }
   .rail-toggle:hover { background: #fff; }
   .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
@@ -43,14 +43,14 @@
   .nav a {
     position: relative;
     display: flex; align-items: center; gap: 12px; padding: 10px 12px;
-    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
-    white-space: nowrap;
-    transition: background .16s, color .16s;
+    color: #3D6A6C; text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
   }
   .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
   .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
-  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,.10); }
   .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  /* 未读通知角标（全站侧栏既有能力，0 条时隐藏，不影响设计默认态） */
   .nav a .badge {
     margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
     display: inline-grid; place-items: center;
@@ -58,10 +58,11 @@
     color: #fff; background: var(--stamp); border-radius: 999px;
   }
   .nav a .badge[hidden] { display: none; }
+  .nav a[aria-current="page"] .badge { margin-left: 0; }
 
   .side-foot {
     margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
-    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+    font-size: 13px; color: #3D6A6C; display: flex; align-items: center; gap: 9px; white-space: nowrap;
   }
   .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
 
@@ -75,226 +76,333 @@
   .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
 
   /* ===== 主区 ===== */
-  main { padding: 34px 44px 64px; max-width: 1240px; }
+  main { padding: 36px 44px 52px; max-width: 1240px; }
 
-  /* ---- 页头 ---- */
-  .hero-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
-  .greet { font-family: var(--slab); font-weight: 600; font-size: 32px; line-height: 1.15; color: var(--brand); }
-  .greet .en {
-    display: block; font-family: var(--grot); font-size: 11px; font-weight: 500;
-    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 9px;
-  }
-  .today { font-family: var(--grot); font-size: 13.5px; color: var(--ink-2); margin-top: 11px; }
-  .today b { color: var(--brand); font-weight: 600; }
-  .today .sep { color: var(--mute); margin: 0 7px; }
-
-  .btn-issue {
-    display: inline-flex; align-items: center; gap: 8px; flex: none;
-    font-family: var(--grot); font-weight: 600; font-size: 14px; color: #fff;
-    background: var(--stamp); border: none; text-decoration: none;
-    padding: 12px 24px; border-radius: 11px; cursor: pointer;
-    box-shadow: var(--stamp-shadow);
-    transition: transform .14s, box-shadow .14s;
-  }
-  .btn-issue:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(255,138,76,.4); }
-
-  /* ---- 下一段旅程：登机牌 Hero ---- */
-  .hero-pass {
-    margin-top: 26px; position: relative;
-    display: grid; grid-template-columns: 1fr 224px;
-    background: #fff; border-radius: 18px;
-    box-shadow: var(--card-shadow-strong); overflow: hidden;
-  }
-  .hero-pass::before {
-    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
-    background: var(--stamp);
-  }
-  .hp-main { padding: 24px 30px 24px 32px; min-width: 0; }
-  .hp-eyebrow {
-    font-family: var(--grot); font-size: 10px; font-weight: 600;
-    letter-spacing: .2em; color: var(--mute); text-transform: uppercase;
-  }
-  .hp-route { display: flex; align-items: center; gap: 16px; margin-top: 15px; }
-  .hp-apt {
-    font-family: var(--slab); font-weight: 600; font-size: 27px; color: var(--ink);
-    white-space: nowrap; max-width: 42%; overflow: hidden; text-overflow: ellipsis;
-  }
-  .hp-apt.from { color: var(--mute); font-size: 21px; }
-  .hp-line { flex: 1 1 auto; height: 2px; position: relative; min-width: 40px;
-    background: repeating-linear-gradient(90deg, #CBEAE8 0 7px, transparent 7px 13px); }
-  .hp-line::after {
-    content: '✈'; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-    color: var(--brand); font-size: 13px; background: #fff; padding: 0 7px; line-height: 1;
-  }
-  .hp-title {
-    font-family: var(--grot); font-weight: 600; font-size: 15.5px; color: var(--ink);
-    margin-top: 16px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
-  }
-  .hp-title .fav { color: var(--stamp); font-size: 13px; }
-  .hp-meta { font-family: var(--grot); font-size: 12.5px; color: var(--mute); margin-top: 6px; }
-  .hp-actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .hp-go {
-    font-family: var(--grot); font-weight: 600; font-size: 13px; color: var(--brand);
-    background: var(--mist); border: none; border-radius: 9px; padding: 9px 16px;
-    text-decoration: none; cursor: pointer; transition: background .14s;
-  }
-  .hp-go:hover { background: #CDEBE9; }
-  .hp-go.ghost { background: none; color: var(--ink-2); box-shadow: inset 0 0 0 1.5px var(--line); }
-  .hp-go.ghost:hover { color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand-soft); }
-
-  .hp-stub {
-    border-left: 2px dashed #DCEDEC; padding: 24px 20px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
-    background: linear-gradient(155deg, #F2FAF9 0%, #fff 70%);
-  }
-  .hp-stamp {
-    font-family: var(--slab); font-weight: 700; font-size: 14px; letter-spacing: .1em;
-    padding: 5px 12px; border: 2.5px solid currentColor; border-radius: 9px;
-    transform: rotate(-4deg); white-space: nowrap;
-  }
-  .hp-days-n { font-family: var(--slab); font-weight: 700; font-size: 36px; line-height: 1; color: var(--brand); }
-  .hp-days-k { font-family: var(--grot); font-size: 10.5px; color: var(--mute); letter-spacing: .12em; }
-  .hp-code {
-    font-family: var(--grot); font-size: 11px; color: var(--mute);
-    border-top: 1px dashed #DCEDEC; padding-top: 11px; width: 100%; text-align: center;
-    letter-spacing: .06em;
-  }
-
-  /* 空态（还没有任何行程） */
-  .hero-empty {
-    margin-top: 26px; border-radius: 18px; padding: 46px 32px; text-align: center;
-    background: linear-gradient(160deg, #F4FBFA, #fff);
-    border: 2px dashed #C9E8E6;
-  }
-  .hero-empty .ic { font-size: 40px; line-height: 1; }
-  .hero-empty h2 { font-family: var(--slab); font-weight: 600; font-size: 21px; color: var(--brand); margin-top: 16px; }
-  .hero-empty p { font-size: 13.5px; color: var(--mute); margin-top: 9px; }
-
-  /* ---- 统计四联 ---- */
-  .stats { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .stat {
-    background: #fff; border-radius: var(--r-card); box-shadow: var(--card-shadow);
-    padding: 17px 19px; display: flex; align-items: center; gap: 14px;
-  }
-  .stat .ic { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
-  .stat .v { font-family: var(--grot); font-weight: 600; font-size: 23px; line-height: 1.1; color: var(--ink); letter-spacing: -.01em; }
-  .stat .v .u { font-size: 12px; font-weight: 500; color: var(--mute); margin-left: 3px; }
-  .stat .k { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
-
-  /* ---- 两列布局 ---- */
-  .cols { margin-top: 20px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
-  .panel {
-    background: #fff; border-radius: var(--r-card); box-shadow: var(--card-shadow);
+  /* ===== Hero：登机牌式出发信息板 ===== */
+  .hero {
+    position: relative;
+    background: linear-gradient(115deg, #0D6E6E 0%, #14807C 45%, #1E9A93 100%);
+    border-radius: 18px;
+    padding: 34px 38px;
+    color: #fff;
     overflow: hidden;
+    box-shadow: 0 14px 36px rgba(13,110,110,0.24);
+  }
+  /* 右侧柔光 */
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 340px; height: 340px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(91,197,192,0.55) 0%, rgba(91,197,192,0) 68%);
+  }
+  /* 底部穿孔：呼应登机牌 */
+  .hero::before {
+    content: "";
+    position: absolute;
+    left: 34px; right: 34px; bottom: 15px;
+    border-bottom: 1.5px dashed rgba(255,255,255,0.32);
+  }
+
+  .hero-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 24px; flex-wrap: wrap;
+    position: relative; z-index: 1;
+  }
+  .hero h1 {
+    font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.2;
+  }
+  .hero-sub { font-size: 14px; color: rgba(255,255,255,0.82); margin-top: 8px; }
+
+  /* 右上角出发倒计时章 */
+  .countdown { text-align: right; flex: none; }
+  .countdown .cd-label { font-size: 10.5px; letter-spacing: .2em; color: rgba(255,255,255,0.72); }
+  .countdown .cd-num {
+    font-family: var(--slab); font-weight: 700; font-size: 40px; line-height: 1;
+    display: flex; align-items: baseline; gap: 5px; justify-content: flex-end;
+  }
+  .countdown .cd-num small { font-size: 14px; font-weight: 500; color: var(--brand-soft); }
+  .countdown .cd-dest { font-size: 12.5px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+  .countdown .cd-dest a { color: #fff; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,.5); }
+  .countdown .cd-dest a:hover { border-bottom-color: #fff; }
+
+  /* 出发信息行：像一张票的航线数据 */
+  .hero-route {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 0;
+    margin-top: 30px; padding-bottom: 26px;
+    flex-wrap: wrap;
+  }
+  .hero-route .cell { padding-right: 26px; }
+  .hero-route .cell + .cell { border-left: 1px solid rgba(255,255,255,0.24); padding-left: 26px; }
+  .hero-route .k { font-size: 10px; letter-spacing: .16em; color: rgba(255,255,255,0.66); }
+  .hero-route .v { font-family: var(--slab); font-weight: 600; font-size: 19px; margin-top: 3px; }
+  .hero-route .v .track { font-family: var(--grot); font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.75); }
+
+  /* ===== 统计：票据数据格 ===== */
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
+    margin-top: 26px;
+  }
+  .stat {
+    background: #fff; border-radius: 14px; padding: 20px 22px;
+    box-shadow: var(--card-shadow);
+    display: flex; gap: 14px; align-items: flex-start;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .stat:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(13,110,110,.15); }
+  .stat .ic {
+    width: 40px; height: 40px; flex: none; border-radius: 11px;
+    display: grid; place-items: center; font-size: 18px;
+  }
+  .stat .k { font-size: 12.5px; color: var(--mute); }
+  .stat .v {
+    font-family: var(--slab); font-weight: 700; font-size: 27px; line-height: 1.15;
+    color: var(--brand); display: flex; align-items: baseline; gap: 3px; margin-top: 2px;
+  }
+  .stat .v small { font-size: 12px; font-weight: 500; color: var(--brand-soft); }
+  .stat .foot { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
+  .ic--green { background: #E5F5F1; }
+  .ic--amber { background: #FFF1E8; }
+  .ic--blue  { background: #E8F2FB; }
+  .ic--rose  { background: #FDEDF1; }
+
+  /* ===== 面板通用 ===== */
+  .panel {
+    background: #fff; border-radius: 14px; margin-top: 22px;
+    box-shadow: var(--card-shadow); overflow: hidden;
   }
   .panel-head {
-    display: flex; align-items: center; gap: 9px;
-    padding: 15px 20px 13px; border-bottom: 1px dashed #DCEDEC;
+    display: flex; align-items: center; gap: 10px;
+    padding: 18px 22px 12px; border-bottom: 1px solid #EEF5F5;
   }
-  .panel-head .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--ink); }
-  .panel-head .n { font-family: var(--grot); font-size: 11px; color: var(--mute); }
+  .panel-head .bar { width: 4px; height: 16px; border-radius: 2px; background: var(--brand-soft); flex: none; }
+  .panel-head .title { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
+  .panel-head .sub {
+    font-size: 12.5px; color: var(--mute);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
+  }
   .panel-head .link {
-    margin-left: auto; font-family: var(--grot); font-size: 12px; font-weight: 600;
-    color: var(--brand); text-decoration: none;
+    margin-left: auto; font-size: 13px; color: var(--brand); text-decoration: none;
+    padding: 5px 12px; border-radius: 8px; background: var(--mist); transition: background .16s;
+    white-space: nowrap; flex: none;
   }
-  .panel-head .link:hover { text-decoration: underline; }
-  .panel-body { padding: 8px; }
+  .panel-head .link:hover { background: #CFEBE8; }
+  .panel-body { padding: 18px 22px 22px; }
 
-  /* 最近旅行行卡 */
+  /* ===== 地图占位 ===== */
+  .map-canvas {
+    height: 380px; border-radius: 11px; position: relative;
+    background: linear-gradient(160deg, #EAF7F6 0%, #DCF2F0 100%);
+    overflow: hidden;
+    transition: background .3s ease;
+  }
+  .map-canvas[data-layer="satellite"] {
+    background: linear-gradient(160deg, #DCEBE6 0%, #B9D8D3 100%);
+  }
+  /* 极简地貌暗示线 */
+  .map-canvas .ridge { position: absolute; inset: 0; opacity: .5; width: 100%; height: 100%; }
+  .route { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pin {
+    position: absolute; transform: translate(-50%,-100%);
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    z-index: 2;
+  }
+  .pin:hover { z-index: 5; }
+  .pin .pt {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--brand); border: 2.5px solid #fff;
+    box-shadow: 0 2px 6px rgba(13,110,110,.35);
+    position: relative; order: 2;
+  }
+  .pin .pt::after {
+    content: ""; position: absolute; inset: -8px; border-radius: 50%;
+    border: 1.5px solid var(--brand-soft); opacity: .5;
+  }
+  .pin .tag {
+    font-size: 11px; background: #fff; color: var(--brand);
+    padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(13,110,110,.14); font-weight: 500;
+    order: 1; max-width: 132px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pin.is-end .pt { /* 与设计一致：所有标点同色，仅靠名称标签区分 */ }
+  /* 标点多于 4 个时，中间点默认收起名称，hover 再露出（避免重叠） */
+  .map-canvas.dense .pin:not(.is-head):not(.is-end) .tag {
+    opacity: 0; transform: translateY(3px); transition: opacity .18s, transform .18s;
+  }
+  .map-canvas.dense .pin:hover .tag { opacity: 1; transform: none; }
+  .map-badge {
+    position: absolute; left: 18px; top: 18px; z-index: 3;
+    background: #fff; border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 4px 14px rgba(13,110,110,.13);
+    max-width: calc(100% - 150px);
+  }
+  .map-badge .t { font-size: 11px; letter-spacing: .14em; color: var(--mute); }
+  .map-badge .d {
+    font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--brand); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .map-ctl {
+    position: absolute; right: 16px; top: 16px; z-index: 3;
+    display: flex; background: #fff; border-radius: 9px; padding: 3px;
+    box-shadow: 0 3px 10px rgba(13,110,110,.14); font-size: 12px;
+  }
+  .map-ctl span { padding: 5px 12px; border-radius: 7px; color: var(--mute); cursor: pointer; }
+  .map-ctl span[data-on="true"] { background: var(--brand); color: #fff; font-weight: 500; }
+  .map-note {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    z-index: 3; text-align: center; font-size: 13px; color: var(--mute);
+    background: rgba(255,255,255,.86); border-radius: 11px; padding: 16px 22px;
+    box-shadow: 0 4px 14px rgba(13,110,110,.10); max-width: 82%;
+  }
+  .map-note strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--brand); margin-bottom: 4px; }
+  .map-note a { color: var(--brand); }
+
+  /* ===== 双栏 ===== */
+  .duo { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; margin-top: 22px; }
+  .duo .panel { margin-top: 0; }
+
+  /* 行程速览行 */
   .trip-row {
     display: flex; align-items: center; gap: 13px;
-    padding: 11px 12px; border-radius: 11px; cursor: pointer;
-    transition: background .14s;
+    padding: 11px 10px; border-radius: 10px; cursor: pointer;
+    transition: background .16s ease;
   }
-  .trip-row:hover { background: #F2FAF9; }
-  .trip-thumb {
-    flex: none; width: 46px; height: 46px; border-radius: 11px;
-    display: grid; place-items: center; overflow: hidden;
-    font-family: var(--slab); font-weight: 700; font-size: 15px;
+  .trip-row + .trip-row { border-top: 1px solid #F2F8F8; }
+  .trip-row:hover { background: #F5FBFB; }
+  .trip-row .thumb {
+    width: 46px; height: 46px; border-radius: 10px; flex: none;
+    display: grid; place-items: center; font-size: 19px;
+    background: linear-gradient(140deg, #DCF2F0, #C6E9E6);
+  }
+  .trip-row .mid { min-width: 0; flex: 1; }
+  .trip-row .nm {
+    font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .trip-row .nm .fav { color: var(--stamp); font-size: 11px; flex: none; }
+  .trip-row .nm .t { overflow: hidden; text-overflow: ellipsis; }
+  .trip-row .dt { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .trip-row .st {
+    font-size: 11.5px; padding: 3px 9px; border-radius: 6px; flex: none;
+    background: var(--mist); color: var(--brand); font-weight: 500;
+  }
+  .st--muted  { background: #EFF4F5 !important; color: #7C939A !important; }
+  .st--done   { background: #EAF7EF !important; color: #3E8F63 !important; }
+  .st--faded  { background: #F1F4F5 !important; color: #9BB0B5 !important; }
+  .trip-row .arrow { color: var(--brand-soft); flex: none; transition: transform .16s, color .16s; }
+  .trip-row:hover .arrow { transform: translateX(3px); color: var(--stamp); }
+
+  /* 花费行 */
+  .exp-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+  .exp-row + .exp-row { border-top: 1px solid #F2F8F8; }
+  .exp-row .dot2 { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .exp-row .mid2 { flex: 1; min-width: 0; }
+  .exp-row .ttl { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .exp-row .cat { font-size: 12px; color: var(--mute); margin-top: 1px; }
+  .exp-row .amt { font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--stamp); flex: none; }
+
+  /* ===== 照片 + 游记 ===== */
+  .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .photo {
+    aspect-ratio: 1; border-radius: 11px; position: relative; overflow: hidden;
+    background: linear-gradient(150deg, #DCF2F0, #B9E4E0);
     background-size: cover; background-position: center;
+    cursor: pointer; text-decoration: none; display: block;
   }
-  .trip-info { flex: 1 1 auto; min-width: 0; }
-  .trip-name {
-    font-family: var(--grot); font-weight: 600; font-size: 14px; color: var(--ink);
-    display: flex; align-items: center; gap: 7px;
+  .photo::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 45%, rgba(18,58,60,.55));
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .photo:hover::after { opacity: 1; }
+  .photo .cap {
+    position: absolute; left: 9px; bottom: 8px; z-index: 1;
+    font-size: 11px; color: #fff; opacity: 0; transform: translateY(4px);
+    transition: all .2s ease; max-width: calc(100% - 18px);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .trip-name .fav { color: var(--stamp); font-size: 12px; flex: none; }
-  .trip-sub { font-family: var(--grot); font-size: 11.5px; color: var(--mute); margin-top: 4px; }
-  .trip-status {
-    flex: none; font-family: var(--slab); font-weight: 700; font-size: 10.5px;
-    letter-spacing: .08em; padding: 3px 9px; border: 2px solid currentColor;
-    border-radius: 7px; opacity: .85;
-  }
-
-  /* 最近照片 */
-  .photo-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; }
-  .photo-cell {
-    aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--cloud);
-    cursor: pointer; position: relative;
-  }
-  .photo-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .photo-cell .cap {
-    position: absolute; left: 0; right: 0; bottom: 0;
-    padding: 14px 8px 6px; font-family: var(--grot); font-size: 10.5px; color: #fff;
-    background: linear-gradient(transparent, rgba(10,40,42,.72));
+  .photo:hover .cap { opacity: 1; transform: none; }
+  .photo .own {
+    position: absolute; left: 9px; top: 8px; z-index: 1;
+    font-size: 10px; color: #fff; background: rgba(13,110,110,.62);
+    padding: 2px 7px; border-radius: 5px; max-width: calc(100% - 18px);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
-  /* 快捷入口 */
-  .quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 12px; }
-  .quick {
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-    padding: 11px 4px; border-radius: 11px; text-decoration: none;
-    transition: background .14s;
+  .journal-card {
+    display: flex; gap: 13px; padding: 11px 10px; border-radius: 10px; cursor: pointer;
+    transition: background .16s; text-decoration: none; color: inherit;
   }
-  .quick:hover { background: #F2FAF9; }
-  .quick .qi { font-size: 17px; line-height: 1; }
-  .quick .qn { font-family: var(--grot); font-size: 10.5px; color: var(--ink-2); text-align: center; }
-
-  /* 空态（面板内） */
-  .empty {
-    padding: 32px 20px; text-align: center;
-    font-size: 12.5px; color: var(--mute); line-height: 1.7;
+  .journal-card:hover { background: #F5FBFB; }
+  .journal-card + .journal-card { border-top: 1px solid #F2F8F8; }
+  .journal-card .thumb2 {
+    width: 54px; height: 54px; border-radius: 10px; flex: none;
+    background: linear-gradient(140deg, #E8F2FB, #CFE4F5);
+    display: grid; place-items: center; font-size: 20px;
   }
-  .empty .ic { font-size: 26px; display: block; margin-bottom: 9px; opacity: .55; }
-  .empty a { color: var(--brand); text-decoration: none; border-bottom: 1px dashed var(--brand-soft); }
+  .journal-card .nm {
+    font-size: 14.5px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .journal-card .dt { font-size: 12.5px; color: var(--mute); margin-top: 3px; }
+  .journal-card .excerpt {
+    font-size: 12.5px; color: #4A7274; margin-top: 5px; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .journal-card > div { min-width: 0; }
 
-  /* ---- 响应式 ---- */
+  /* 空状态 */
+  .empty { text-align: center; padding: 30px 16px; color: var(--mute); }
+  .empty strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); margin-bottom: 5px; }
+  .empty p { font-size: 13px; margin-bottom: 14px; }
+  .btn-soft {
+    font-family: var(--grot); font-size: 13px; font-weight: 600;
+    color: #fff; background: var(--stamp); border: none;
+    padding: 9px 20px; border-radius: 9px; cursor: pointer;
+    box-shadow: 0 5px 14px rgba(255,138,76,.3);
+    transition: transform .14s ease, box-shadow .14s ease;
+    text-decoration: none; display: inline-block;
+  }
+  .btn-soft:hover { transform: translateY(-2px); box-shadow: 0 9px 20px rgba(255,138,76,.38); }
+  .btn-soft:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
+
+  /* 加载骨架 */
+  .skeleton { color: var(--mute); font-size: 13px; padding: 26px 16px; text-align: center; }
+
+  /* ===== 响应式 ===== */
   @media (max-width: 1080px) {
-    .cols { grid-template-columns: 1fr; }
     .stats { grid-template-columns: repeat(2, 1fr); }
+    .duo { grid-template-columns: 1fr; }
   }
   @media (max-width: 720px) {
-    .shell { grid-template-columns: 1fr; }
-    .side {
-      flex-direction: row; flex-wrap: wrap; align-items: center;
-      padding: 10px 14px; border-right: none; border-bottom: 1px solid #C9E8E6;
-    }
+    .shell { grid-template-columns: 1fr !important; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
     .rail-toggle { display: none; }
-    .brand { display: block !important; padding: 0 0 0 2px; font-size: 19px; }
-    .brand small { display: none; }
+    .brand { display: block !important; padding: 0; }
     .brand-mark { display: none !important; }
     .nav-label { display: none; }
-    .nav { display: flex; gap: 3px; flex-wrap: wrap; }
-    .nav a { padding: 7px 9px; font-size: 13px; }
+    .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav a { padding: 8px 10px; }
     .nav a .txt { display: inline !important; }
-    .nav a[aria-current="page"] .dot { display: none; }
-    .nav a .badge { position: static; transform: none; }
+    .nav a .badge { position: static; margin-left: 4px; }
     .side-foot { margin-top: 0; margin-left: auto; border: none; padding: 0; }
-    .side-foot .who { display: none !important; }
-
-    main { padding: 22px 16px 50px; }
-    .greet { font-size: 25px; }
-    .hero-pass { grid-template-columns: 1fr; }
-    .hp-stub { border-left: none; border-top: 2px dashed #DCEDEC; flex-direction: row; justify-content: space-between; padding: 16px 20px; }
-    .hp-days-n { font-size: 28px; }
-    .hp-code { display: none; }
-    .hp-main { padding: 20px 20px 20px 24px; }
-    .hp-apt { font-size: 22px; }
-    .stats { grid-template-columns: repeat(2, 1fr); }
-    .quick-grid { grid-template-columns: repeat(4, 1fr); }
-    .photo-strip { grid-template-columns: repeat(3, 1fr); }
+    .side-foot .who { display: inline !important; }
+    main { padding: 22px 16px 40px; }
+    .hero { padding: 26px 22px; }
+    .hero h1 { font-size: 25px; }
+    .hero-route .cell + .cell { border-left: none; padding-left: 0; }
+    .hero-route .cell { padding-right: 20px; margin-bottom: 10px; }
+    .stats { grid-template-columns: 1fr; gap: 12px; }
+    .photo-grid { grid-template-columns: repeat(2, 1fr); }
+    .map-canvas { height: 300px; }
+    .map-badge { max-width: calc(100% - 132px); padding: 9px 12px; }
+    .map-badge .d { font-size: 13px; }
+    .map-ctl { right: 12px; top: 12px; }
+    .panel-head { padding: 15px 16px 11px; }
+    .panel-body { padding: 15px 16px 18px; }
+    .panel-head .sub { max-width: 130px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -319,66 +427,150 @@
     </nav>
     <div class="side-foot">
       <span class="avatar" id="avatar">A</span>
-      <span class="who" id="who">…</span>
+      <span class="who" id="who">&hellip;</span>
     </div>
   </aside>
 
   <main>
-    <header class="hero-head">
-      <div>
-        <h1 class="greet" id="greet">你好<span class="en">Dashboard</span></h1>
-        <p class="today" id="today">正在加载…</p>
+
+    <!-- ===== Hero：出发信息板 ===== -->
+    <header class="hero">
+      <div class="hero-top">
+        <div>
+          <h1 id="greet">你好</h1>
+          <p class="hero-sub" id="heroSub">正在读取旅程数据&hellip;</p>
+        </div>
+        <div class="countdown" id="countdown"></div>
       </div>
-      <a class="btn-issue" href="/trip-form/">&#10022; 签发新旅程</a>
+
+      <div class="hero-route">
+        <div class="cell">
+          <div class="k">本年度</div>
+          <div class="v"><span id="hrTrips">0</span> <span class="track">段旅程</span></div>
+        </div>
+        <div class="cell">
+          <div class="k">在路上</div>
+          <div class="v"><span id="hrDays">0</span> <span class="track">天</span></div>
+        </div>
+        <div class="cell">
+          <div class="k">最远抵达</div>
+          <div class="v" id="hrFarthest">—</div>
+        </div>
+      </div>
     </header>
 
-    <div id="heroSlot" aria-live="polite"></div>
-
-    <section class="stats" id="stats" hidden>
+    <!-- ===== 统计：票据数据格 ===== -->
+    <section class="stats">
       <div class="stat">
-        <span class="ic" style="background:#E9F2FD;color:#2F6FB5;">&#9992;</span>
-        <div><div class="v" id="stTrips">0</div><div class="k">旅行次数</div></div>
+        <span class="ic ic--green" aria-hidden="true">&#129517;</span>
+        <div>
+          <div class="k">旅行次数</div>
+          <div class="v"><span id="stTrips">0</span> <small>次</small></div>
+          <div class="foot">包含所有未删除行程</div>
+        </div>
       </div>
       <div class="stat">
-        <span class="ic" style="background:#FDF5E2;color:#B8830F;">&#9635;</span>
-        <div><div class="v" id="stDays">0<span class="u">天</span></div><div class="k">累计在途</div></div>
+        <span class="ic ic--amber" aria-hidden="true">&#128176;</span>
+        <div>
+          <div class="k">累计花费</div>
+          <div class="v"><span id="stSpent">0</span> <small>¥</small></div>
+          <div class="foot">仅统计 CNY 花费</div>
+        </div>
       </div>
       <div class="stat">
-        <span class="ic" style="background:#FDEFF2;color:#C2566C;">&#165;</span>
-        <div><div class="v" id="stSpent">0</div><div class="k">累计花费</div></div>
+        <span class="ic ic--blue" aria-hidden="true">&#128197;</span>
+        <div>
+          <div class="k">累计天数</div>
+          <div class="v"><span id="stDays">0</span> <small>天</small></div>
+          <div class="foot">按行程日期区间累计</div>
+        </div>
       </div>
       <div class="stat">
-        <span class="ic" style="background:#E9F8EE;color:#2A8055;">&#9635;</span>
-        <div><div class="v" id="stPacking">0<span class="u">件</span></div><div class="k">待打包</div></div>
+        <span class="ic ic--rose" aria-hidden="true">&#127890;</span>
+        <div>
+          <div class="k">待打包物品</div>
+          <div class="v"><span id="stPacking">0</span> <small>件</small></div>
+          <div class="foot">记得出发前清点行囊</div>
+        </div>
       </div>
     </section>
 
-    <div class="cols">
+    <!-- ===== 行程地图：通栏 ===== -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="bar"></span>
+        <span class="title">行程地图</span>
+        <span class="sub" id="mapTrip"></span>
+        <a href="/map/" class="link" id="mapLink">完整地图 &rarr;</a>
+      </div>
+      <div class="panel-body">
+        <div class="map-canvas" id="mapCanvas" data-layer="standard">
+          <svg class="ridge" viewBox="0 0 800 380" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 250 Q 160 190 300 235 T 560 200 T 800 240 L800 380 L0 380Z" fill="#CDEBE8" opacity="0.6"/>
+            <path d="M0 300 Q 200 255 380 295 T 800 275 L800 380 L0 380Z" fill="#BDE3DF" opacity="0.55"/>
+          </svg>
+          <svg class="route" id="mapRoute" viewBox="0 0 800 380" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="map-badge" id="mapBadge" hidden>
+            <div class="t" id="mapBadgeT"></div>
+            <div class="d" id="mapBadgeD"></div>
+          </div>
+          <div class="map-ctl" role="group" aria-label="底图切换">
+            <span data-layer="standard" data-on="true" role="button" tabindex="0">标准</span><span data-layer="satellite" data-on="false" role="button" tabindex="0">卫星</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 行程速览 + 最近花费 ===== -->
+    <div class="duo">
       <section class="panel">
         <div class="panel-head">
-          <span class="t">最近的旅行</span>
-          <span class="n" id="tripCount"></span>
-          <a class="link" href="/trips/">查看全部 →</a>
+          <span class="bar"></span>
+          <span class="title">行程速览</span>
+          <a href="/trips/" class="link">全部行程 &rarr;</a>
         </div>
-        <div class="panel-body" id="tripList"></div>
+        <div class="panel-body" id="tripBody" style="padding-top:10px;">
+          <div class="skeleton">正在读取&hellip;</div>
+        </div>
       </section>
 
-      <div>
-        <section class="panel">
-          <div class="panel-head">
-            <span class="t">最近的照片</span>
-            <span class="n" id="photoCount"></span>
-            <a class="link" href="/photos/" id="photoMore">相册 →</a>
-          </div>
-          <div id="photoBody"></div>
-        </section>
-
-        <section class="panel" style="margin-top:16px;">
-          <div class="panel-head"><span class="t">快捷入口</span></div>
-          <div class="quick-grid" id="quickGrid"></div>
-        </section>
-      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <span class="bar" style="background:var(--stamp);"></span>
+          <span class="title">最近花费</span>
+          <a href="/expenses/" class="link" id="expLink">全部账目 &rarr;</a>
+        </div>
+        <div class="panel-body" id="expBody" style="padding-top:10px;">
+          <div class="skeleton">正在读取&hellip;</div>
+        </div>
+      </section>
     </div>
+
+    <!-- ===== 最近照片 + 最近游记 ===== -->
+    <div class="duo">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="bar"></span>
+          <span class="title">最近照片</span>
+          <a href="/photos/" class="link" id="photoLink">全部照片 &rarr;</a>
+        </div>
+        <div class="panel-body" id="photoBody">
+          <div class="skeleton">正在读取&hellip;</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="bar" style="background:#8AB6D6;"></span>
+          <span class="title">最近游记</span>
+          <a href="/journals/" class="link" id="journalLink">全部游记 &rarr;</a>
+        </div>
+        <div class="panel-body" id="journalBody" style="padding-top:10px;">
+          <div class="skeleton">正在读取&hellip;</div>
+        </div>
+      </section>
+    </div>
+
   </main>
 </div>
 
@@ -390,7 +582,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-  /* ---------- 工具 ---------- */
+  /* ================= 工具 ================= */
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -406,35 +598,80 @@
     }
     return d;
   }
-  function fmtMD(v) {
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /* MM/DD —— 与设计稿「09/12」一致 */
+  function fmtSlash(v) {
     var d = toDate(v);
-    return d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+    return d ? pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) : '--/--';
   }
-  function fmtYMD(v) {
+  function startOfDay(v) {
     var d = toDate(v);
-    return d ? d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日' : '—';
+    if (!d) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
   }
   function daysBetween(a, b) {
     var s = toDate(a), e = toDate(b);
     if (!s || !e) return 0;
     return Math.round((e - s) / 86400000) + 1;
   }
-  function money(v) {
+  function daysUntil(v) {
+    var d = startOfDay(v);
+    if (!d) return null;
+    var today = startOfDay(new Date());
+    return Math.round((d - today) / 86400000);
+  }
+  /* 金额：整数不带小数，否则保留两位；带千分位 */
+  function num(v) {
     var n = Number(v || 0);
-    return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    if (!isFinite(n)) n = 0;
+    var whole = Math.abs(n - Math.round(n)) < 0.005;
+    return n.toLocaleString('zh-CN', {
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: whole ? 0 : 2
+    });
   }
 
-  /* 状态映射（与 trips 页一致，含数据库真实的 completed / archived） */
+  /* ================= 状态（数据库真实枚举） ================= */
   var STATUS = {
-    draft:     { label: 'DRAFT',    cls: 'st-draft',     c: '#8A9BA5' },
-    planning:  { label: 'PLANNING', cls: 'st-planning',  c: '#C08A2E' },
-    active:    { label: 'ONBOARD',  cls: 'st-active',    c: '#1E9A6E' },
-    completed: { label: 'ARRIVED',  cls: 'st-completed', c: '#0D6E6E' },
-    archived:  { label: 'ARCHIVED', cls: 'st-archived',  c: '#9BB0B5' }
+    draft:     { label: '草稿',   cls: 'st--muted'  },
+    planning:  { label: '规划中', cls: ''           },
+    active:    { label: '进行中', cls: ''           },
+    completed: { label: '已完成', cls: 'st--done'   },
+    archived:  { label: '已归档', cls: 'st--faded'  }
   };
   function statusOf(v) { return STATUS[v] || STATUS.draft; }
 
-  /* ---------- 侧栏 ---------- */
+  /* ================= 目的地 → 缩略图表情 ================= */
+  var THUMBS = [
+    { re: /阿拉善|沙漠|沙坡头|腾格里|巴丹吉林|响沙湾/, ic: '\uD83C\uDFDC' },
+    { re: /峰|山|石林|峡|岭|岩|林/,                   ic: '\u26F0' },
+    { re: /海|岛|湾|港|滨/,                            ic: '\uD83C\uDFDD' },
+    { re: /湖|湿地|草原|牧/,                           ic: '\uD83C\uDFDE' },
+    { re: /城|市|镇|京|沪|穗/,                         ic: '\uD83C\uDFD9' }
+  ];
+  function thumbOf(trip) {
+    var key = ((trip && (trip.destination || trip.title)) || '').toString();
+    for (var i = 0; i < THUMBS.length; i++) {
+      if (THUMBS[i].re.test(key)) return THUMBS[i].ic;
+    }
+    return '\u2708';
+  }
+
+  /* ================= 花费分类（与费用页一致） ================= */
+  var CATS = {
+    transport:   { label: '油费/交通', c: '#2F6FB5' },
+    hotel:       { label: '住宿',     c: '#B8830F' },
+    food:        { label: '餐饮',     c: '#C1704A' },
+    ticket:      { label: '门票',     c: '#C2566C' },
+    parking:     { label: '停车',     c: '#5B6B7C' },
+    shopping:    { label: '购物',     c: '#6B4FC0' },
+    maintenance: { label: '维修',     c: '#4A5A66' },
+    activity:    { label: '活动',     c: '#2A8055' },
+    other:       { label: '其他',     c: '#0D6E6E' }
+  };
+  function catOf(v) { return CATS[v] || CATS.other; }
+
+  /* ================= 侧栏 ================= */
   (function initRail() {
     var shell = $('shell');
     var btn = $('railToggle');
@@ -468,95 +705,68 @@
     return '晚上好';
   }
 
+  var USER_NAME = '旅行者';
   function initUser() {
-    var u = getCurrentUser() || {};
-    var nm = u.displayName || u.username || '旅行者';
-    $('avatar').textContent = nm.slice(0, 1).toUpperCase();
-    $('who').textContent = nm;
-    $('greet').innerHTML = escapeHtml(greeting() + '，' + nm)
-      + '<span class="en">Dashboard</span>';
-  }
-
-  function initToday(d) {
+    var u = (typeof getCurrentUser === 'function' ? getCurrentUser() : null) || {};
+    USER_NAME = u.displayName || u.username || '旅行者';
+    $('avatar').textContent = USER_NAME.slice(0, 1).toUpperCase();
+    $('who').textContent = USER_NAME;
+    $('greet').textContent = greeting() + '，' + USER_NAME;
     var now = new Date();
-    var text = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日 '
-      + WD[now.getDay()];
-    var extra = '';
-    if (d) {
-      var st = d.stats || {};
-      var bits = [];
-      if (st.tripCount != null) bits.push('<b>' + st.tripCount + '</b> 段旅程');
-      if (st.unreadNotificationCount > 0) bits.push('<b>' + st.unreadNotificationCount + '</b> 条未读通知');
-      if (bits.length) extra = '<span class="sep">·</span>' + bits.join('<span class="sep">·</span>');
-    }
-    $('today').innerHTML = escapeHtml(text) + extra;
+    $('heroSub').textContent = (now.getMonth() + 1) + '月' + now.getDate() + '日 '
+      + WD[now.getDay()] + ' · 愿你的下一段路风景正好';
   }
 
-  /* ---------- 下一段旅程（登机牌 Hero） ---------- */
-  function renderHero(d) {
-    var upcoming = (d.upcomingTrips || [])[0];
-    var recent = (d.recentTrips || [])[0];
-    var trip = upcoming || recent;
-    var slot = $('heroSlot');
+  /* ================= Hero ================= */
+  function renderHero(dash, ov, trip) {
+    var s = dash.stats || {};
+    $('hrTrips').textContent = String(s.tripCount || 0);
+    $('hrDays').textContent = String(s.totalDays || 0);
 
-    if (!trip) {
-      slot.innerHTML = ''
-        + '<div class="hero-empty">'
-        +   '<div class="ic">&#9992;</div>'
-        +   '<h2>还没有任何旅程</h2>'
-        +   '<p>签发第一段旅程，登机牌就会出现在这里。</p>'
-        + '</div>';
+    /* 最远抵达：取全站到访最多的目的地；无数据则回落到最近行程的目的地 */
+    var mv = (ov && ov.mostVisitedDestination) || {};
+    var farLabel = mv.label || (trip && (trip.destination || trip.title)) || '';
+    var farCount = Number(mv.count || 0);
+    if (farLabel) {
+      $('hrFarthest').innerHTML = escapeHtml(farLabel)
+        + (farCount > 1 ? '<span class="track"> · ' + farCount + ' 次到访</span>' : '');
+    } else {
+      $('hrFarthest').innerHTML = '<span class="track">还没有足迹</span>';
+    }
+
+    /* 倒计时：优先下一段旅程，否则回落最近一段 */
+    var upcoming = (dash.upcomingTrips || [])[0];
+    var cd = $('countdown');
+    if (!upcoming) {
+      cd.innerHTML = ''
+        + '<div class="cd-label">下一段旅程</div>'
+        + '<div class="cd-num"><span style="font-size:22px;">—</span></div>'
+        + '<div class="cd-dest">还没有排定的出发日<a href="/trip-form/"> · 去签发</a></div>';
       return;
     }
+    var left = daysUntil(upcoming.startDate);
+    var dest = upcoming.destination || upcoming.title || '未命名旅程';
+    var stamp, unit;
+    if (left === null) { stamp = '—'; unit = ''; }
+    else if (left > 0) { stamp = String(left); unit = '天'; }
+    else if (left === 0) { stamp = '今天'; unit = '出发'; }
+    else { stamp = String(Math.abs(left)); unit = '天前'; }
 
-    var st = statusOf(trip.status);
-    var days = daysBetween(trip.startDate, trip.endDate);
-    var isNext = !!upcoming;
-    var eyebrow = isNext ? 'Next Departure · 下一段旅程' : 'Last Trip · 最近一段旅程';
-    var dest = trip.destination || trip.title || '未命名旅程';
-    var dateText = trip.startDate
-      ? fmtYMD(trip.startDate) + ' — ' + fmtMD(trip.endDate)
-      : '日期待定';
-
-    var html = [];
-    html.push('<section class="hero-pass">');
-    html.push('  <div class="hp-main">');
-    html.push('    <div class="hp-eyebrow">' + escapeHtml(eyebrow) + '</div>');
-    html.push('    <div class="hp-route">');
-    html.push('      <span class="hp-apt from">待定</span>');
-    html.push('      <span class="hp-line" aria-hidden="true"></span>');
-    html.push('      <span class="hp-apt" title="' + escapeHtml(dest) + '">' + escapeHtml(dest) + '</span>');
-    html.push('    </div>');
-    html.push('    <div class="hp-title">' + escapeHtml(trip.title || '未命名旅程')
-      + (trip.isFavorite ? '<span class="fav" aria-label="已收藏">&#9733;</span>' : '') + '</div>');
-    html.push('    <div class="hp-meta">' + escapeHtml(dateText)
-      + (days > 0 ? ' · ' + days + ' 天' : '') + '</div>');
-    html.push('    <div class="hp-actions">');
-    html.push('      <a class="hp-go" href="/trip-detail/?id=' + encodeURIComponent(trip.id) + '">查看行程 →</a>');
-    html.push('      <a class="hp-go ghost" href="/itinerary/?trip=' + encodeURIComponent(trip.id) + '">行程安排</a>');
-    html.push('      <a class="hp-go ghost" href="/map/?trip=' + encodeURIComponent(trip.id) + '">看地图</a>');
-    html.push('    </div>');
-    html.push('  </div>');
-    html.push('  <div class="hp-stub">');
-    html.push('    <span class="hp-stamp ' + st.cls + '" style="color:' + st.c + '">' + st.label + '</span>');
-    html.push('    <div style="text-align:center;">');
-    html.push('      <div class="hp-days-n">' + (days > 0 ? days : '—') + '</div>');
-    html.push('      <div class="hp-days-k">DAYS</div>');
-    html.push('    </div>');
-    html.push('    <div class="hp-code">' + escapeHtml(trip.destination || 'TRIP') + ' · ' + escapeHtml(String(trip.id).slice(-6).toUpperCase()) + '</div>');
-    html.push('  </div>');
-    html.push('</section>');
-    slot.innerHTML = html.join('');
+    cd.innerHTML = ''
+      + '<div class="cd-label">距下一段旅程</div>'
+      + '<div class="cd-num">' + escapeHtml(stamp)
+      + (unit ? ' <small>' + escapeHtml(unit) + '</small>' : '') + '</div>'
+      + '<div class="cd-dest"><a href="/trip-detail/?id=' + encodeURIComponent(upcoming.id) + '">'
+      + escapeHtml(dest) + ' · ' + fmtSlash(upcoming.startDate) + ' 出发</a></div>';
   }
 
-  /* ---------- 统计 ---------- */
-  function renderStats(d) {
-    var s = d.stats || {};
-    $('stTrips').textContent = String(s.tripCount || 0);
-    $('stDays').innerHTML = String(s.totalDays || 0) + '<span class="u">天</span>';
-    $('stSpent').textContent = money(s.totalExpenseAmount);
-    $('stPacking').innerHTML = String(s.pendingPackingItemCount || 0) + '<span class="u">件</span>';
-    $('stats').hidden = false;
+  /* ================= 统计 ================= */
+  function renderStats(dash) {
+    var s = dash.stats || {};
+    $('stTrips').textContent   = String(s.tripCount || 0);
+    $('stSpent').textContent   = num(s.totalExpenseAmount);
+    $('stDays').textContent    = String(s.totalDays || 0);
+    $('stPacking').textContent = String(s.pendingPackingItemCount || 0);
 
     var unread = Number(s.unreadNotificationCount || 0);
     var badge = $('navUnread');
@@ -564,36 +774,192 @@
     else { badge.hidden = true; }
   }
 
-  /* ---------- 最近的旅行 ---------- */
-  function renderTrips(d) {
-    var list = d.recentTrips || [];
-    var host = $('tripList');
-    $('tripCount').textContent = list.length ? list.length + ' 段' : '';
+  /* ================= 行程地图 ================= */
+  var mapState = { canvas: null };
 
-    if (!list.length) {
-      host.innerHTML = '<div class="empty"><span class="ic">&#9992;</span>'
-        + '还没有旅行记录<br><a href="/trip-form/">签发第一段旅程</a></div>';
+  function emptyMap(note) {
+    var canvas = $('mapCanvas');
+    var old = canvas.querySelector('.map-note');
+    if (old) old.remove();
+    var svg = $('mapRoute');
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    canvas.querySelectorAll('.pin').forEach(function (p) { p.remove(); });
+    $('mapBadge').hidden = true;
+    if (note) {
+      var el = document.createElement('div');
+      el.className = 'map-note';
+      el.innerHTML = note;
+      canvas.appendChild(el);
+    }
+  }
+
+  function renderMap(trip) {
+    mapState.canvas = $('mapCanvas');
+    if (!trip) {
+      $('mapTrip').textContent = '';
+      $('mapLink').setAttribute('href', '/map/');
+      emptyMap('<strong>还没有旅程</strong>签发一段旅程后，这里会画出路线。');
       return;
     }
+    $('mapTrip').textContent = trip.title || '';
+    $('mapLink').setAttribute('href', '/map/?trip=' + encodeURIComponent(trip.id));
 
+    apiGet('/trips/' + trip.id + '/route').then(function (d) {
+      var days = (d && d.route) || [];
+      var pts = [];
+      days.forEach(function (day) {
+        (day.places || []).forEach(function (p) {
+          var lng = p.longitude, lat = p.latitude;
+          if (lng == null || lat == null) return;
+          pts.push({ name: p.name || '未命名地点', lng: Number(lng), lat: Number(lat), dayIndex: day.dayIndex });
+        });
+      });
+      if (!pts.length) {
+        emptyMap('<strong>这条行程还没有坐标</strong>在行程安排里补上地点定位，路线就会画出来。<br>'
+          + '<a href="/itinerary/?trip=' + encodeURIComponent(trip.id) + '">去补充地点 →</a>');
+        return;
+      }
+      drawRoute(days, pts, trip);
+    }).catch(function () {
+      emptyMap('<strong>路线暂时画不出来</strong>稍后再试，或直接打开'
+        + ' <a href="/map/?trip=' + encodeURIComponent(trip.id) + '">完整地图 →</a>');
+    });
+  }
+
+  function drawRoute(days, pts, trip) {
+    var canvas = $('mapCanvas');
+    var old = canvas.querySelector('.map-note');
+    if (old) old.remove();
+    canvas.querySelectorAll('.pin').forEach(function (p) { p.remove(); });
+
+    var CAP = 12;
+    var list = pts.slice(0, CAP);
+
+    var lngs = list.map(function (p) { return p.lng; });
+    var lats = list.map(function (p) { return p.lat; });
+    var minLng = Math.min.apply(null, lngs), maxLng = Math.max.apply(null, lngs);
+    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+    var spanLng = maxLng - minLng, spanLat = maxLat - minLat;
+    var PAD = 13;
+    var inner = 100 - PAD * 2;
+
+    function px(p) {
+      var t = spanLng < 1e-6 ? 0.5 : (p.lng - minLng) / spanLng;
+      return PAD + t * inner;
+    }
+    function py(p) {
+      var t = spanLat < 1e-6 ? 0.5 : 1 - (p.lat - minLat) / spanLat;
+      return PAD + t * inner;
+    }
+
+    /* 画点 */
+    var VW = 800, VH = 380;
+    var svgPts = [];
+    list.forEach(function (p, i) {
+      var xp = px(p), yp = py(p);
+      svgPts.push({ x: xp / 100 * VW, y: yp / 100 * VH });
+
+      var el = document.createElement('div');
+      el.className = 'pin' + (i === 0 ? ' is-head' : '') + (i === list.length - 1 ? ' is-end' : '');
+      el.style.left = xp + '%';
+      el.style.top = yp + '%';
+      el.setAttribute('title', p.name);
+      el.innerHTML = '<span class="tag">' + escapeHtml(p.name) + '</span><span class="pt"></span>';
+      canvas.appendChild(el);
+    });
+    if (list.length > 4) canvas.classList.add('dense');
+    else canvas.classList.remove('dense');
+
+    /* 画路线（Catmull-Rom 平滑） */
+    var svg = $('mapRoute');
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', smoothPath(svgPts));
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#FF8A4C');
+    path.setAttribute('stroke-width', '3');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('stroke-dasharray', '9 6');
+    svg.appendChild(path);
+
+    /* 徽标：DAY 1 — N + 起｜中｜终 */
+    var names = list.map(function (p) { return p.name; });
+    var summary;
+    if (names.length <= 3) summary = names.join(' \u2192 ');
+    else summary = names[0] + ' \u2192 ' + names[Math.floor((names.length - 1) / 2)] + ' \u2192 ' + names[names.length - 1];
+    var dayCount = days.filter(function (day) { return (day.places || []).length > 0; }).length;
+    $('mapBadgeT').textContent = dayCount > 1 ? 'DAY 1 — ' + dayCount
+      : (dayCount === 1 ? 'DAY 1' : list.length + ' 个地点');
+    $('mapBadgeD').textContent = summary + (pts.length > CAP ? ' 等 ' + pts.length + ' 站' : '');
+    $('mapBadge').hidden = false;
+  }
+
+  function smoothPath(pts) {
+    if (!pts.length) return '';
+    function r(n) { return Math.round(n * 10) / 10; }
+    if (pts.length === 1) return 'M' + r(pts[0].x) + ' ' + r(pts[0].y);
+    if (pts.length === 2) {
+      return 'M' + r(pts[0].x) + ' ' + r(pts[0].y) + ' L' + r(pts[1].x) + ' ' + r(pts[1].y);
+    }
+    var d = 'M' + r(pts[0].x) + ' ' + r(pts[0].y);
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[i - 1] || pts[i];
+      var p1 = pts[i];
+      var p2 = pts[i + 1];
+      var p3 = pts[i + 2] || p2;
+      var c1x = p1.x + (p2.x - p0.x) / 6;
+      var c1y = p1.y + (p2.y - p0.y) / 6;
+      var c2x = p2.x - (p3.x - p1.x) / 6;
+      var c2y = p2.y - (p3.y - p1.y) / 6;
+      d += ' C' + r(c1x) + ' ' + r(c1y) + ',' + r(c2x) + ' ' + r(c2y) + ',' + r(p2.x) + ' ' + r(p2.y);
+    }
+    return d;
+  }
+
+  /* 底图切换（设计稿的占位交互：切换画布色调与选中态） */
+  (function initMapCtl() {
+    var canvas = $('mapCanvas');
+    var btns = Array.prototype.slice.call(document.querySelectorAll('.map-ctl span'));
+    function set(layer) {
+      canvas.setAttribute('data-layer', layer);
+      btns.forEach(function (b) { b.setAttribute('data-on', b.getAttribute('data-layer') === layer ? 'true' : 'false'); });
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () { set(b.getAttribute('data-layer')); });
+      b.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); set(b.getAttribute('data-layer')); }
+      });
+    });
+  })();
+
+  /* ================= 行程速览 ================= */
+  function renderTrips(list, hasTrip) {
+    var host = $('tripBody');
+    list = list || [];
+    if (!list.length) {
+      host.innerHTML = '<div class="empty"><strong>还没有旅行</strong>'
+        + '<p>签发第一段旅程，行程速览就会出现在这里。</p>'
+        + '<a class="btn-soft" href="/trip-form/">签发旅程</a></div>';
+      return;
+    }
     var html = [];
     list.forEach(function (t) {
       var st = statusOf(t.status);
       var days = daysBetween(t.startDate, t.endDate);
-      var dest = t.destination || t.title || '?';
-      var initial = Array.from(dest).slice(0, 2).join('');
-      var sub = (t.startDate ? fmtMD(t.startDate) + ' — ' + fmtMD(t.endDate) : '日期待定')
-        + (days > 0 ? ' · ' + days + ' 天' : '');
+      var dest = t.destination || '';
+      var sub = fmtSlash(t.startDate) + ' – ' + fmtSlash(t.endDate)
+        + (days > 0 ? ' · ' + days + ' 天' : '')
+        + (dest ? ' · ' + dest : '');
       html.push('<div class="trip-row" data-id="' + escapeHtml(t.id) + '" role="link" tabindex="0"'
-        + ' title="打开「' + escapeHtml(t.title || '未命名旅程') + '」">');
-      html.push('  <span class="trip-thumb" style="background:#E8F6F5;color:' + st.c + ';">'
-        + escapeHtml(initial) + '</span>');
-      html.push('  <span class="trip-info">');
-      html.push('    <span class="trip-name">' + escapeHtml(t.title || '未命名旅程')
-        + (t.isFavorite ? '<span class="fav" aria-label="已收藏">&#9733;</span>' : '') + '</span>');
-      html.push('    <span class="trip-sub">' + escapeHtml(sub) + '</span>');
-      html.push('  </span>');
-      html.push('  <span class="trip-status ' + st.cls + '" style="color:' + st.c + '">' + st.label + '</span>');
+        + ' aria-label="打开行程 ' + escapeHtml(t.title || '未命名旅程') + '">');
+      html.push('<span class="thumb" aria-hidden="true">' + thumbOf(t) + '</span>');
+      html.push('<div class="mid"><div class="nm">'
+        + (t.isFavorite ? '<span class="fav" aria-hidden="true">&#9733;</span>' : '')
+        + '<span class="t">' + escapeHtml(t.title || '未命名旅程') + '</span></div>'
+        + '<div class="dt">' + escapeHtml(sub) + '</div></div>');
+      html.push('<span class="st ' + st.cls + '">' + st.label + '</span>');
+      html.push('<span class="arrow" aria-hidden="true">&rarr;</span>');
       html.push('</div>');
     });
     host.innerHTML = html.join('');
@@ -608,76 +974,131 @@
     });
   }
 
-  /* ---------- 最近的照片 ---------- */
-  function renderPhotos(d) {
-    var list = (d.recentPhotos || []).slice(0, 6);
-    var host = $('photoBody');
-    $('photoCount').textContent = list.length ? list.length + ' 张' : '';
+  /* ================= 最近花费 ================= */
+  function renderExpenses(list, trip) {
+    var host = $('expBody');
+    list = list || [];
+    var link = $('expLink');
+    var ctxId = trip ? trip.id : (list[0] && list[0].tripId);
+    link.setAttribute('href', ctxId ? '/expenses/?trip=' + encodeURIComponent(ctxId) : '/expenses/');
 
     if (!list.length) {
-      host.innerHTML = '<div class="empty"><span class="ic">&#9635;</span>'
-        + '还没有照片<br>在行程里上传后这里会出现</div>';
-      $('photoMore').hidden = true;
+      host.innerHTML = '<div class="empty"><strong>还没有记账</strong>'
+        + '<p>在行程里记下第一笔花费，这里会按时间列出最近账目。</p>'
+        + '<a class="btn-soft" href="' + (ctxId ? '/expenses/?trip=' + encodeURIComponent(ctxId) : '/trips/') + '">'
+        + (ctxId ? '去记账' : '选一段行程') + '</a></div>';
       return;
     }
+    var html = [];
+    list.forEach(function (e) {
+      var c = catOf(e.category);
+      var label = e.title && String(e.title).trim() ? e.title : c.label;
+      html.push('<div class="exp-row">');
+      html.push('<span class="dot2" style="background:' + c.c + ';"></span>');
+      html.push('<div class="mid2"><div class="ttl">' + escapeHtml(label) + '</div>'
+        + '<div class="cat">' + escapeHtml(c.label) + ' · ' + fmtSlash(e.spentAt || e.createdAt) + '</div></div>');
+      html.push('<span class="amt">&yen; ' + escapeHtml(num(e.amount)) + '</span>');
+      html.push('</div>');
+    });
+    host.innerHTML = html.join('');
+  }
 
-    /* 「相册 →」跳到照片最多那张所属的行程 */
-    var first = list[0];
-    $('photoMore').setAttribute('href', first.tripId ? '/photos/?trip=' + encodeURIComponent(first.tripId) : '/photos/');
+  /* ================= 最近照片 ================= */
+  function renderPhotos(list, trip) {
+    var host = $('photoBody');
+    list = list || [];
+    var link = $('photoLink');
+    var ctxId = (list[0] && list[0].tripId) || (trip && trip.id);
+    link.setAttribute('href', ctxId ? '/photos/?trip=' + encodeURIComponent(ctxId) : '/photos/');
 
-    var html = ['<div class="photo-strip">'];
+    if (!list.length) {
+      host.innerHTML = '<div class="empty"><strong>还没有照片</strong>'
+        + '<p>上传旅途影像后，最近的照片会出现在这里。</p>'
+        + '<a class="btn-soft" href="' + (ctxId ? '/photos/?trip=' + encodeURIComponent(ctxId) : '/trips/') + '">'
+        + (ctxId ? '去相册' : '选一段行程') + '</a></div>';
+      return;
+    }
+    var html = ['<div class="photo-grid">'];
     list.forEach(function (p) {
       var src = p.thumbnailUrl || p.url || '';
-      var link = p.tripId ? '/photos/?trip=' + encodeURIComponent(p.tripId) : '/photos/';
-      html.push('<a class="photo-cell" href="' + link + '" title="' + escapeHtml(p.alt || p.tripTitle || '照片') + '">');
-      if (src) html.push('<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(p.alt || '') + '" loading="lazy">');
-      html.push(p.tripTitle ? '<span class="cap">' + escapeHtml(p.tripTitle) + '</span>' : '');
+      var href = p.tripId ? '/photos/?trip=' + encodeURIComponent(p.tripId) : '/photos/';
+      var cap = p.alt || p.tripTitle || '照片';
+      html.push('<a class="photo" href="' + href + '" title="' + escapeHtml(cap) + '"'
+        + (src ? ' style="background-image:url(\'' + escapeHtml(src) + '\');"' : '')
+        + ' role="img" aria-label="' + escapeHtml(cap) + '">');
+      if (p.tripTitle) html.push('<span class="own">' + escapeHtml(p.tripTitle) + '</span>');
+      html.push('<span class="cap">' + escapeHtml(cap) + '</span>');
       html.push('</a>');
     });
     html.push('</div>');
     host.innerHTML = html.join('');
   }
 
-  /* ---------- 快捷入口 ---------- */
-  function renderQuick(d) {
-    var trip = (d.upcomingTrips || [])[0] || (d.recentTrips || [])[0];
-    var q = trip ? '?trip=' + encodeURIComponent(trip.id) : '';
-    var items = [
-      { ic: '☰', n: '行程安排', href: '/itinerary/' + q },
-      { ic: '◉', n: '行程地图', href: '/map/' + q },
-      { ic: '¥', n: '费用记账', href: '/expenses/' + q },
-      { ic: '▤', n: '打包清单', href: '/packing/' + q },
-      { ic: '🎫', n: '预订管理', href: '/bookings/' + q },
-      { ic: '◫', n: '凭证速查', href: '/vouchers/' + q },
-      { ic: '▣', n: '证件文档', href: '/documents/' + q },
-      { ic: '✎', n: '旅行游记', href: '/journals/' + q }
-    ];
+  /* ================= 最近游记 ================= */
+  function renderJournals(list, trip) {
+    var host = $('journalBody');
+    list = list || [];
+    var link = $('journalLink');
+    var ctxId = (list[0] && list[0].tripId) || (trip && trip.id);
+    link.setAttribute('href', ctxId ? '/journals/?trip=' + encodeURIComponent(ctxId) : '/journals/');
+
+    if (!list.length) {
+      host.innerHTML = '<div class="empty"><strong>还没有游记</strong>'
+        + '<p>写下旅途见闻，留住当时的风与光。</p>'
+        + '<a class="btn-soft" href="' + (ctxId ? '/journals/?trip=' + encodeURIComponent(ctxId) : '/trips/') + '">'
+        + (ctxId ? '写游记' : '选一段行程') + '</a></div>';
+      return;
+    }
     var html = [];
-    items.forEach(function (it) {
-      html.push('<a class="quick" href="' + it.href + '">'
-        + '<span class="qi" aria-hidden="true">' + it.ic + '</span>'
-        + '<span class="qn">' + escapeHtml(it.n) + '</span></a>');
+    list.forEach(function (j) {
+      var d = toDate(j.createdAt);
+      var when = d ? pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) : '';
+      var meta = when + (j.tripTitle ? ' · ' + j.tripTitle : '');
+      var href = '/journal-detail/?id=' + encodeURIComponent(j.id)
+        + (j.tripId ? '&trip=' + encodeURIComponent(j.tripId) : '');
+      html.push('<a class="journal-card" href="' + href + '">');
+      html.push('<span class="thumb2" aria-hidden="true">&#128211;</span>');
+      html.push('<div><div class="nm">' + escapeHtml(j.title || '无题') + '</div>'
+        + '<div class="dt">' + escapeHtml(meta) + '</div>'
+        + (j.summary ? '<div class="excerpt">' + escapeHtml(j.summary) + '</div>' : '')
+        + '</div>');
+      html.push('</a>');
     });
-    $('quickGrid').innerHTML = html.join('');
+    host.innerHTML = html.join('');
   }
 
-  /* ---------- 启动 ---------- */
-  if (requireLogin('/login/')) {
+  /* ================= 启动 ================= */
+  function fatal(msg) {
+    $('heroSub').textContent = msg;
+    ['tripBody', 'expBody', 'photoBody', 'journalBody'].forEach(function (id) {
+      $(id).innerHTML = '<div class="empty"><strong>暂时读不到数据</strong><p>' + escapeHtml(msg) + '</p>'
+        + '<a class="btn-soft" href="javascript:location.reload()">重新加载</a></div>';
+    });
+    emptyMap('<strong>暂时读不到数据</strong>' + escapeHtml(msg));
+  }
+
+  if (typeof requireLogin === 'function' && requireLogin('/login/')) {
     initUser();
-    initToday(null);
-    apiGet('/dashboard').then(function (d) {
-      renderHero(d);
-      renderStats(d);
-      renderTrips(d);
-      renderPhotos(d);
-      renderQuick(d);
-      initToday(d);
-    }).catch(function (err) {
-      $('today').innerHTML = '<span style="color:#D2543A;">' + escapeHtml(humanError(err)) + '</span>';
-      $('heroSlot').innerHTML = '<div class="hero-empty">'
-        + '<div class="ic">&#9888;</div><h2>暂时读不到总览数据</h2>'
-        + '<p>' + escapeHtml(humanError(err)) + '</p></div>';
-      renderQuick({});
+    Promise.allSettled([
+      apiGet('/dashboard'),
+      apiGet('/stats/overview')
+    ]).then(function (res) {
+      var dash = res[0] && res[0].status === 'fulfilled' ? res[0].value : null;
+      var ov   = res[1] && res[1].status === 'fulfilled' ? res[1].value : null;
+
+      if (!dash) {
+        fatal(typeof humanError === 'function' ? humanError(res[0].reason) : '总览数据读取失败');
+        return;
+      }
+      var trip = (dash.upcomingTrips || [])[0] || (dash.recentTrips || [])[0] || null;
+
+      renderHero(dash, ov, trip);
+      renderStats(dash);
+      renderMap(trip);
+      renderTrips(dash.recentTrips, !!trip);
+      renderExpenses(dash.recentExpenses, trip);
+      renderPhotos(dash.recentPhotos, trip);
+      renderJournals(dash.recentJournals, trip);
     });
   }
 })();
