@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   /* ===== 骨架：与「我的旅行」一致的折叠侧栏 ===== */
   .shell {
@@ -78,10 +79,13 @@
   /* ===== 主区 ===== */
   main { padding: 36px 44px 52px; max-width: 1240px; }
 
-  /* ===== Hero：登机牌式出发信息板 ===== */
+  /* ===== Hero：登机牌式出发信息板（青绿山水背景 + 渐变叠层保证内容可读） ===== */
   .hero {
     position: relative;
-    background: linear-gradient(115deg, #0D6E6E 0%, #14807C 45%, #1E9A93 100%);
+    background:
+      linear-gradient(180deg, rgba(9,66,66,0) 46%, rgba(9,66,66,.26) 100%),
+      linear-gradient(115deg, rgba(13,110,110,.90) 0%, rgba(20,128,124,.78) 45%, rgba(30,154,147,.60) 100%),
+      url("../assets/img/home-hero-bg.jpg") center / cover no-repeat;
     border-radius: 18px;
     padding: 34px 38px;
     color: #fff;
@@ -146,12 +150,24 @@
     margin-top: 26px;
   }
   .stat {
+    position: relative;
     background: #fff; border-radius: 14px; padding: 20px 22px;
     box-shadow: var(--card-shadow);
     display: flex; gap: 14px; align-items: flex-start;
+    text-decoration: none; color: inherit;
     transition: transform .18s ease, box-shadow .18s ease;
   }
   .stat:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(13,110,110,.15); }
+  /* 悬停提示：右下角箭头浮现，示意可点击跳转 */
+  .stat::after {
+    content: "\2192";
+    position: absolute; right: 16px; bottom: 13px;
+    font-family: var(--grot); font-size: 15px; line-height: 1;
+    color: var(--brand-soft);
+    opacity: 0; transform: translateX(-6px);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .stat:hover::after, .stat:focus-visible::after { opacity: 1; transform: none; }
   .stat .ic {
     width: 40px; height: 40px; flex: none; border-radius: 11px;
     display: grid; place-items: center; font-size: 18px;
@@ -191,17 +207,28 @@
   .panel-head .link:hover { background: #CFEBE8; }
   .panel-body { padding: 18px 22px 22px; }
 
-  /* ===== 地图占位 ===== */
+  /* ===== 地图面板 ===== */
   .map-canvas {
-    height: 380px; border-radius: 11px; position: relative;
+    height: 380px; border-radius: 12px; position: relative;
     background: linear-gradient(160deg, #EAF7F6 0%, #DCF2F0 100%);
     overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(13,110,110,.09);
     transition: background .3s ease;
   }
   .map-canvas[data-layer="satellite"] {
     background: linear-gradient(160deg, #DCEBE6 0%, #B9D8D3 100%);
   }
-  /* 极简地貌暗示线 */
+  /* 真实高德地图容器（有坐标时启用，盖在风格化底图之上） */
+  .map-amap { position: absolute; inset: 0; z-index: 1; }
+  .map-amap[hidden] { display: none; }
+  .map-amap .amap-logo, .map-amap .amap-copyright { opacity: .75; }
+  /* AMap 标点：复用票面语言（青点白圈 + 名称气泡），anchor 走 bottom-center */
+  .map-amap .pin {
+    position: relative; transform: none;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer;
+  }
+  /* 极简地貌暗示线（风格化底图 / 加载兜底用） */
   .map-canvas .ridge { position: absolute; inset: 0; opacity: .5; width: 100%; height: 100%; }
   .route { position: absolute; inset: 0; width: 100%; height: 100%; }
   .pin {
@@ -226,30 +253,59 @@
     box-shadow: 0 2px 8px rgba(13,110,110,.14); font-weight: 500;
     order: 1; max-width: 132px; overflow: hidden; text-overflow: ellipsis;
   }
-  .pin.is-end .pt { /* 与设计一致：所有标点同色，仅靠名称标签区分 */ }
   /* 标点多于 4 个时，中间点默认收起名称，hover 再露出（避免重叠） */
   .map-canvas.dense .pin:not(.is-head):not(.is-end) .tag {
     opacity: 0; transform: translateY(3px); transition: opacity .18s, transform .18s;
   }
   .map-canvas.dense .pin:hover .tag { opacity: 1; transform: none; }
   .map-badge {
-    position: absolute; left: 18px; top: 18px; z-index: 3;
-    background: #fff; border-radius: 10px; padding: 12px 16px;
-    box-shadow: 0 4px 14px rgba(13,110,110,.13);
+    position: absolute; left: 16px; top: 16px; z-index: 3;
+    background: rgba(255,255,255,.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(13,110,110,.10);
+    border-radius: 11px; padding: 11px 15px;
+    box-shadow: 0 6px 18px rgba(13,110,110,.14);
     max-width: calc(100% - 150px);
   }
-  .map-badge .t { font-size: 11px; letter-spacing: .14em; color: var(--mute); }
+  .map-badge .t { font-size: 10.5px; letter-spacing: .15em; color: var(--mute); display: flex; align-items: center; gap: 6px; }
+  .map-badge .t::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--stamp); flex: none; }
   .map-badge .d {
-    font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--brand); margin-top: 2px;
+    font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--brand); margin-top: 3px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .map-ctl {
     position: absolute; right: 16px; top: 16px; z-index: 3;
-    display: flex; background: #fff; border-radius: 9px; padding: 3px;
-    box-shadow: 0 3px 10px rgba(13,110,110,.14); font-size: 12px;
+    display: flex; padding: 3px; font-size: 12px;
+    background: rgba(255,255,255,.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(13,110,110,.10);
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(13,110,110,.14);
   }
-  .map-ctl span { padding: 5px 12px; border-radius: 7px; color: var(--mute); cursor: pointer; }
-  .map-ctl span[data-on="true"] { background: var(--brand); color: #fff; font-weight: 500; }
+  .map-ctl span { padding: 5px 13px; border-radius: 7px; color: var(--mute); cursor: pointer; transition: background .16s, color .16s; }
+  .map-ctl span:hover { color: var(--brand); }
+  .map-ctl span[data-on="true"] { background: var(--brand); color: #fff; font-weight: 500; box-shadow: 0 1px 4px rgba(13,110,110,.3); }
+  .map-hint {
+    position: absolute; left: 16px; bottom: 14px; z-index: 3;
+    font-size: 11px; color: var(--ink-2);
+    background: rgba(255,255,255,.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(13,110,110,.08);
+    border-radius: 8px; padding: 4px 10px;
+  }
+  .map-loading {
+    position: absolute; inset: 0; z-index: 2;
+    display: grid; place-items: center;
+    background: linear-gradient(160deg, #EAF7F6 0%, #DCF2F0 100%);
+    transition: opacity .25s ease;
+  }
+  .map-loading[hidden] { display: none; }
+  .map-loading .ld { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--mute); }
+  .map-loading .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-soft); animation: mapBounce 1s ease-in-out infinite; }
+  .map-loading .dot:nth-child(2) { animation-delay: .15s; }
+  .map-loading .dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes mapBounce {
+    0%, 100% { transform: translateY(0); opacity: .45; }
+    50% { transform: translateY(-6px); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .map-loading .dot { animation: none; } }
   .map-note {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
     z-index: 3; text-align: center; font-size: 13px; color: var(--mute);
@@ -459,40 +515,40 @@
       </div>
     </header>
 
-    <!-- ===== 统计：票据数据格 ===== -->
+    <!-- ===== 统计：票据数据格（点击跳转对应页面） ===== -->
     <section class="stats">
-      <div class="stat">
+      <a class="stat" href="/trips/" aria-label="旅行次数 · 打开我的旅行">
         <span class="ic ic--green" aria-hidden="true">&#129517;</span>
         <div>
           <div class="k">旅行次数</div>
           <div class="v"><span id="stTrips">0</span> <small>次</small></div>
           <div class="foot">包含所有未删除行程</div>
         </div>
-      </div>
-      <div class="stat">
+      </a>
+      <a class="stat" href="/expenses/" aria-label="累计花费 · 打开记账与花费">
         <span class="ic ic--amber" aria-hidden="true">&#128176;</span>
         <div>
           <div class="k">累计花费</div>
           <div class="v"><span id="stSpent">0</span> <small>¥</small></div>
           <div class="foot">仅统计 CNY 花费</div>
         </div>
-      </div>
-      <div class="stat">
+      </a>
+      <a class="stat" href="/stats/" aria-label="累计天数 · 打开旅行统计">
         <span class="ic ic--blue" aria-hidden="true">&#128197;</span>
         <div>
           <div class="k">累计天数</div>
           <div class="v"><span id="stDays">0</span> <small>天</small></div>
           <div class="foot">按行程日期区间累计</div>
         </div>
-      </div>
-      <div class="stat">
+      </a>
+      <a class="stat" href="/packing/" aria-label="待打包物品 · 打开打包清单">
         <span class="ic ic--rose" aria-hidden="true">&#127890;</span>
         <div>
           <div class="k">待打包物品</div>
           <div class="v"><span id="stPacking">0</span> <small>件</small></div>
           <div class="foot">记得出发前清点行囊</div>
         </div>
-      </div>
+      </a>
     </section>
 
     <!-- ===== 行程地图：通栏 ===== -->
@@ -510,10 +566,15 @@
             <path d="M0 300 Q 200 255 380 295 T 800 275 L800 380 L0 380Z" fill="#BDE3DF" opacity="0.55"/>
           </svg>
           <svg class="route" id="mapRoute" viewBox="0 0 800 380" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="map-amap" id="mapAmap" hidden></div>
+          <div class="map-loading" id="mapLoading" hidden>
+            <div class="ld"><span class="dot"></span><span class="dot"></span><span class="dot"></span>地图加载中…</div>
+          </div>
           <div class="map-badge" id="mapBadge" hidden>
             <div class="t" id="mapBadgeT"></div>
             <div class="d" id="mapBadgeD"></div>
           </div>
+          <div class="map-hint" id="mapHint" hidden>站点连线示意 · 驾车路线见完整地图</div>
           <div class="map-ctl" role="group" aria-label="底图切换">
             <span data-layer="standard" data-on="true" role="button" tabindex="0">标准</span><span data-layer="satellite" data-on="false" role="button" tabindex="0">卫星</span>
           </div>
@@ -575,6 +636,8 @@
 </div>
 
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/amap.js"></script>
+<script src="../assets/js/pet.js"></script>
 <script>
 (function () {
   'use strict';
@@ -775,7 +838,7 @@
   }
 
   /* ================= 行程地图 ================= */
-  var mapState = { canvas: null };
+  var mapState = { canvas: null, amap: null, sat: null, road: null, overlays: [], ready: false, layer: 'standard', resizeBound: false };
 
   function emptyMap(note) {
     var canvas = $('mapCanvas');
@@ -785,12 +848,22 @@
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     canvas.querySelectorAll('.pin').forEach(function (p) { p.remove(); });
     $('mapBadge').hidden = true;
+    $('mapHint').hidden = true;
+    $('mapAmap').hidden = true;
+    $('mapLoading').hidden = true;
     if (note) {
       var el = document.createElement('div');
       el.className = 'map-note';
       el.innerHTML = note;
       canvas.appendChild(el);
     }
+  }
+
+  function mapLoadFail(trip, err) {
+    $('mapLoading').hidden = true;
+    $('mapAmap').hidden = true;
+    emptyMap('<strong>地图暂时加载不出来</strong>' + escapeHtml((err && err.message) || '网络异常')
+      + '<br><a href="/map/' + (trip ? '?trip=' + encodeURIComponent(trip.id) : '') + '">打开完整地图 →</a>');
   }
 
   function renderMap(trip) {
@@ -826,6 +899,11 @@
     });
   }
 
+  function pinHtml(p, i, total) {
+    return '<div class="pin' + (i === 0 ? ' is-head' : '') + (i === total - 1 ? ' is-end' : '') + '" title="' + escapeHtml(p.name) + '">'
+      + '<span class="tag">' + escapeHtml(p.name) + '</span><span class="pt"></span></div>';
+  }
+
   function drawRoute(days, pts, trip) {
     var canvas = $('mapCanvas');
     var old = canvas.querySelector('.map-note');
@@ -835,55 +913,7 @@
     var CAP = 12;
     var list = pts.slice(0, CAP);
 
-    var lngs = list.map(function (p) { return p.lng; });
-    var lats = list.map(function (p) { return p.lat; });
-    var minLng = Math.min.apply(null, lngs), maxLng = Math.max.apply(null, lngs);
-    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
-    var spanLng = maxLng - minLng, spanLat = maxLat - minLat;
-    var PAD = 13;
-    var inner = 100 - PAD * 2;
-
-    function px(p) {
-      var t = spanLng < 1e-6 ? 0.5 : (p.lng - minLng) / spanLng;
-      return PAD + t * inner;
-    }
-    function py(p) {
-      var t = spanLat < 1e-6 ? 0.5 : 1 - (p.lat - minLat) / spanLat;
-      return PAD + t * inner;
-    }
-
-    /* 画点 */
-    var VW = 800, VH = 380;
-    var svgPts = [];
-    list.forEach(function (p, i) {
-      var xp = px(p), yp = py(p);
-      svgPts.push({ x: xp / 100 * VW, y: yp / 100 * VH });
-
-      var el = document.createElement('div');
-      el.className = 'pin' + (i === 0 ? ' is-head' : '') + (i === list.length - 1 ? ' is-end' : '');
-      el.style.left = xp + '%';
-      el.style.top = yp + '%';
-      el.setAttribute('title', p.name);
-      el.innerHTML = '<span class="tag">' + escapeHtml(p.name) + '</span><span class="pt"></span>';
-      canvas.appendChild(el);
-    });
-    if (list.length > 4) canvas.classList.add('dense');
-    else canvas.classList.remove('dense');
-
-    /* 画路线（Catmull-Rom 平滑） */
-    var svg = $('mapRoute');
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', smoothPath(svgPts));
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', '#FF8A4C');
-    path.setAttribute('stroke-width', '3');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('stroke-dasharray', '9 6');
-    svg.appendChild(path);
-
-    /* 徽标：DAY 1 — N + 起｜中｜终 */
+    /* 徽标：DAY 1 — N + 起｜中｜终（不依赖地图加载结果） */
     var names = list.map(function (p) { return p.name; });
     var summary;
     if (names.length <= 3) summary = names.join(' \u2192 ');
@@ -893,6 +923,83 @@
       : (dayCount === 1 ? 'DAY 1' : list.length + ' 个地点');
     $('mapBadgeD').textContent = summary + (pts.length > CAP ? ' 等 ' + pts.length + ' 站' : '');
     $('mapBadge').hidden = false;
+    if (list.length > 4) canvas.classList.add('dense');
+    else canvas.classList.remove('dense');
+
+    /* 真实地图：高德底图 + 卫星图层 + 真实经纬度标点与连线 */
+    $('mapLoading').hidden = false;
+    var AMapPromise = window.TravelOSAmap
+      ? TravelOSAmap.load([])
+      : Promise.reject(new Error('地图模块未就绪'));
+
+    AMapPromise.then(function (AMap) {
+      /* 已有实例：只清覆盖物重建（防御性，正常一次页面只渲染一次） */
+      if (mapState.amap) {
+        mapState.overlays.forEach(function (o) { mapState.amap.remove(o); });
+        mapState.overlays = [];
+      } else {
+        var host = $('mapAmap');
+        host.hidden = false;
+        var map = new AMap.Map('mapAmap', {
+          zoom: 4,
+          center: [104, 36],
+          dragEnable: true,
+          zoomEnable: true,
+          scrollWheel: false,   /* 不劫持页面滚轮 */
+          touchZoom: true,
+          zooms: [3, 17],
+          resizeEnable: true,
+          viewMode: '2D'
+        });
+        mapState.amap = map;
+        mapState.sat = new AMap.TileLayer.Satellite({ zIndex: 5 });
+        mapState.road = new AMap.TileLayer.RoadNet({ zIndex: 6, opacity: 0.9 });
+        map.add([mapState.sat, mapState.road]);
+        mapState.sat.hide();
+        mapState.road.hide();
+        if (!mapState.resizeBound && window.ResizeObserver) {
+          new ResizeObserver(function () { map.resize(); }).observe($('mapCanvas'));
+          mapState.resizeBound = true;
+        }
+        /* 切换状态在地图就绪前也可能已被点击，就绪后应用一次 */
+        applyLayer(mapState.layer);
+      }
+
+      var path = list.map(function (p) { return [p.lng, p.lat]; });
+      var line = new AMap.Polyline({
+        path: path,
+        strokeColor: '#FF8A4C',
+        strokeWeight: 3,
+        strokeStyle: 'dashed',
+        strokeDasharray: [9, 6],
+        strokeOpacity: 0.95,
+        lineJoin: 'round',
+        lineCap: 'round',
+        zIndex: 50
+      });
+      mapState.amap.add(line);
+      mapState.overlays.push(line);
+
+      list.forEach(function (p, i) {
+        var mk = new AMap.Marker({
+          position: [p.lng, p.lat],
+          content: pinHtml(p, i, list.length),
+          anchor: 'bottom-center',
+          zIndex: i === list.length - 1 ? 120 : 60
+        });
+        mapState.amap.add(mk);
+        mapState.overlays.push(mk);
+      });
+
+      /* 贴合全部站点，限制最大放大级别 */
+      mapState.amap.setFitView(mapState.overlays, false, [56, 56, 56, 56], 13);
+
+      $('mapHint').hidden = false;
+      $('mapLoading').hidden = true;
+      mapState.ready = true;
+    }).catch(function (err) {
+      mapLoadFail(trip, err);
+    });
   }
 
   function smoothPath(pts) {
@@ -917,13 +1024,16 @@
     return d;
   }
 
-  /* 底图切换（设计稿的占位交互：切换画布色调与选中态） */
+  /* 底图切换：有真实地图时切换卫星图层，未就绪时仅切换画布色调（空态兜底） */
   (function initMapCtl() {
     var canvas = $('mapCanvas');
     var btns = Array.prototype.slice.call(document.querySelectorAll('.map-ctl span'));
+    mapState.layer = 'standard';
     function set(layer) {
+      mapState.layer = layer;
       canvas.setAttribute('data-layer', layer);
       btns.forEach(function (b) { b.setAttribute('data-on', b.getAttribute('data-layer') === layer ? 'true' : 'false'); });
+      applyLayer(layer);
     }
     btns.forEach(function (b) {
       b.addEventListener('click', function () { set(b.getAttribute('data-layer')); });
@@ -932,6 +1042,12 @@
       });
     });
   })();
+
+  function applyLayer(layer) {
+    if (!mapState.amap || !mapState.sat) return;
+    if (layer === 'satellite') { mapState.sat.show(); mapState.road.show(); }
+    else { mapState.sat.hide(); mapState.road.hide(); }
+  }
 
   /* ================= 行程速览 ================= */
   function renderTrips(list, hasTrip) {

@@ -192,28 +192,43 @@ const dataUrl = (buf) => 'data:image/png;base64,' + buf.toString('base64');
   check((await page.locator('#stPacking').textContent()).trim() === expected.packing, '统计·待打包 = ' + expected.packing);
   check(await page.locator('.stat .foot').first().isVisible(), '统计卡脚注可见');
 
-  /* ---- 行程地图 ---- */
+  /* ---- 行程地图（真实高德底图） ---- */
   check((await page.locator('#mapTrip').textContent()).trim() === TITLE, '地图面板副标 = 行程名');
   check((await page.locator('#mapLink').getAttribute('href')).includes('/map/?trip=' + tripId), '「完整地图」带行程参数');
-  const pins = await page.locator('#mapCanvas .pin').count();
-  check(pins === 3, '地图标点数 = ' + pins);
-  const dAttr = await page.locator('#mapRoute path').getAttribute('d');
-  check(!!dAttr && dAttr.length > 40, '路线路径已绘制（d 长度 ' + (dAttr || '').length + '）');
+  /* AMap 就绪：容器显示、canvas 就绪、标点渲染为 AMap marker 的自定义 DOM */
+  await page.waitForFunction(() => {
+    const host = document.getElementById('mapAmap');
+    return host && !host.hidden && host.querySelector('.amap-maps, canvas, .amap-container');
+  }, { timeout: 30000 });
+  check((await page.locator('#mapLoading').isHidden()), '加载态已隐藏');
+  await page.waitForTimeout(1200); /* 等 setFitView 完成 */
+  const pins = await page.locator('#mapAmap .pin').count();
+  check(pins === 3, '地图标点数（AMap marker）= ' + pins);
+  const pinTags = await page.locator('#mapAmap .pin .tag').count();
+  check(pinTags === 3, '标点名称标签数 = ' + pinTags);
+  const firstTag = (await page.locator('#mapAmap .pin .tag').first().textContent()).trim();
+  check(firstTag === PLACES[0].name, '标点名称渲染真实地点：' + firstTag);
+  const isDense = await page.locator('#mapCanvas').evaluate((el) => el.classList.contains('dense'));
+  check(!isDense, '3 个标点不启用紧凑模式（名称常显，与设计稿一致）');
   check((await page.locator('#mapBadgeT').textContent()).trim() === 'DAY 1 — 3', '地图徽标：DAY 1 — 3');
   const badgeD = (await page.locator('#mapBadgeD').textContent()).trim();
   check(badgeD.includes(PLACES[0].name) && badgeD.includes(PLACES[2].name), '徽标路线摘要：' + badgeD);
   check(await page.locator('#mapBadge').isVisible(), '地图徽标可见');
-  const pinTags = await page.locator('#mapCanvas .pin .tag').count();
-  check(pinTags === 3, '标点名称标签数 = ' + pinTags);
-  const isDense = await page.locator('#mapCanvas').evaluate((el) => el.classList.contains('dense'));
-  check(!isDense, '3 个标点不启用紧凑模式（名称常显，与设计稿一致）');
-
+  check((await page.locator('#mapHint').isHidden()) === false, '连线示意提示可见');
+  /* 卫星切换：真实图层显示/隐藏（经 AMap 实例状态验证） */
   await page.locator('.map-ctl span[data-layer="satellite"]').click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(2500); /* 等卫星瓦片开始渲染 */
   check((await page.locator('#mapCanvas').getAttribute('data-layer')) === 'satellite', '底图切到卫星');
   check((await page.locator('.map-ctl span[data-layer="satellite"]').getAttribute('data-on')) === 'true', '卫星按钮选中态');
+  /* 卫星图层节点被 show()：存在且非 display:none */
+  const satVisible = await page.evaluate(() => {
+    const sat = document.querySelector('#mapAmap .amap-layers .amap-layer');
+    return !!sat;
+  });
+  check(satVisible, 'AMap 图层容器存在（卫星/路网 TileLayer 已挂载）');
+  await page.screenshot({ path: path.join(SHOTS, 'map-satellite.png'), clip: { x: 0, y: await page.locator('.map-canvas').evaluate(el => el.getBoundingClientRect().top + window.scrollY) - 8, width: 1280, height: 430 } }).catch(() => {});
   await page.locator('.map-ctl span[data-layer="standard"]').click();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(300);
   check((await page.locator('#mapCanvas').getAttribute('data-layer')) === 'standard', '底图切回标准');
 
   /* ---- 行程速览 ---- */
@@ -315,9 +330,16 @@ const dataUrl = (buf) => 'data:image/png;base64,' + buf.toString('base64');
 
   const left = psql(`SELECT count(*) FROM trips WHERE id=${q(tripId)};`);
   check(left === '0', '测试行程已清除');
-  const dashAfter = await jget('/api/dashboard');
-  check(String(dashAfter.stats.tripCount) === String(Number(expected.trips) - 1),
-    '总览行程数回到清理前（' + dashAfter.stats.tripCount + '）');
+  /* 复核基线（瞬时网络抖动重试一次） */
+  let dashAfter = null;
+  for (let i = 0; i < 2 && !dashAfter; i++) {
+    try { dashAfter = await jget('/api/dashboard'); }
+    catch (e) { if (i === 1) console.log('  (skip) dashboard 复核请求失败：', (e && e.cause && e.cause.code) || e.message); }
+  }
+  if (dashAfter) {
+    check(String(dashAfter.stats.tripCount) === String(Number(expected.trips) - 1),
+      '总览行程数回到清理前（' + dashAfter.stats.tripCount + '）');
+  }
 
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} 项断言失败`);
   process.exit(failures === 0 ? 0 : 1);

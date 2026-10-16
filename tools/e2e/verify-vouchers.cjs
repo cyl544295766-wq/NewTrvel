@@ -67,12 +67,20 @@ async function main() {
   const rows = await page.locator('.v-row').count();
   if (rows !== 4) bail('expected 4 timeline rows, got ' + rows);
 
-  // QR present on each
+  // QR present on each — 真编码二维码（内容 = 祝福语「旅途愉快」）
   const qrs = await page.locator('.v-stub .qr svg').count();
   if (qrs !== 4) bail('expected 4 QR svgs, got ' + qrs);
   const qrRects = await page.locator('.v-stub .qr svg').first().locator('rect').count();
   if (qrRects < 100) bail('QR should have many rects, got ' + qrRects);
-  console.log('timeline OK: 4 rows + 4 QR (first has', qrRects, 'rects)');
+  // 四张凭证编码同一祝福语 → 图案应完全一致（逐字节比对 svg 字符串）
+  const svg0 = await page.locator('.v-stub .qr svg').first().evaluate(el => el.outerHTML);
+  const svg3 = await page.locator('.v-stub .qr svg').nth(3).evaluate(el => el.outerHTML);
+  if (svg0 !== svg3) bail('all vouchers encode the same blessing, svgs should be identical');
+  const aria = await page.locator('.v-stub .qr svg').first().getAttribute('aria-label');
+  if (!/旅途愉快/.test(aria)) bail('QR aria-label should mention blessing, got: ' + aria);
+  console.log('timeline OK: 4 rows + 4 QR (first has', qrRects, 'rects) — 真编码，aria-label =', aria);
+  /* 截下第一张凭证的二维码，供 python 解码器验证可扫性 */
+  await page.locator('.v-stub .qr').first().screenshot({ path: 'D:/tmp/vouchers-shots/qr-first.png', timeout: 60000 });
 
   // flight onsite info
   const flightCard = page.locator('.v-row', { hasText: '验证凭证·机票' });

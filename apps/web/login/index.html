@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   :root {
     --brand: #0D6E6E;
@@ -24,10 +25,13 @@
   }
   .auth { display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh; }
 
-  /* ===== 左侧：登机牌票面意象 ===== */
+  /* ===== 左侧：登机牌票面意象（青绿山水背景 + 渐变叠层保证文字可读） ===== */
   .visual {
     position: relative; overflow: hidden;
-    background: linear-gradient(150deg, #0D6E6E 0%, #137C79 42%, #1E9A93 100%);
+    background:
+      linear-gradient(180deg, rgba(9,66,66,0) 52%, rgba(9,66,66,.38) 100%),
+      linear-gradient(150deg, rgba(13,110,110,.88) 0%, rgba(19,124,121,.76) 42%, rgba(30,154,147,.62) 100%),
+      url("../assets/img/login-bg.jpg") center / cover no-repeat;
     color: #fff; padding: 48px 52px;
     display: flex; flex-direction: column;
   }
@@ -193,23 +197,6 @@
     font-size: 13px; color: var(--mute); text-align: center;
   }
 
-  .demo {
-    margin-top: 24px; padding: 13px 16px; border-radius: 11px;
-    background: var(--mist); border: 1.5px dashed #B9DEDC;
-    font-size: 12.5px; color: #3D6A6C;
-    display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
-  }
-  .demo .k { color: var(--mute); }
-  .demo code {
-    font-family: monospace; background: #fff; padding: 2px 7px; border-radius: 5px;
-    color: var(--brand); font-size: 12px;
-  }
-  .demo .fill {
-    background: none; border: none; color: var(--brand); cursor: pointer;
-    font-family: var(--grot); font-size: 12px; padding: 0;
-    border-bottom: 1px dashed var(--brand-soft);
-  }
-
   .register-only { display: none; }
   body[data-mode="register"] .register-only { display: flex; }
   body[data-mode="register"] .login-only { display: none; }
@@ -341,20 +328,13 @@
 
       </form>
 
-      <div class="demo">
-        <span class="k">演示账号</span>
-        <code>admin</code>
-        <span class="k">/</span>
-        <code>admin123</code>
-        <button class="fill" type="button" id="fillDemo">填入</button>
-      </div>
-
     </div>
   </div>
 
 </div>
 
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/pet.js"></script>
 <script>
   (function () {
     var body = document.body;
@@ -373,7 +353,6 @@
     var togglePw = document.getElementById('togglePw');
     var usernameInput = document.getElementById('username');
     var confirmInput = document.getElementById('confirm');
-    var fillDemo = document.getElementById('fillDemo');
 
     // 已登录则直接跳走（避免重复登录）
     if (isLoggedIn()) {
@@ -411,15 +390,6 @@
       pwInput.type = show ? 'text' : 'password';
       togglePw.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
       togglePw.textContent = show ? '🙈' : '👁';
-    });
-
-    // 演示账号一键填入
-    fillDemo.addEventListener('click', function () {
-      usernameInput.value = 'admin';
-      pwInput.value = 'admin123';
-      confirmInput.value = '';
-      usernameInput.focus();
-      alertBox.hidden = true;
     });
 
     // 输入时收起错误提示

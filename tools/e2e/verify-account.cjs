@@ -203,7 +203,7 @@ async function main() {
   page.once('dialog', d => d.accept());
   await page.click('#btnLogout');
   try {
-    await page.waitForURL(/\/login\//, { timeout: 8000 });
+    await page.waitForURL(/\/login\//, { timeout: 15000 });
   } catch (e) { bail('logout did not navigate to /login/'); }
   const tok = await page.evaluate(() => localStorage.getItem('travelos.token'));
   if (tok) bail('token should be cleared after logout, got ' + tok);

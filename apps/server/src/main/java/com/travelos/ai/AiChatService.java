@@ -51,6 +51,25 @@ public class AiChatService {
   /** 上下文携带的历史消息条数上限。 */
   private static final int HISTORY_LIMIT = 20;
 
+  /** AI 可直接打开的系统页面目录（page key → [前端路由, 页面名称]），与 apps/web 目录一一对应。 */
+  private static final Map<String, String[]> NAV_PAGES = Map.ofEntries(
+      Map.entry("home", new String[]{"/home/", "首页总览"}),
+      Map.entry("trips", new String[]{"/trips/", "我的行程"}),
+      Map.entry("trip-form", new String[]{"/trip-form/", "新建行程"}),
+      Map.entry("trip-detail", new String[]{"/trip-detail/", "行程详情"}),
+      Map.entry("itinerary", new String[]{"/itinerary/", "行程规划"}),
+      Map.entry("map", new String[]{"/map/", "行程地图"}),
+      Map.entry("packing", new String[]{"/packing/", "打包清单"}),
+      Map.entry("expenses", new String[]{"/expenses/", "记账与花费"}),
+      Map.entry("bookings", new String[]{"/bookings/", "预订管理"}),
+      Map.entry("documents", new String[]{"/documents/", "旅行证件"}),
+      Map.entry("vouchers", new String[]{"/vouchers/", "票券凭证"}),
+      Map.entry("photos", new String[]{"/photos/", "旅行相册"}),
+      Map.entry("journals", new String[]{"/journals/", "旅行游记"}),
+      Map.entry("stats", new String[]{"/stats/", "数据统计"}),
+      Map.entry("notifications", new String[]{"/notifications/", "消息通知"}),
+      Map.entry("account", new String[]{"/account/", "账户设置"}));
+
   /** 每用户同时最多 1 个进行中的对话请求（并发限流）。 */
   private final Set<String> inFlightUsers = ConcurrentHashMap.newKeySet();
 
@@ -200,6 +219,7 @@ public class AiChatService {
       llmMessages.add(Map.of("role", "user", "content", content));
 
       AiMessage finalReply = null;
+      String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         Map<String, Object> message = llm.chat(llmMessages, toolDefinitions());
         List<Map<String, Object>> toolCalls = llm.extractToolCalls(message);
@@ -208,7 +228,7 @@ public class AiChatService {
 
         if (toolCalls.isEmpty()) {
           finalReply = insertMessage(conversationId, userId, "assistant",
-              messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent, null, null);
+              messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent, navigation, null);
           break;
         }
 
@@ -221,6 +241,9 @@ public class AiChatService {
 
         for (Map<String, Object> call : toolCalls) {
           String result = executeTool(call, conversation, userId);
+          if ("open_page".equals(call.get("name"))) {
+            navigation = extractNavigation(result);
+          }
           Map<String, Object> toolMessage = new LinkedHashMap<>();
           toolMessage.put("role", "tool");
           toolMessage.put("tool_call_id", call.get("id"));
@@ -230,7 +253,7 @@ public class AiChatService {
       }
       if (finalReply == null) {
         finalReply = insertMessage(conversationId, userId, "assistant",
-            "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。", null, null);
+            "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。", navigation, null);
       }
       conversation.setUpdatedAt(new Date());
       conversationMapper.updateById(conversation);
@@ -322,6 +345,18 @@ public class AiChatService {
     if (!(draft.get("changes") instanceof List<?> changes) || changes.isEmpty()) {
       throw ApiException.badRequest("草稿中没有可应用的变更");
     }
+    // 城市提示：取行程目的地，提升地理编码命中率（失败不阻断应用）
+    String cityHint = "";
+    try {
+      Map<String, Object> tripRes = tripService.findOne(tripId, userId);
+      @SuppressWarnings("unchecked")
+      Map<String, Object> tripMap = (Map<String, Object>) tripRes.get("trip");
+      if (tripMap != null && tripMap.get("destination") != null) {
+        cityHint = tripMap.get("destination").toString();
+      }
+    } catch (Exception ignore) {
+      // 读取行程失败仅影响地理编码质量
+    }
     int count = 0;
     for (Object item : changes) {
       if (!(item instanceof Map<?, ?> raw)) {
@@ -345,6 +380,12 @@ public class AiChatService {
           if (change.get("address") != null) {
             payload.put("address", change.get("address"));
           }
+          // 坐标：草稿携带则直接用，缺则按名称/地址地理编码补齐 —— 否则地图无法定位（历史 bug：AI 应用的地点全部无坐标）
+          String[] coord = resolveCoordinates(change, cityHint);
+          if (coord[0] != null) {
+            payload.put("latitude", coord[0]);
+            payload.put("longitude", coord[1]);
+          }
           tripPlaceService().create(tripId, payload, userId);
           count++;
         }
@@ -363,6 +404,14 @@ public class AiChatService {
           if (change.get("notes") != null) {
             payload.put("notes", change.get("notes"));
           }
+          if (change.get("address") != null) {
+            payload.put("address", change.get("address"));
+          }
+          // 更新也允许显式携带坐标（containsKey 语义，仅在草稿提供时写入）
+          if (change.get("latitude") != null && change.get("longitude") != null) {
+            payload.put("latitude", change.get("latitude"));
+            payload.put("longitude", change.get("longitude"));
+          }
           tripPlaceService().update(tripId, String.valueOf(change.get("placeId")), payload, userId);
           count++;
         }
@@ -372,6 +421,48 @@ public class AiChatService {
       }
     }
     return count;
+  }
+
+  /**
+   * 解析地点坐标：优先用草稿自带的 latitude/longitude（来自 search_places 结果）；
+   * 缺失时按名称（其次地址）调高德地点联想做地理编码，取首个带坐标的建议。
+   * 任何失败都返回 {null, null}，不阻断草稿应用。
+   */
+  private String[] resolveCoordinates(Map<String, Object> change, String cityHint) {
+    Object lat = change.get("latitude");
+    Object lng = change.get("longitude");
+    if (lat != null && lng != null && !String.valueOf(lat).isBlank() && !String.valueOf(lng).isBlank()) {
+      return new String[]{String.valueOf(lat), String.valueOf(lng)};
+    }
+    String name = change.get("name") == null ? "" : change.get("name").toString().trim();
+    String address = change.get("address") == null ? "" : change.get("address").toString().trim();
+    for (String keyword : new String[]{name, address}) {
+      if (keyword.isBlank()) {
+        continue;
+      }
+      try {
+        Map<String, Object> res = placesService.getSuggestions(keyword,
+            cityHint == null ? "" : cityHint, 3);
+        if (res.get("suggestions") instanceof List<?> list) {
+          for (Object o : list) {
+            if (!(o instanceof Map<?, ?> rawSug)) {
+              continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> sug = (Map<String, Object>) rawSug;
+            Object sugLat = sug.get("latitude");
+            Object sugLng = sug.get("longitude");
+            if (sugLat != null && sugLng != null
+                && !String.valueOf(sugLat).isBlank() && !String.valueOf(sugLng).isBlank()) {
+              return new String[]{String.valueOf(sugLat), String.valueOf(sugLng)};
+            }
+          }
+        }
+      } catch (Exception ignore) {
+        // 地理编码失败（key 未配置/超时等）不阻断应用
+      }
+    }
+    return new String[]{null, null};
   }
 
   private void applyExpenseDraft(String tripId, Map<String, Object> draft, String userId) {
@@ -413,6 +504,7 @@ public class AiChatService {
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "propose_itinerary_change" -> createItineraryDraft(args, conversation, userId);
+        case "open_page" -> openPage(args, conversation);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
       };
     } catch (ApiException ex) {
@@ -510,16 +602,74 @@ public class AiChatService {
     return JsonUtil.write(result);
   }
 
+  // ==================== 页面导航 ====================
+
+  /**
+   * open_page 工具：识别用户「打开/查看某页面」的意图，解析出前端路由。
+   * 跳转动作本身由前端完成 —— 导航信息挂在最终助手消息的 navigation 字段上随响应下发。
+   */
+  private String openPage(Map<String, Object> args, AiConversation conversation) {
+    String page = String.valueOf(args.get("page")).trim().toLowerCase();
+    String[] meta = NAV_PAGES.get(page);
+    if (meta == null) {
+      return "{\"error\":\"未知页面，page 必须是以下之一：" + String.join(" / ", NAV_PAGES.keySet()) + "\"}";
+    }
+    String url = meta[0];
+    if ("trip-detail".equals(page)) {
+      String tripId = args.get("tripId") == null ? "" : args.get("tripId").toString().trim();
+      if (tripId.isBlank() && conversation.getTripId() != null) {
+        tripId = conversation.getTripId();
+      }
+      if (tripId.isBlank()) {
+        return "{\"error\":\"打开行程详情需要行程 ID，请改用 trips（我的行程列表）页面\"}";
+      }
+      url = url + "?id=" + tripId;
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("opened", true);
+    result.put("page", page);
+    result.put("label", meta[1]);
+    result.put("url", url);
+    result.put("hint", "页面跳转已随回复下发给前端，请在回复中用一句话自然告知用户即将打开的页面。");
+    return JsonUtil.write(result);
+  }
+
+  /** 从 open_page 工具结果中提取导航信息（成功才返回 navigate JSON，否则 null）。 */
+  private String extractNavigation(String toolResult) {
+    try {
+      Map<String, Object> map = JsonUtil.readObject(toolResult);
+      if (Boolean.TRUE.equals(map.get("opened")) && map.get("url") != null) {
+        Map<String, Object> nav = new LinkedHashMap<>();
+        nav.put("type", "navigate");
+        nav.put("page", map.get("page"));
+        nav.put("label", map.get("label"));
+        nav.put("url", map.get("url"));
+        return JsonUtil.write(nav);
+      }
+    } catch (Exception ignore) {
+      // 工具结果异常时忽略导航，不影响回复本身
+    }
+    return null;
+  }
+
   // ==================== 系统提示词与工具定义 ====================
 
   private String buildSystemPrompt(AiConversation conversation) {
     StringBuilder prompt = new StringBuilder();
     prompt.append("你是 Travel OS 的 AI 旅行助手，帮助用户规划行程、查询信息、记录开销。");
     prompt.append("规则：\n");
-    prompt.append("1. 行程变更必须通过 propose_itinerary_change 工具生成草稿，绝不直接写行程；用户确认后才生效。\n");
+    prompt.append("1. 行程变更必须通过 propose_itinerary_change 工具生成草稿，绝不直接写行程；用户确认后才生效。")
+        .append("新增或修改地点时，先用 search_places 查询该地点，把返回的 latitude/longitude 写入草稿的 change 项（名称也不要改动为其他城市同名地点），确保应用后地图能定位。\n");
     prompt.append("2. 记账必须通过 add_expense 工具生成草稿，并在回复中向用户复述关键信息（类别、金额、分摊方式），用户确认后才生效。\n");
     prompt.append("3. 回答使用简体中文，简洁友好；不确定时先用工具查询再回答。\n");
     prompt.append("4. 金额一律人民币，不做汇率折算。\n");
+    prompt.append("5. 话题范围：你只提供旅游相关服务（行程规划、目的地建议、记账、打包、预订、游记等）。")
+        .append("与旅游无关的问题（写代码、写作业、时事、闲聊、医疗/法律/投资建议等）一律不要回答，")
+        .append("直接委婉引导回旅游话题，例如：「很抱歉，我专注于为您提供旅游服务，请问有什么旅游方面可以帮到您的吗？」")
+        .append("可以顺势介绍你能帮忙的事，但语气保持自然友好、不生硬。\n");
+    prompt.append("6. 页面导航：当用户明确想查看或打开系统中的某个页面（如「打开行程规划」「看看我的花费」「去记账」「帮我看下预订」），")
+        .append("调用 open_page 工具选择最匹配的页面，并在回复中用一句话自然告知即将打开的页面（如「好的，这就带你去行程规划～」）。")
+        .append("普通旅行咨询（攻略、建议、问答）不要调用 open_page，避免误跳转。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -588,7 +738,7 @@ public class AiChatService {
             "category", stringProp("类别：transport/hotel/food/ticket/shopping/other 之一"),
             "title", stringProp("标题，可空"), "notes", stringProp("备注，可空"))));
     tools.add(function("propose_itinerary_change",
-        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）",
+        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。若已通过 search_places 查到地点坐标，务必在 change 项中携带 latitude 与 longitude，可让地图直接定位",
         Map.of("summary", stringProp("变更摘要，如「为第二天新增 3 个景点」"),
             "changes", Map.of(
                 "type", "array",
@@ -601,7 +751,17 @@ public class AiChatService {
                         "name", stringProp("地点名称"),
                         "type", stringProp("attraction/hotel/restaurant/transport/shopping/custom"),
                         "notes", stringProp("备注"),
-                        "address", stringProp("地址")))))));
+                        "address", stringProp("地址"),
+                        "latitude", stringProp("纬度（来自 search_places 结果，可空字符串）"),
+                        "longitude", stringProp("经度（来自 search_places 结果，可空字符串）")))))));
+    tools.add(function("open_page",
+        "打开系统页面：用户想查看/前往某个页面时调用。page 可选值："
+            + "home 首页总览、trips 我的行程、trip-form 新建行程、trip-detail 行程详情（需行程ID）、"
+            + "itinerary 行程规划、map 行程地图、packing 打包清单、expenses 记账与花费、"
+            + "bookings 预订管理、documents 旅行证件、vouchers 票券凭证、photos 旅行相册、"
+            + "journals 旅行游记、stats 数据统计、notifications 消息通知、account 账户设置",
+        Map.of("page", stringProp("页面标识（见描述中的可选值）"),
+            "tripId", stringProp("行程 ID，仅 page=trip-detail 时需要"))));
     return tools;
   }
 
@@ -748,6 +908,16 @@ public class AiChatService {
     map.put("draftStatus", message.getDraftStatus());
     if (message.getDraftStatus() != null && message.getToolCalls() != null) {
       map.put("draft", JsonUtil.readObject(message.getToolCalls()));
+    } else if (message.getToolCalls() != null) {
+      // 非草稿消息的 toolCalls 目前只承载页面导航（open_page），解析失败则不带该字段
+      try {
+        Map<String, Object> extra = JsonUtil.readObject(message.getToolCalls());
+        if ("navigate".equals(extra.get("type"))) {
+          map.put("navigation", extra);
+        }
+      } catch (Exception ignore) {
+        // 历史数据或非法 JSON：忽略
+      }
     }
     map.put("createdAt", message.getCreatedAt());
     return map;

@@ -186,16 +186,20 @@ function ok(msg) { console.log('  OK  ' + msg); }
   if (await page.locator('#dayPanel.open').count() !== 0) bail('抽屉未收起');
   ok('抽屉可收起');
 
-  /* ---------- 10. 无坐标行程的降级 ---------- */
-  console.log('--- 10. 参数缺失降级 ---');
+  /* ---------- 10. 无参数进入 → 行程选择器 ---------- */
+  console.log('--- 10. 参数缺失降级（行程选择器） ---');
   await page.setViewportSize({ width: 1512, height: 900 });
   await page.goto(ORIGIN + '/map/', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(900);
-  const noTripErr = await page.locator('#veilErr').isVisible();
-  const noTripTitle = (await page.locator('#errTitle').textContent()).trim();
-  if (!noTripErr) bail('无 trip 参数时应显示提示');
-  if (noTripTitle !== '缺少行程参数') bail('提示文案不符: ' + noTripTitle);
-  ok('无 trip 参数 → 显示「缺少行程参数」+ 返回入口');
+  await page.waitForSelector('#veilPick:not([hidden])', { timeout: 10000 });
+  const optCount = await page.locator('#tripSelect option').count();
+  if (optCount === 0) bail('行程选择器没有选项');
+  const firstOpt = (await page.locator('#tripSelect option').first().textContent()).trim();
+  ok('无 trip 参数 → 显示行程选择器（' + optCount + ' 个选项，默认「' + firstOpt + '」）');
+  // 选择首个行程打开 → 地图正常加载
+  await page.selectOption('#tripSelect', { index: 0 });
+  await page.locator('#btnOpenTrip').click();
+  await page.waitForSelector('#dayList .day-block', { timeout: 60000 });
+  ok('选择行程后地图就地加载（URL=' + page.url().split('?')[1] + '）');
   await page.screenshot({ path: path.join(SHOTS, 'no-param.png') });
 
   console.log('\namap 请求失败数 =', amapFails.length);

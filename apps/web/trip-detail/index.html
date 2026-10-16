@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   :root {
     --brand: #0D6E6E;
@@ -500,6 +501,24 @@
   .ai-draft.done { border-color: #E6EEE9; background: #FBFDFC; }
   .ai-draft.done .dh { background: #EFF5F1; color: #7E9A8B; }
 
+  /* AI 页面导航卡片（open_page） */
+  .ai-msg .ai-nav-chip {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--brand);
+    background: rgba(13, 110, 110, 0.08);
+    border: 1px solid rgba(13, 110, 110, 0.25);
+    border-radius: 999px;
+    padding: 4px 12px;
+    text-decoration: none;
+    transition: background .18s ease, transform .18s ease;
+  }
+  .ai-msg .ai-nav-chip:hover { background: rgba(13, 110, 110, 0.15); transform: translateY(-1px); }
+
   /* 空态 */
   .ai-empty { text-align: center; padding: 34px 10px; color: var(--mute); }
   .ai-empty .ic { font-size: 30px; }
@@ -724,6 +743,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/pet.js"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -1338,6 +1358,7 @@
         var isUser = m.role === 'user';
         var inner = escapeHtml(m.content || '');
         if (!isUser && m.draft) inner += draftHtml(m);
+        if (!isUser && !m.draftStatus && m.navigation) inner += navChipHtml(m.navigation);
         return '<div class="ai-msg ' + (isUser ? 'user' : 'bot') + '">'
              +   '<span class="av" aria-hidden="true">' + (isUser ? '我' : '✦') + '</span>'
              +   '<div class="bd">' + inner + '</div>'
@@ -1347,6 +1368,12 @@
     }
 
     var DRAFT_KIND = { expense: '变更预览 · 记一笔账', itinerary_change: '变更预览 · 行程调整' };
+
+    function navChipHtml(nav) {
+      if (!nav || !nav.url) return '';
+      return '<a class="ai-nav-chip" href="' + escapeHtml(nav.url) + '">'
+        + '📍 打开「' + escapeHtml(nav.label || '页面') + '」→</a>';
+    }
 
     function draftHtml(m) {
       var d = m.draft || {};
@@ -1426,6 +1453,11 @@
         }
         await apiPost('/ai/conversations/' + encodeURIComponent(aiState.convId) + '/messages', { content: text });
         await selectConversation(aiState.convId);
+        /* AI 指引了页面跳转（open_page）：稍作停留让用户看到提示，再自动前往 */
+        var lastMsg = aiState.messages[aiState.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.navigation && lastMsg.navigation.url) {
+          setTimeout(function () { window.location.href = lastMsg.navigation.url; }, 1200);
+        }
       } catch (err) {
         aiTyping(false);
         var idx = aiState.messages.indexOf(optimistic);

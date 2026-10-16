@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   /* ===== 骨架 ===== */
   .shell {
@@ -282,6 +283,9 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/pet.js"></script>
+<script src="../assets/js/vendor/qrcode-generator.js"></script>
+<script src="../assets/js/qr.js"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -369,34 +373,10 @@
       return { from: parts[0] || '', to: parts[1] || '' };
     }
 
-    /* 自绘 QR（视觉占位：三枚 finder + 以 id 为种子的伪随机数据点，保证同一凭证图案稳定） */
-    function qrSvg(seed, size) {
-      var n = 25, cell = size / n;
-      var h = 0;
-      for (var i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) & 0x7fffffff;
-      function rnd() { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff; }
-      function inFinder(r, c) {
-        return (r < 8 && c < 8) || (r < 8 && c >= n - 8) || (r >= n - 8 && c < 8);
-      }
-      var rects = '';
-      for (var r = 0; r < n; r++) {
-        for (var c = 0; c < n; c++) {
-          if (inFinder(r, c)) continue;
-          if (rnd() > 0.56) {
-            rects += '<rect x="' + (c * cell).toFixed(2) + '" y="' + (r * cell).toFixed(2)
-              + '" width="' + cell.toFixed(2) + '" height="' + cell.toFixed(2) + '"/>';
-          }
-        }
-      }
-      function finder(r, c) {
-        return '<rect x="' + (c * cell).toFixed(2) + '" y="' + (r * cell).toFixed(2)
-            + '" width="' + (7 * cell).toFixed(2) + '" height="' + (7 * cell).toFixed(2)
-            + '" fill="none" stroke="#0F2E30" stroke-width="' + cell.toFixed(2) + '"/>'
-          + '<rect x="' + ((c + 2) * cell).toFixed(2) + '" y="' + ((r + 2) * cell).toFixed(2)
-            + '" width="' + (3 * cell).toFixed(2) + '" height="' + (3 * cell).toFixed(2) + '" fill="#0F2E30"/>';
-      }
-      return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" fill="#0F2E30" role="img" aria-label="凭证二维码（示意）">'
-        + rects + finder(0, 0) + finder(0, n - 7) + finder(n - 7, 0) + '</svg>';
+    /* 凭证二维码：真编码（assets/js/qr.js），内容为旅途祝福语，扫码即见 */
+    var BLESSING = '旅途愉快';
+    function qrSvg(text) {
+      return TravelOSQR.svg(text, 92, '#0F2E30');
     }
 
     /* ===== 现场速查信息（按类型取大字信息） ===== */
@@ -532,7 +512,7 @@
           +       (v.type === 'hotel' && v.extra && v.extra.cancelPolicy ? '<div class="v-note">' + escapeHtml(v.extra.cancelPolicy) + '</div>' : '')
           +     '</div>'
           +     '<div class="v-stub">'
-          +       '<span class="qr">' + qrSvg(String(v.id), 92) + '</span>'
+          +       '<span class="qr">' + qrSvg(BLESSING) + '</span>'
           +       '<span class="stub-cap">现场出示 · 扫码核验</span>'
           +       '<div class="stub-actions">'
           +         '<button type="button" class="view" ' + (v.attachmentUrl ? '' : 'disabled') + '>'

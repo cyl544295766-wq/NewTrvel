@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   /* ===== 骨架：侧栏 + 全高地图舞台（本页不滚动，地图铺满主区） ===== */
   .shell {
@@ -182,8 +183,10 @@
     box-shadow: 0 2px 5px color-mix(in srgb, var(--c) 32%, transparent);
   }
   .pl-nm {
-    flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink-2);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.45;
+    /* 最多两行折行展示，避免长名称被单行省略截断（悬停 title 仍有全名） */
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    overflow: hidden;
   }
   .pl-tp {
     flex: none; font-size: 9.5px; font-weight: 600; border-radius: 999px;
@@ -256,6 +259,18 @@
     box-shadow: 0 4px 12px rgba(13,110,110,.24); transition: transform .14s;
   }
   .btn-retry:hover { transform: translateY(-1px); }
+
+  /* 行程选择（无 trip 参数直接进入地图时） */
+  .pick-row { display: flex; gap: 10px; align-items: stretch; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+  .trip-select {
+    min-width: 250px; max-width: 320px;
+    font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: #fff; border: 1.5px solid #D8ECEB; border-radius: 10px;
+    padding: 9px 12px; outline: none; cursor: pointer;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .trip-select:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .pick-row .btn-retry { margin-top: 0; white-space: nowrap; }
 
   /* ===== 地图标注（DOM marker） ===== */
   .mk-wrap { position: relative; display: block; }
@@ -404,6 +419,17 @@
       <p class="veil-s">首次加载需从高德服务器取瓦片，稍候片刻</p>
     </div>
 
+    <!-- 未带行程参数进入：提供行程选择（默认选中最新创建的行程） -->
+    <div class="veil" id="veilPick" hidden>
+      <div class="veil-ic">&#128506;</div>
+      <p class="veil-t">选择要查看的行程</p>
+      <p class="veil-s">选一条行程，在地图上查看它的路线与每日安排</p>
+      <div class="pick-row">
+        <select class="trip-select" id="tripSelect" aria-label="选择行程"></select>
+        <button type="button" class="btn-retry" id="btnOpenTrip">查看地图</button>
+      </div>
+    </div>
+
     <div class="veil" id="veilErr" hidden>
       <div class="veil-ic">&#128506;</div>
       <p class="veil-t" id="errTitle">地图加载失败</p>
@@ -414,6 +440,7 @@
 </div>
 
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/pet.js"></script>
 <script src="../assets/js/amap.js"></script>
 <script>
 (function () {
@@ -493,15 +520,51 @@
   var tripId = qs.get('trip') || qs.get('id') || '';
   var detailUrl = tripId ? '/trip-detail/?id=' + encodeURIComponent(tripId) : '/trips/';
 
-  if (!tripId) {
-    $('veilLoad').hidden = true;
-    $('veilErr').hidden = false;
-    $('errTitle').textContent = '缺少行程参数';
-    $('errSub').textContent = '请从行程详情页的「地图」模块进入。';
-    $('btnRetry').textContent = '返回我的旅行';
-    $('btnRetry').addEventListener('click', function () { location.href = '/trips/'; });
-  } else {
+  if (tripId) {
     $('btnBack').setAttribute('href', detailUrl);
+  }
+
+  /** 无行程参数进入：展示行程下拉选择框（默认选中最新创建的行程），选择后就地加载 */
+  function initTripPicker() {
+    $('veilLoad').hidden = true;
+    $('veilPick').hidden = false;
+    apiGet('/trips').then(function (res) {
+      var trips = (res && res.trips) || [];
+      if (!trips.length) {
+        $('veilPick').hidden = true;
+        showErr('还没有行程', '先创建一个行程，再来地图上看路线吧。', '去创建行程');
+        $('btnRetry').onclick = function () { location.href = '/trip-form/'; };
+        return;
+      }
+      /* 最新创建的排最前（createdAt 降序，兜底按 id 比较） */
+      trips.sort(function (a, b) {
+        var ca = String(a.createdAt || ''), cb = String(b.createdAt || '');
+        if (ca !== cb) return cb.localeCompare(ca);
+        return String(b.id).localeCompare(String(a.id));
+      });
+      var sel = $('tripSelect');
+      sel.innerHTML = trips.map(function (t) {
+        return '<option value="' + escapeHtml(t.id) + '">'
+          + escapeHtml(t.title || '未命名行程') + '</option>';
+      }).join('');
+      $('btnOpenTrip').addEventListener('click', openSelected);
+      sel.addEventListener('keydown', function (e) { if (e.key === 'Enter') openSelected(); });
+    }).catch(function (e) {
+      $('veilPick').hidden = true;
+      showErr('行程列表加载失败', humanError(e), '重新加载');
+      $('btnRetry').onclick = function () { location.reload(); };
+    });
+
+    function openSelected() {
+      var id = $('tripSelect').value;
+      if (!id) return;
+      tripId = id;
+      detailUrl = '/trip-detail/?id=' + encodeURIComponent(tripId);
+      $('btnBack').setAttribute('href', detailUrl);
+      try { history.replaceState(null, '', '/map/?trip=' + encodeURIComponent(id)); } catch (e) { /* 隐私模式忽略 */ }
+      $('veilPick').hidden = true;
+      run();
+    }
   }
 
   var state = {
@@ -910,12 +973,16 @@
     return window.innerWidth < 980 ? [70, 24, 60, 24] : [172, 130, 60, 320];
   }
 
-  /** 让每日面板紧贴行程卡下方（行程名换行也不会重叠） */
+  /** 让每日面板紧贴行程卡下方（行程名换行也不会重叠），并限制高度在可视区内：内容多时面板内部滚动，不再被视口截断 */
   function layoutPanelTop() {
     var panel = $('dayPanel');
-    if (window.innerWidth <= 720) { panel.style.top = ''; return; }
+    if (window.innerWidth <= 720) { panel.style.top = ''; panel.style.maxHeight = ''; return; }
     var card = $('tripCard');
-    panel.style.top = (card.offsetTop + card.offsetHeight + 16) + 'px';
+    var top = card.offsetTop + card.offsetHeight + 16;
+    panel.style.top = top + 'px';
+    var stage = panel.parentNode;
+    var maxH = stage ? (stage.clientHeight - top - 18) : 0;
+    panel.style.maxHeight = Math.max(240, maxH) + 'px';
   }
 
   /* ---------- 遮罩 ---------- */
@@ -1026,8 +1093,9 @@
     layoutPanelTop();
   })();
 
-  if (tripId && requireLogin('/login/')) {
-    run();
+  if (requireLogin('/login/')) {
+    if (tripId) run();
+    else initTripPicker();
   }
 })();
 </script>

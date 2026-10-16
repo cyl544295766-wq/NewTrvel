@@ -1,0 +1,379 @@
+/* ============================================================
+   Travel OS · AI 旅行宠物（独立模块）
+   依赖：assets/css/theme.css 的设计变量；assets/js/api.js 的登录态。
+   集成：任意页面引本文件 + assets/js/pet.js，然后 TravelOSPet.init()
+   ============================================================ */
+
+/* ===== 宿主层：fixed，不拦截页面点击 =====
+   z-index 55：高于普通页面内容（≤10），低于全站所有浮层
+   （trip-detail AI 抽屉 60+、journals 抽屉 92、photos/documents 预览 90/95/99、toast 99） */
+.pet-host {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+}
+
+/* ===== 宠物本体（纯 CSS 手绘，不依赖图片资源） ===== */
+.pet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 54px;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;         /* 拖拽时禁止页面滚动（移动端） */
+  will-change: transform;
+  /* 吸附/悬停恢复的过渡由 JS 按场景内联设置，这里不设默认过渡 */
+}
+.pet[data-state="drag"] { cursor: grabbing; }
+
+.pet .body-wrap {
+  position: absolute;
+  inset: 0 0 8px 0;
+  transition: transform 0.25s ease;
+}
+.pet[data-facing="left"] .body-wrap { transform: scaleX(-1); }
+
+.pet .body {
+  position: absolute;
+  inset: 0;
+  border-radius: 50% 50% 46% 46%;
+  background: radial-gradient(circle at 34% 28%, #2FB0A8 0%, #1E9A93 42%, #0D6E6E 100%);
+  box-shadow: inset -4px -6px 0 rgba(9, 74, 74, 0.35), 0 6px 14px rgba(13, 110, 110, 0.30);
+}
+/* 肚皮 */
+.pet .belly {
+  position: absolute;
+  left: 12px; right: 12px; bottom: 4px; height: 18px;
+  border-radius: 50%;
+  background: #EAF7F6;
+  opacity: .92;
+}
+/* 围巾（印章橙） */
+.pet .scarf {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 20px; height: 7px;
+  border-radius: 999px;
+  background: var(--stamp, #FF8A4C);
+  box-shadow: 0 1px 0 rgba(9, 74, 74, 0.25);
+}
+.pet .scarf::after {
+  content: "";
+  position: absolute;
+  right: 7px; bottom: -6px;
+  width: 7px; height: 11px;
+  border-radius: 2px;
+  background: var(--stamp, #FF8A4C);
+  transform: rotate(14deg);
+}
+/* 眼睛（含眨眼动画） */
+.pet .eyes {
+  position: absolute;
+  left: 11px; top: 14px; right: 11px;
+  height: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.pet .eye {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #123A3A;
+  position: relative;
+  animation: petBlink 4.6s infinite;
+}
+.pet .eye::after {
+  content: "";
+  position: absolute;
+  left: 1.2px; top: 0.8px;
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: .9;
+}
+@keyframes petBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+/* 腮红 */
+.pet .cheek {
+  position: absolute;
+  top: 22px;
+  width: 6px; height: 3.5px;
+  border-radius: 50%;
+  background: #FF9E6F;
+  opacity: .55;
+}
+.pet .cheek.l { left: 7px; }
+.pet .cheek.r { right: 7px; }
+/* 脚（走路时交替摆动） */
+.pet .feet {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 4px;
+  height: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.pet .foot {
+  width: 11px; height: 7px;
+  border-radius: 50% 50% 40% 40%;
+  background: #0B5858;
+}
+/* 待机：上下浮动 */
+.pet[data-state="idle"] .body-wrap { animation: petFloat 2.6s ease-in-out infinite; }
+@keyframes petFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.pet[data-facing="left"][data-state="idle"] .body-wrap { animation: petFloatFlip 2.6s ease-in-out infinite; }
+@keyframes petFloatFlip {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50% { transform: scaleX(-1) translateY(-4px); }
+}
+/* 拖拽态：抬起（放大 + 影子收缩），暂停待机浮动 */
+.pet[data-state="drag"] .body-wrap { animation: none; transform: scale(1.1); }
+.pet[data-state="drag"] .shadow { transform: scaleX(1.18); opacity: .35; }
+
+/* 影子 */
+.pet .shadow {
+  position: absolute;
+  left: 6px; right: 6px; bottom: 0;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(13, 110, 110, 0.18);
+  filter: blur(1px);
+  transition: transform .2s ease, opacity .2s ease;
+}
+/* hover 名牌（可点击暗示） */
+.pet .name-chip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%) translateY(3px);
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--brand, #0D6E6E);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(13, 110, 110, 0.12);
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 0 3px 10px rgba(13, 110, 110, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.pet:hover .name-chip, .pet.bubble-open .name-chip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 对话气泡 ===== */
+.pet-bubble {
+  position: fixed;
+  z-index: 56;
+  width: 316px;
+  max-width: calc(100vw - 24px);
+  background: #fff;
+  border: 1px solid rgba(13, 110, 110, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(13, 110, 110, 0.22);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.pet-bubble.open { opacity: 1; transform: none; pointer-events: auto; }
+/* 小尾巴（--tail-x 由 JS 设置，对准宠物横向中心） */
+.pet-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  left: var(--tail-x, 26px);
+  width: 12px; height: 12px;
+  background: #fff;
+  border-right: 1px solid rgba(13, 110, 110, 0.10);
+  border-bottom: 1px solid rgba(13, 110, 110, 0.10);
+  transform: rotate(45deg);
+}
+.pet-bubble .pb-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  background: linear-gradient(125deg, #0D6E6E 0%, #1E9A93 100%);
+  color: #fff;
+}
+.pet-bubble .pb-head .av {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: #EAF7F6;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  flex: none;
+}
+.pet-bubble .pb-head .nm { font-weight: 600; font-size: 13.5px; line-height: 1.2; }
+.pet-bubble .pb-head .role { font-size: 10.5px; opacity: .82; letter-spacing: .05em; }
+.pet-bubble .pb-head .x {
+  margin-left: auto;
+  width: 26px; height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background .15s;
+}
+.pet-bubble .pb-head .x:hover { background: rgba(255, 255, 255, 0.28); }
+
+.pet-bubble .pb-msgs {
+  max-height: 272px;
+  min-height: 96px;
+  overflow-y: auto;
+  padding: 12px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--mist, #F2FAF9);
+  scrollbar-width: thin;
+}
+.pet-msg { max-width: 86%; font-size: 12.5px; line-height: 1.6; }
+.pet-msg .txt {
+  padding: 7px 11px;
+  border-radius: 11px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.pet-msg.user { align-self: flex-end; }
+.pet-msg.user .txt { background: var(--brand, #0D6E6E); color: #fff; border-bottom-right-radius: 4px; }
+.pet-msg.ai { align-self: flex-start; }
+.pet-msg.ai .txt { background: #fff; color: var(--ink, #17272B); border: 1px solid rgba(13, 110, 110, 0.10); border-bottom-left-radius: 4px; }
+/* 草稿提示 chip（草稿在行程详情的 AI 面板应用） */
+.pet-msg .draft-chip {
+  margin-top: 4px;
+  display: inline-block;
+  font-size: 11px;
+  color: #8A5A16;
+  background: #FDF5E2;
+  border: 1px solid #F0DFB9;
+  border-radius: 999px;
+  padding: 2px 9px;
+  text-decoration: none;
+}
+.pet-msg .draft-chip:hover { background: #FBEDCF; }
+/* AI 页面导航卡片（open_page） */
+.pet-msg .pet-nav-chip {
+  margin-top: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--brand, #0D6E6E);
+  background: rgba(13, 110, 110, 0.08);
+  border: 1px solid rgba(13, 110, 110, 0.25);
+  border-radius: 999px;
+  padding: 3px 10px;
+  text-decoration: none;
+  transition: background .18s ease, transform .18s ease;
+}
+.pet-msg .pet-nav-chip:hover { background: rgba(13, 110, 110, 0.15); transform: translateY(-1px); }
+/* 空态 + 示例问题 */
+.pet-empty { text-align: center; padding: 8px 4px 2px; }
+.pet-empty .e1 { font-size: 12.5px; color: var(--ink-2, #3C545A); }
+.pet-empty .e2 { font-size: 11px; color: var(--mute, #7A9296); margin-top: 3px; }
+.pet-chips { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 6px; }
+.pet-chip {
+  border: 1px solid rgba(13, 110, 110, 0.22);
+  background: #fff;
+  color: var(--brand, #0D6E6E);
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s, border-color .15s;
+}
+.pet-chip:hover { background: #EAF7F6; border-color: var(--brand-soft, #5BC5C0); }
+/* 输入区 */
+.pet-bubble .pb-input {
+  display: flex;
+  gap: 7px;
+  padding: 9px 10px;
+  border-top: 1px solid var(--line, #D9E8E7);
+  background: #fff;
+}
+.pet-bubble .pb-input[hidden] { display: none; }
+.pet-bubble .pb-input input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--grot, inherit);
+  font-size: 13px;
+  color: var(--ink, #17272B);
+  background: var(--cloud, #F2FAF9);
+  border: 1.5px solid var(--line, #D9E8E7);
+  border-radius: 9px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color .16s, box-shadow .16s;
+}
+.pet-bubble .pb-input input:focus { border-color: var(--brand-soft, #5BC5C0); background: #fff; box-shadow: 0 0 0 3px rgba(91, 197, 192, .16); }
+.pet-bubble .pb-input button {
+  flex: none;
+  width: 38px;
+  border: none;
+  border-radius: 9px;
+  background: var(--brand, #0D6E6E);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform .14s, opacity .16s;
+}
+.pet-bubble .pb-input button:hover { transform: translateY(-1px); }
+.pet-bubble .pb-input button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+/* 未登录提示 */
+.pet-login { text-align: center; padding: 18px 14px; }
+.pet-login .t { font-size: 13px; color: var(--ink-2, #3C545A); margin-bottom: 10px; }
+.pet-login a {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--brand, #0D6E6E);
+  border-radius: 9px;
+  padding: 8px 20px;
+  text-decoration: none;
+}
+/* 正在输入 */
+.pet-typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 2px; }
+.pet-typing i {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--brand-soft, #5BC5C0);
+  animation: petTyping 1s ease-in-out infinite;
+}
+.pet-typing i:nth-child(2) { animation-delay: .15s; }
+.pet-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes petTyping {
+  0%, 100% { transform: translateY(0); opacity: .4; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ===== 无障碍 / 弱动效 ===== */
+@media (prefers-reduced-motion: reduce) {
+  /* 移动由用户拖拽驱动，保留交互；仅停用装饰性动画与吸附过渡 */
+  .pet .body-wrap, .pet .eye, .pet .shadow { animation: none !important; }
+  .pet { transition: none !important; }
+}
+/* 打印时隐藏（凭证页等有打印场景） */
+@media print {
+  .pet-host { display: none !important; }
+}
+@media (max-width: 720px) {
+  .pet { width: 40px; height: 48px; }
+  .pet-bubble { width: calc(100vw - 20px); }
+  .pet-bubble .pb-msgs { max-height: 46vh; }
+}
