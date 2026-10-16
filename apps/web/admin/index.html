@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 管理后台</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
+<style>
+  /* ===== 骨架（与全站一致） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    position: sticky; top: 0; height: 100vh;
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .side .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  .side .nav::-webkit-scrollbar { width: 5px; }
+  .side .nav::-webkit-scrollbar-thumb { background: #C9E8E6; border-radius: 3px; }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none; transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .side-foot .side-exit {
+    margin-left: auto; width: 26px; height: 26px; border: none; border-radius: 8px; flex: none;
+    background: rgba(255,255,255,0.7); color: var(--mute); font-size: 13px; line-height: 1;
+    cursor: pointer; transition: background .16s, color .16s;
+  }
+  .side-foot .side-exit:hover { background: #fff; color: #C4643B; }
+  .shell[data-collapsed="true"] .side-foot .side-exit { margin-left: 0; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+  .side-foot .who { overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1560px; width: 100%; margin: 0 auto; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 32px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+  .page-sub { font-size: 13.5px; color: var(--mute); margin-top: 8px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-top: 22px; }
+  .stat {
+    background: #fff; border-radius: 13px; padding: 16px 18px;
+    box-shadow: var(--card-shadow, 0 8px 24px rgba(13,110,110,.10), 0 1px 2px rgba(13,110,110,.06));
+  }
+  .stat b { display: block; font-family: var(--slab); font-weight: 700; font-size: 26px; color: var(--brand); line-height: 1.1; }
+  .stat span { display: block; font-size: 11.5px; color: var(--mute); margin-top: 4px; }
+
+  .card {
+    background: #fff; border-radius: 14px; margin-top: 22px;
+    box-shadow: var(--card-shadow, 0 8px 24px rgba(13,110,110,.10), 0 1px 2px rgba(13,110,110,.06));
+    padding: 20px 22px;
+  }
+  .card .ct { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .card .ct small { font-family: var(--grot); font-weight: 500; font-size: 11.5px; color: var(--mute); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  th { text-align: left; font-family: var(--grot); font-size: 11px; letter-spacing: .08em; color: var(--mute); padding: 8px 10px; border-bottom: 1.5px solid #E4F1F1; white-space: nowrap; }
+  td { padding: 10px; border-bottom: 1px dashed #E4F1F1; color: var(--ink-2); vertical-align: top; }
+  tr:hover td { background: #F8FCFB; }
+  td .msg { display: block; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td .mono { font-family: var(--grot); font-size: 11.5px; color: var(--mute); }
+  td a { color: var(--brand); text-decoration: none; border-bottom: 1px dashed var(--brand-soft); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-family: var(--grot); font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .badge.success { color: #2A8055; background: #E5F5E9; }
+  .badge.failure { color: #C0392B; background: #FDECEA; }
+  .badge.cancelled, .badge.skipped { color: #8A9BA5; background: #F0F5F4; }
+  .badge.super { color: #6B4FC0; background: #F1EDFA; }
+  .badge.user { color: #3D6A6C; background: #EDF6F5; }
+  .badge.active { color: #2A8055; background: #E5F5E9; }
+  .badge.disabled { color: #C0392B; background: #FDECEA; }
+  .badge.deleted { color: #8A9BA5; background: #F0F5F4; }
+
+  .btn-plain {
+    font-family: var(--grot); font-size: 12px; color: #3D6A6C; background: var(--mist, #F2FAF9);
+    border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .16s, color .16s;
+  }
+  .btn-plain:hover { background: #CDEBE9; color: var(--brand); }
+  .btn-plain.danger { color: #C0392B; }
+  .btn-plain.danger:hover { background: #FDECEA; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .search-row { display: flex; gap: 9px; margin-top: 14px; }
+  .search-row input {
+    flex: 1; min-width: 0; font-family: var(--grot); font-size: 13px; color: var(--ink);
+    background: #fff; border: 1.5px solid #E4F1F1; border-radius: 9px; padding: 9px 12px; outline: none;
+  }
+  .search-row input:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .btn-primary-sm {
+    font-family: var(--grot); font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--brand); border: none; border-radius: 9px; padding: 9px 18px; cursor: pointer;
+  }
+  .state-box { text-align: center; padding: 80px 20px; }
+  .state-box .ic { font-size: 44px; }
+  .state-box .t { font-family: var(--slab); font-weight: 600; font-size: 20px; color: var(--ink); margin-top: 12px; }
+  .state-box .d { font-size: 13px; color: var(--mute); margin-top: 8px; }
+  .state-box a { color: var(--brand); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(12px);
+    background: var(--ink, #123A3C); color: #fff; font-size: 13px; font-family: var(--grot);
+    padding: 11px 20px; border-radius: 10px; z-index: 99;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr; }
+    .side {
+      position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6;
+    }
+    .side .nav { flex: none; overflow: visible; }
+    .rail-toggle { display: none; }
+    .brand { font-size: 19px; padding: 0 2px; }
+    .brand small, .brand-mark { display: none; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 3px; flex-wrap: wrap; }
+    .nav a { padding: 7px 9px; font-size: 13px; }
+    .side-foot { margin-top: 0; margin-left: auto; border-top: none; padding: 0; }
+    main { padding: 22px 16px 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+      <a href="/admin/" aria-current="page"><span class="ico" aria-hidden="true">&#9881;</span><span class="txt">管理后台</span><span class="dot"></span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+      <button type="button" class="side-exit" id="sideLogout" title="退出登录" aria-label="退出登录">&#9211;</button>
+    </div>
+  </aside>
+
+  <main>
+    <div id="pageBody">
+      <h1>管理后台<span class="en">Super Admin</span></h1>
+      <p class="page-sub">平台运营数据 · 用户管理 · 服务器 CI 部署状态（集成 /ci/ 数据）</p>
+
+      <div class="stats" id="ovStats">
+        <div class="stat"><b>…</b><span>正在加载</span></div>
+      </div>
+
+      <section class="card">
+        <div class="ct">服务器 CI / 部署状态 <small>· 集成 http://140.143.166.155/ci/ 的运行记录</small></div>
+        <table>
+          <thead>
+            <tr><th>#</th><th>结果</th><th>提交说明</th><th>分支</th><th>触发</th><th>耗时</th><th>完成时间</th><th>详情</th></tr>
+          </thead>
+          <tbody id="ciBody"><tr><td colspan="8">加载中…</td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <div class="ct">用户管理</div>
+        <div class="search-row">
+          <input type="text" id="userKw" placeholder="按用户名 / 昵称搜索">
+          <button type="button" class="btn-primary-sm" id="btnUserSearch">搜索</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>用户</th><th>角色</th><th>状态</th><th>最近登录</th><th>注册时间</th><th>操作</th></tr>
+          </thead>
+          <tbody id="userBody"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
+<script src="../assets/js/pet.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    /* 权限门禁：仅超级管理员可见本页 */
+    if (user.role !== 'super_admin') {
+      document.getElementById('pageBody').innerHTML =
+        '<div class="state-box"><div class="ic">🔒</div><div class="t">需要超级管理员权限</div>'
+        + '<div class="d">当前账户是普通用户，无法访问管理后台 · <a href="/home/">返回首页</a></div></div>';
+      return;
+    }
+
+    var $ = function (id) { return document.getElementById(id); };
+    var toastTimer = null;
+    function showToast(msg) {
+      var toast = $('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtTime(iso) {
+      if (!iso) return '—';
+      var d = new Date(iso);
+      if (isNaN(d)) return iso;
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    function fmtDuration(sec) {
+      if (sec == null) return '—';
+      if (sec < 60) return sec + ' 秒';
+      return Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+    }
+
+    /* 折叠侧栏 */
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    /* ===== 概览 ===== */
+    async function loadOverview() {
+      try {
+        var d = await apiGet('/admin/overview');
+        var last = d.ciLastRun || {};
+        $('ovStats').innerHTML =
+          '<div class="stat"><b>' + (d.users ?? '—') + '</b><span>注册用户（活跃 ' + (d.activeUsers ?? '—') + '）</span></div>'
+          + '<div class="stat"><b>' + (d.trips ?? '—') + '</b><span>行程（账本）</span></div>'
+          + '<div class="stat"><b>' + (d.journals ?? '—') + '</b><span>攻略</span></div>'
+          + '<div class="stat"><b>' + (d.expenses ?? '—') + '</b><span>花费记录</span></div>'
+          + '<div class="stat"><b>' + (d.ciTotalRuns ?? '—') + '</b><span>CI 运行次数</span></div>'
+          + '<div class="stat"><b style="font-size:15px;">#' + escapeHtml(String(last.run_number ?? '—')) + ' '
+          + (last.conclusion === 'success' ? '✅' : last.conclusion === 'failure' ? '❌' : '⏳') + '</b>'
+          + '<span>最近部署 ' + fmtTime(last.finished_at) + '</span></div>';
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    /* ===== CI 运行记录 ===== */
+    function conclusionBadge(c) {
+      var map = { success: '✅ 成功', failure: '❌ 失败', cancelled: '⏹ 取消', skipped: '⏭ 跳过' };
+      return '<span class="badge ' + escapeHtml(c || '') + '">' + (map[c] || c || '—') + '</span>';
+    }
+    async function loadCi() {
+      try {
+        var d = await apiGet('/admin/ci/runs');
+        var runs = d.runs || [];
+        $('ciBody').innerHTML = runs.map(function (r) {
+          var firstLine = String(r.message || '').split('\n')[0];
+          return '<tr>'
+            + '<td><span class="mono">#' + escapeHtml(String(r.run_number)) + '</span></td>'
+            + '<td>' + conclusionBadge(r.conclusion) + '</td>'
+            + '<td><span class="msg" title="' + escapeHtml(firstLine) + '">' + escapeHtml(firstLine) + '</span>'
+            +   '<span class="mono">' + escapeHtml(String(r.commit || '').slice(0, 7)) + '</span></td>'
+            + '<td>' + escapeHtml(r.branch || '—') + '</td>'
+            + '<td>' + escapeHtml(r.actor || '—') + ' / ' + escapeHtml(r.event || '—') + '</td>'
+            + '<td>' + fmtDuration(r.duration_sec) + '</td>'
+            + '<td>' + fmtTime(r.finished_at) + '</td>'
+            + '<td><a href="' + escapeHtml(r.url || '#') + '" target="_blank" rel="noopener">Actions ↗</a></td>'
+            + '</tr>';
+        }).join('');
+      } catch (err) {
+        $('ciBody').innerHTML = '<tr><td colspan="8">' + escapeHtml(humanError(err)) + '</td></tr>';
+      }
+    }
+
+    /* ===== 用户管理 ===== */
+    var ROLE_TAG = { super_admin: '超级管理员', user: '普通用户' };
+    var STATUS_TAG = { active: '正常', disabled: '已禁用', deleted: '已注销' };
+    async function loadUsers(kw) {
+      try {
+        var url = '/admin/users' + (kw ? '?keyword=' + encodeURIComponent(kw) : '');
+        var d = await apiGet(url);
+        var users = d.users || [];
+        $('userBody').innerHTML = users.map(function (u) {
+          var isSelf = u.id === user.id;
+          var acts = '';
+          if (!isSelf && u.role !== 'super_admin') {
+            acts += u.status === 'active'
+              ? '<button type="button" class="btn-plain danger" data-act="disable" data-uid="' + escapeHtml(u.id) + '">禁用</button>'
+              : '<button type="button" class="btn-plain" data-act="enable" data-uid="' + escapeHtml(u.id) + '">启用</button>';
+            acts += u.role === 'super_admin'
+              ? ''
+              : '<button type="button" class="btn-plain" data-act="promote" data-uid="' + escapeHtml(u.id) + '">设为超管</button>';
+          }
+          return '<tr>'
+            + '<td><b>' + escapeHtml(u.displayName || u.username) + '</b> <span class="mono">@' + escapeHtml(u.username) + '</span>'
+            +   '<span class="mono" style="display:block;">ID ' + escapeHtml(u.id) + '</span></td>'
+            + '<td><span class="badge ' + escapeHtml(u.role) + '">' + (ROLE_TAG[u.role] || u.role) + '</span></td>'
+            + '<td><span class="badge ' + escapeHtml(u.status) + '">' + (STATUS_TAG[u.status] || u.status) + '</span></td>'
+            + '<td>' + fmtTime(u.lastLoginAt) + '</td>'
+            + '<td>' + fmtTime(u.createdAt) + '</td>'
+            + '<td><div class="actions">' + (isSelf ? '<span class="mono">当前账户</span>' : acts) + '</div></td>'
+            + '</tr>';
+        }).join('');
+      } catch (err) {
+        $('userBody').innerHTML = '<tr><td colspan="6">' + escapeHtml(humanError(err)) + '</td></tr>';
+      }
+    }
+
+    async function userAction(act, uid) {
+      try {
+        var d;
+        if (act === 'disable') {
+          if (!confirm('禁用该账户？禁用后 TA 将立即无法登录。')) return;
+          d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'disabled' });
+        } else if (act === 'enable') {
+          d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'active' });
+        } else if (act === 'promote') {
+          if (!confirm('将该用户提升为超级管理员？TA 将拥有平台全部管理权限。')) return;
+          d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/role', { role: 'super_admin' });
+        }
+        showToast((d && d.message) || '操作成功');
+        await Promise.all([loadUsers($('userKw').value.trim()), loadOverview()]);
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    $('btnUserSearch').addEventListener('click', function () { loadUsers($('userKw').value.trim()); });
+    $('userKw').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadUsers($('userKw').value.trim()); });
+    $('userBody').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-act]');
+      if (b) userAction(b.getAttribute('data-act'), b.getAttribute('data-uid'));
+    });
+
+    loadOverview();
+    loadCi();
+    loadUsers();
+  })();
+</script>
+</body>
+</html>

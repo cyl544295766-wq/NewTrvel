@@ -57,6 +57,7 @@ public class UserService {
     map.put("displayName", user.getDisplayName());
     map.put("avatarUrl", user.getAvatarUrl());
     map.put("status", user.getStatus());
+    map.put("role", user.getRole() == null ? "user" : user.getRole());
     map.put("createdAt", user.getCreatedAt());
     return map;
   }

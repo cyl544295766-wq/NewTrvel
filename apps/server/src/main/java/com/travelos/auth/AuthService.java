@@ -61,6 +61,7 @@ public class AuthService {
     user.setDisplayName(normalized);
     user.setPasswordHash(passwordEncoder.encode(password));
     user.setStatus("active");
+    user.setRole("user");
     userService.createUser(user);
 
     String token = JwtUtil.sign(jwtSecret, Map.of("sub", user.getId(), "username", user.getUsername()),

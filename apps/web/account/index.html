@@ -285,6 +285,7 @@
       <div class="nav-label">行程</div>
       <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
       <a href="/account/" aria-current="page"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span><span class="dot"></span></a>
+      <a href="/admin/" aria-current="page"><span class="ico" aria-hidden="true">&#9881;</span><span class="txt">管理后台</span><span class="dot"></span></a>
     </nav>
     <div class="side-foot">
       <span class="avatar" id="avatar">A</span>
@@ -472,7 +473,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="../assets/js/api.js"></script>
+<script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
 <script>
   (function () {

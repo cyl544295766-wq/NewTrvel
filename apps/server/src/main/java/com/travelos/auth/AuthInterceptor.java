@@ -61,7 +61,7 @@ public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumen
     }
     // 桥接 MyBatis-Plus 数据权限拦截器（afterCompletion 清理，防线程复用串号）
     com.travelos.common.TripScopeContext.setUserId(user.getId());
-    request.setAttribute(USER_ATTRIBUTE, new UserContext(sub.toString(), username.toString()));
+    request.setAttribute(USER_ATTRIBUTE, new UserContext(sub.toString(), username.toString(), user.getRole()));
     return true;
   }
 

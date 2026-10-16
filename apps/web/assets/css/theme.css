@@ -86,3 +86,5 @@ a { color: inherit; }
 .link:hover { border-bottom-color: var(--brand); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* 超级管理员专属入口：非超管登录时由页面脚本标记 data-hide-admin 隐藏 */
+[data-hide-admin] .nav a[href="/admin/"] { display: none !important; }

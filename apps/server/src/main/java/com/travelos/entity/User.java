@@ -27,6 +27,9 @@ public class User {
 
   private String status;
 
+  /** user 普通用户 / super_admin 超级管理员 */
+  private String role;
+
   @TableField("last_login_at")
   private Date lastLoginAt;
 
@@ -52,6 +55,9 @@ public class User {
   public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
+
+  public String getRole() { return role; }
+  public void setRole(String role) { this.role = role; }
   public Date getLastLoginAt() { return lastLoginAt; }
   public void setLastLoginAt(Date lastLoginAt) { this.lastLoginAt = lastLoginAt; }
   public Date getDeletedAt() { return deletedAt; }

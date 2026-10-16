@@ -69,6 +69,7 @@ public class SeedRunner implements ApplicationRunner {
       if (toSave.getStatus() == null) {
         toSave.setStatus("active");
       }
+      toSave.setRole("super_admin"); // 种子管理员恒为超级管理员
       if (admin == null) {
         userMapper.insert(toSave);
       } else {
