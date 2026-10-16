@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 行程安排</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -150,6 +151,11 @@
     padding: 4px 12px; white-space: nowrap;
   }
   .day-head .cnt { margin-left: auto; font-size: 12px; color: var(--mute); white-space: nowrap; }
+  .wx-badge {
+    font-size: 12px; font-weight: 500; color: var(--brand);
+    background: var(--mist); border: 1px solid #C9E8E6; border-radius: 999px;
+    padding: 4px 12px; white-space: nowrap;
+  }
 
   /* 地点时间轴 */
   .tl { margin-top: 14px; }
@@ -444,7 +450,7 @@
     var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
     var $ = function (id) { return document.getElementById(id); };
-    var state = { trip: null, days: [], editOpen: null };
+    var state = { trip: null, days: [], weather: [], editOpen: null };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -484,15 +490,54 @@
     function isoToHM(iso) { return fmtTime(iso) || ''; }
     function dayDateOnly(dstr) { return dstr ? String(dstr).slice(0, 10) : ''; }
 
+    /* 天气：一次拉整程预报，按日期匹配到当天（避免每天各发一次请求） */
+    var WICON = { sun: '☀', cloud: '☁', 'cloud-rain': '🌧', snowflake: '❄', 'cloud-lightning': '⛈' };
+    function wIcon(code, condition) {
+      if (WICON[code]) return WICON[code];
+      var c = String(condition || '');
+      if (c.indexOf('雷') >= 0) return '⛈';
+      if (c.indexOf('雪') >= 0) return '❄';
+      if (c.indexOf('雨') >= 0) return '🌧';
+      if (c.indexOf('晴') >= 0) return '☀';
+      return '☁';
+    }
+    function wTemp(v) {
+      if (v == null || v === '') return null;
+      var n = Number(v);
+      return isFinite(n) ? Math.round(n) : null;
+    }
+    function weatherOf(d) {
+      var key = dayDateOnly(d.date);
+      if (!key || !state.weather || !state.weather.length) return null;
+      for (var i = 0; i < state.weather.length; i++) {
+        if (dayDateOnly(state.weather[i].date) === key) return state.weather[i];
+      }
+      return null;
+    }
+    function weatherBadge(d) {
+      var w = weatherOf(d);
+      if (!w) return '';
+      var lo = wTemp(w.tempLow), hi = wTemp(w.tempHigh);
+      var t = '';
+      if (lo != null && hi != null) t = lo + '° / ' + hi + '°';
+      else if (hi != null) t = hi + '°';
+      else if (lo != null) t = lo + '°';
+      var tip = (w.condition || '天气') + (w.rainChance != null ? ' · 降水概率 ' + w.rainChance + '%' : '');
+      return '<span class="wx-badge" title="' + escapeHtml(tip) + '" aria-label="' + escapeHtml(tip) + '">'
+        + wIcon(w.iconCode, w.condition) + (t ? ' ' + t : '') + '</span>';
+    }
+
     /* ===== 数据加载 ===== */
     async function load() {
       try {
         var results = await Promise.allSettled([
           apiGet('/trips/' + tripId),
-          apiGet('/trips/' + tripId + '/days')
+          apiGet('/trips/' + tripId + '/days'),
+          apiGet('/trips/' + tripId + '/weather')
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.days = results[1].status === 'fulfilled' ? (results[1].value.days || []) : [];
+        state.weather = results[2].status === 'fulfilled' ? (results[2].value.weather || []) : [];
 
         if (!state.trip) { showToast('找不到该旅程'); setTimeout(function () { location.replace('/trips/'); }, 1000); return; }
 
@@ -583,15 +628,19 @@
     }
 
     function editPanelHtml(d, p) {
-      var tp = typeOf(p.type);
       var opts = TYPES.map(function (t) {
         return '<option value="' + t.value + '"' + (t.value === p.type ? ' selected' : '') + '>' + t.label + '</option>';
       }).join('');
+      var dayOpts = state.days.map(function (x) {
+        return '<option value="' + escapeHtml(x.id) + '"' + (x.id === d.id ? ' selected' : '') + '>'
+          + 'D' + x.dayIndex + ' · ' + escapeHtml(fmtDate(x.date)) + '</option>';
+      }).join('');
       return ''
-        + '<div class="p-edit" data-edit="' + escapeHtml(p.id) + '">'
+        + '<div class="p-edit" data-edit="' + escapeHtml(p.id) + '" data-day="' + escapeHtml(d.id) + '">'
         +   '<div class="er">'
         +     '<label>名称<input class="w-name" data-f="name" value="' + escapeHtml(p.name || '') + '"></label>'
         +     '<label>类型<select data-f="type">' + opts + '</select></label>'
+        +     '<label>行程天<select data-f="day">' + dayOpts + '</select></label>'
         +     '<label>开始<input type="time" data-f="start" value="' + escapeHtml(isoToHM(p.startTime)) + '"></label>'
         +     '<label>结束<input type="time" data-f="end" value="' + escapeHtml(isoToHM(p.endTime)) + '"></label>'
         +     '<label>预算<input type="number" data-f="cost" min="0" step="10" style="width:96px;" value="' + (p.estimatedCost != null ? Number(p.estimatedCost) : '') + '"></label>'
@@ -630,6 +679,7 @@
         +     '<div class="day-head">'
         +       '<input type="text" class="t" data-daytitle="' + escapeHtml(d.id) + '" value="' + escapeHtml(d.title || '') + '" placeholder="第 ' + d.dayIndex + ' 天标题，如：抵达 &amp; 入沙" maxlength="40">'
         +       (bk.length ? '<span class="bk-badge" title="' + escapeHtml(bk.map(function (b) { return b.title || ''; }).join('、')) + '">🎫 ' + bk.length + ' 项预订</span>' : '')
+        +       weatherBadge(d)
         +       '<span class="cnt">' + places.length + ' 个地点 · ' + done + ' 已完成</span>'
         +     '</div>'
         +     '<div class="tl" data-tl="' + escapeHtml(d.id) + '">'
@@ -689,12 +739,25 @@
           patch.notes = get('notes').value.trim() || null;
           var cost = get('cost').value;
           patch.estimatedCost = cost === '' ? null : cost;
-          var dOnly = dayDateOnly(found.day.date);
+          /* 目标行程天：若换天，起止时间要按目标天的日期拼，否则会带着旧日期 */
+          var targetDayId = get('day') ? get('day').value : '';
+          var targetDay = targetDayId
+            ? state.days.filter(function (x) { return x.id === targetDayId; })[0]
+            : null;
+          var dOnly = dayDateOnly((targetDay || found.day).date);
           var s = get('start').value, en = get('end').value;
           patch.startTime = (s && dOnly) ? dOnly + ' ' + s + ':00' : null;
           patch.endTime = (en && dOnly) ? dOnly + ' ' + en + ':00' : null;
           try {
             await apiPatch('/trips/' + tripId + '/places/' + ePid, patch);
+            /* 跨天移动：目标行程天与当前不同时调 move（同一地点换天） */
+            if (targetDay && targetDay.id !== found.day.id) {
+              await apiPatch('/trips/' + tripId + '/places/' + ePid + '/move', { tripDayId: targetDay.id });
+              state.editOpen = null;
+              showToast('已移动到 D' + targetDay.dayIndex);
+              await load();
+              return;
+            }
             /* 本地同步 */
             found.place.name = patch.name || found.place.name;
             found.place.type = patch.type;

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 预订管理</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -93,6 +94,31 @@
     border: 1px solid #F0DFB9; border-radius: 999px; padding: 7px 15px;
   }
   .rem-note.ok { color: #2A8055; background: #E9F8EE; border-color: #C9E6D3; }
+
+  /* ===== 提醒时间线 ===== */
+  .rem-panel {
+    margin-top: 16px; background: #fff; border-radius: var(--r-card, 14px);
+    box-shadow: var(--card-shadow); padding: 16px 20px 18px;
+  }
+  .rem-panel[hidden] { display: none; }
+  .rem-panel .rp-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+  .rem-panel .rp-head .bar { width: 4px; height: 15px; border-radius: 2px; background: var(--stamp); flex: none; }
+  .rem-panel .rp-head .t { font-family: var(--slab); font-weight: 600; font-size: 15px; color: var(--ink); }
+  .rem-panel .rp-head .n { font-size: 12px; color: var(--mute); }
+  .rem-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px dashed var(--line); }
+  .rem-item:first-child { border-top: none; padding-top: 2px; }
+  .rem-item .when {
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600; color: var(--brand);
+    background: var(--mist); border-radius: 7px; padding: 4px 10px; flex: none; white-space: nowrap;
+  }
+  .rem-item .mid { flex: 1; min-width: 0; }
+  .rem-item .nm { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rem-item .sub { font-size: 12px; color: var(--mute); margin-top: 2px; }
+  .rem-item .st2 { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; flex: none; white-space: nowrap; }
+  .rem-item .st2.pending { background: #FDF5E2; color: #B8830F; }
+  .rem-item .st2.sent    { background: #EAF7EF; color: #3E8F63; }
+  .rem-item .st2.off     { background: #F0F4F6; color: #7C939A; }
+  .rem-item .st2.past    { background: #F0F4F6; color: #9BB0B5; }
 
   /* ===== 表单面板 ===== */
   .form-panel {
@@ -302,6 +328,15 @@
       <span class="rem-note" id="remNote" hidden></span>
     </div>
 
+    <section class="rem-panel" id="remPanel" hidden>
+      <div class="rp-head">
+        <span class="bar"></span>
+        <span class="t">提醒时间线</span>
+        <span class="n" id="remCount"></span>
+      </div>
+      <div class="rem-list" id="remList"></div>
+    </section>
+
     <section class="form-panel" id="formPanel" hidden>
       <div class="fp-head">
         <span class="t" id="fpTitle">新建预订</span>
@@ -413,7 +448,7 @@
       { v: '2880', label: '提前 2 天' }
     ];
     var $ = function (id) { return document.getElementById(id); };
-    var state = { trip: null, bookings: [], filter: 'all', editingId: null, formType: 'flight', pendingFile: null };
+    var state = { trip: null, bookings: [], reminders: [], filter: 'all', editingId: null, formType: 'flight', pendingFile: null };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -467,14 +502,17 @@
       try {
         var results = await Promise.allSettled([
           apiGet('/trips/' + tripId),
-          apiGet('/trips/' + tripId + '/bookings')
+          apiGet('/trips/' + tripId + '/bookings'),
+          apiGet('/trips/' + tripId + '/bookings/reminders')
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.bookings = results[1].status === 'fulfilled' ? (results[1].value.bookings || []) : [];
+        state.reminders = results[2].status === 'fulfilled' ? (results[2].value.reminders || []) : [];
         document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
         document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
         document.title = 'Travel OS · ' + ((state.trip && state.trip.title) || '') + ' · 预订管理';
         buildFilters();
+        renderReminders();
         render();
       } catch (err) {
         showToast(humanError(err));
@@ -509,6 +547,65 @@
       buildFilters();
       render();
     });
+
+    /* ===== 提醒时间线（GET /trips/{id}/bookings/reminders） ===== */
+    function fmtRemain(ms) {
+      var mins = Math.round(ms / 60000);
+      if (mins <= 0) return '已到时间';
+      if (mins < 60) return mins + ' 分钟后';
+      var h = Math.floor(mins / 60), m = mins % 60;
+      if (h < 24) return h + ' 小时' + (m ? ' ' + m + ' 分' : '') + '后';
+      return Math.floor(h / 24) + ' 天后';
+    }
+    function renderReminders() {
+      var panel = $('remPanel');
+      var list = state.reminders || [];
+      if (!list.length) { panel.hidden = true; return; }
+      panel.hidden = false;
+      var enabled = list.filter(function (r) { return r.reminderEnabled; }).length;
+      $('remCount').textContent = '共 ' + list.length + ' 条 · ' + enabled + ' 条开启';
+
+      var now = Date.now();
+      var sorted = list.slice().sort(function (a, b) {
+        var ax = a.startTime ? new Date(a.startTime).getTime() : Infinity;
+        var bx = b.startTime ? new Date(b.startTime).getTime() : Infinity;
+        return ax - bx;
+      });
+
+      $('remList').innerHTML = sorted.map(function (r) {
+        var st = r.startTime ? new Date(r.startTime).getTime() : null;
+        var at = st != null ? st - Number(r.reminderMinutes || 0) * 60000 : null;
+        var when = at != null ? fmtDT(new Date(at).toISOString()) : '未定';
+        var t = TYPES.filter(function (x) { return x.value === r.type; })[0] || { label: '其他' };
+
+        var cls, label, sub;
+        if (!r.reminderEnabled) {
+          cls = 'off'; label = '已关闭'; sub = '开启后会按提前量提醒';
+        } else if (r.reminderSentAt) {
+          cls = 'sent'; label = '已发送'; sub = '已于 ' + fmtDT(r.reminderSentAt) + ' 推送';
+        } else if (at != null && at <= now) {
+          cls = 'past'; label = '已过期'; sub = '提醒时间已过';
+        } else {
+          cls = 'pending'; label = '待提醒';
+          sub = (at != null ? fmtRemain(at - now) : '') + ' · 提前 ' + Math.round(Number(r.reminderMinutes || 0) / 60 * 10) / 10 + ' 小时';
+        }
+
+        return '<div class="rem-item" data-rem-id="' + escapeHtml(r.id) + '">'
+          + '<span class="when">' + escapeHtml(when) + '</span>'
+          + '<div class="mid"><div class="nm">' + escapeHtml(r.title || '未命名预订') + '</div>'
+          +   '<div class="sub">' + escapeHtml(t.label + ' · ' + sub) + '</div></div>'
+          + '<span class="st2 ' + cls + '">' + label + '</span>'
+          + '</div>';
+      }).join('');
+    }
+
+    async function refreshReminders() {
+      try {
+        var r = await apiGet('/trips/' + tripId + '/bookings/reminders');
+        state.reminders = (r && r.reminders) || [];
+      } catch (e) { /* 提醒时间线失败不影响主流程 */ }
+      renderReminders();
+    }
 
     /* ===== 渲染票卡 ===== */
     function cardHtml(b) {
@@ -787,6 +884,7 @@
           bk.reminderEnabled = !bk.reminderEnabled;
           buildFilters();
           render();
+          refreshReminders();
           showToast(bk.reminderEnabled ? '已开启提醒' : '已关闭提醒');
         } catch (err) { showToast(humanError(err)); }
         return;
@@ -803,6 +901,7 @@
           state.bookings = state.bookings.filter(function (x) { return x.id !== id; });
           buildFilters();
           render();
+          refreshReminders();
           showToast('已删除');
         } catch (err) { showToast(humanError(err)); }
       }

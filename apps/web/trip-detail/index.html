@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 旅程详情</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -349,6 +350,201 @@
   }
   @keyframes skel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+  /* ===== 操作记录（审计日志） ===== */
+  .logs { display: flex; flex-direction: column; }
+  .log {
+    display: flex; align-items: flex-start; gap: 13px;
+    padding: 13px 4px;
+  }
+  .log + .log { border-top: 1px solid #F2F8F8; }
+  .log .li {
+    width: 34px; height: 34px; border-radius: 10px; flex: none;
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .log .lb { flex: 1; min-width: 0; }
+  .log .lt { font-size: 14px; }
+  .log .lt b { font-weight: 600; }
+  .log .ld {
+    font-size: 12.5px; color: var(--mute); margin-top: 3px;
+    overflow-wrap: anywhere;
+  }
+  .log .lw {
+    font-size: 12px; color: var(--mute); flex: none; text-align: right;
+    font-family: var(--grot); white-space: nowrap;
+  }
+  .logs-more { padding: 14px 4px 2px; text-align: center; }
+  .logs-more button {
+    background: var(--cloud); border: 1.5px solid var(--line, #E4F1F1); cursor: pointer;
+    color: var(--brand); font-family: var(--grot); font-size: 13px;
+    padding: 8px 20px; border-radius: 9px;
+  }
+  .logs-more button:hover { background: var(--mist); }
+
+  /* ===== AI 助手抽屉 ===== */
+  .ai-mask {
+    position: fixed; inset: 0; z-index: 60; background: rgba(18,58,60,.42);
+    opacity: 0; pointer-events: none; transition: opacity .24s ease;
+  }
+  .ai-mask.show { opacity: 1; pointer-events: auto; }
+
+  .ai {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 61;
+    width: 520px; max-width: 100%; background: #fff;
+    display: flex; flex-direction: column;
+    box-shadow: -18px 0 48px rgba(13,110,110,.20);
+    transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+  }
+  .ai.show { transform: none; }
+
+  .ai-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 17px 22px 14px; border-bottom: 1px solid #EEF5F5;
+  }
+  .ai-head .bar { width: 4px; height: 16px; border-radius: 2px; background: var(--stamp); flex: none; }
+  .ai-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
+  .ai-head .sub {
+    font-size: 12.5px; color: var(--mute); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ai-head .x {
+    margin-left: auto; width: 32px; height: 32px; flex: none;
+    border: none; border-radius: 9px; background: var(--cloud);
+    color: var(--mute); font-size: 15px; cursor: pointer;
+  }
+  .ai-head .x:hover { color: var(--ink); }
+
+  .ai-bar {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 11px 22px; border-bottom: 1px solid #F2F8F8;
+  }
+  .ai-bar select {
+    flex: 1; min-width: 0; font-family: var(--grot); font-size: 13px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid #E4F1F1; border-radius: 9px;
+    padding: 8px 10px; outline: none; cursor: pointer;
+  }
+  .ai-bar select:focus { border-color: var(--brand-soft); }
+  .ai-bar button {
+    font-family: var(--grot); font-size: 12.5px; color: var(--ink-2, #3D6A6C);
+    background: none; border: 1.5px solid #E4F1F1; border-radius: 9px;
+    padding: 8px 12px; cursor: pointer; white-space: nowrap;
+    transition: border-color .16s, color .16s, background .16s;
+  }
+  .ai-bar button:hover { border-color: var(--brand-soft); color: var(--brand); background: #F5FBFB; }
+  .ai-bar button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .ai-msgs {
+    flex: 1; overflow-y: auto; padding: 18px 22px 22px;
+    display: flex; flex-direction: column; gap: 14px;
+    background: linear-gradient(180deg, #FBFDFD 0%, #fff 140px);
+  }
+  .ai-msg { display: flex; gap: 10px; max-width: 100%; }
+  .ai-msg .av {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-size: 13px;
+  }
+  .ai-msg .bd {
+    font-size: 13.5px; line-height: 1.72; border-radius: 12px;
+    padding: 11px 14px; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .ai-msg.user { flex-direction: row-reverse; }
+  .ai-msg.user .av { background: var(--brand); color: #fff; }
+  .ai-msg.user .bd { background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+  .ai-msg.bot .av { background: var(--mist); color: var(--brand); }
+  .ai-msg.bot .bd { background: #fff; border: 1.5px solid #EAF4F3; border-bottom-left-radius: 4px; }
+
+  .ai-typing .bd { display: flex; gap: 4px; align-items: center; }
+  .ai-typing .dot3 {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--brand-soft);
+    animation: aiBlink 1.2s infinite ease-in-out;
+  }
+  .ai-typing .dot3:nth-child(2) { animation-delay: .18s; }
+  .ai-typing .dot3:nth-child(3) { animation-delay: .36s; }
+  @keyframes aiBlink { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+  /* 变更预览卡片 */
+  .ai-draft {
+    margin-top: 9px; border-radius: 12px; overflow: hidden;
+    border: 1.5px solid #F3DFC8; background: #FFFCF7;
+  }
+  .ai-draft .dh {
+    font-size: 11px; letter-spacing: .12em; color: #B8830F;
+    background: #FFF4E3; padding: 7px 13px;
+  }
+  .ai-draft .db { padding: 11px 13px; }
+  .ai-draft .ds { font-size: 13px; color: var(--ink); line-height: 1.6; }
+  .ai-draft .dlist { list-style: none; margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .ai-draft .dlist li {
+    font-size: 12.5px; color: var(--ink-2, #3D6A6C);
+    background: #fff; border: 1px solid #F3E6D6; border-radius: 8px;
+    padding: 6px 10px; display: flex; gap: 7px; align-items: baseline;
+  }
+  .ai-draft .dlist li .op {
+    flex: none; font-size: 10.5px; font-weight: 600; color: #B8830F;
+    background: #FFF4E3; border-radius: 5px; padding: 1px 6px;
+  }
+  .ai-draft .da { display: flex; gap: 8px; padding: 0 13px 13px; }
+  .ai-draft .da button {
+    font-family: var(--grot); font-weight: 600; font-size: 12.5px;
+    padding: 8px 18px; border-radius: 9px; cursor: pointer; border: none;
+  }
+  .ai-draft .da .ap { background: var(--stamp); color: #fff; box-shadow: 0 4px 12px rgba(255,138,76,.28); }
+  .ai-draft .da .ap:hover { transform: translateY(-1px); }
+  .ai-draft .da .dp { background: #fff; color: var(--ink-2, #3D6A6C); border: 1.5px solid #E9DCC9; }
+  .ai-draft .da .dp:hover { color: #B8830F; }
+  .ai-draft .da button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .ai-draft .dstat {
+    padding: 0 13px 13px; font-size: 12px; font-weight: 500;
+  }
+  .ai-draft .dstat.ok { color: #3E8F63; }
+  .ai-draft .dstat.no { color: var(--mute); }
+  .ai-draft.done { border-color: #E6EEE9; background: #FBFDFC; }
+  .ai-draft.done .dh { background: #EFF5F1; color: #7E9A8B; }
+
+  /* 空态 */
+  .ai-empty { text-align: center; padding: 34px 10px; color: var(--mute); }
+  .ai-empty .ic { font-size: 30px; }
+  .ai-empty strong {
+    display: block; font-family: var(--slab); font-weight: 600; font-size: 16px;
+    color: var(--brand); margin: 12px 0 6px;
+  }
+  .ai-empty p { font-size: 12.5px; line-height: 1.7; }
+  .ai-tips { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
+  .ai-tips button {
+    font-family: var(--grot); font-size: 12.5px; color: var(--ink-2, #3D6A6C);
+    background: #fff; border: 1.5px solid #E4F1F1; border-radius: 10px;
+    padding: 9px 13px; cursor: pointer; text-align: left;
+    transition: border-color .16s, color .16s, background .16s;
+  }
+  .ai-tips button:hover { border-color: var(--brand-soft); color: var(--brand); background: #F5FBFB; }
+
+  .ai-send { flex: none; padding: 13px 22px 18px; border-top: 1px solid #EEF5F5; }
+  .ai-send .row { display: flex; gap: 9px; align-items: flex-end; }
+  .ai-send textarea {
+    flex: 1; min-width: 0; resize: none; font-family: var(--grot); font-size: 13.5px;
+    color: var(--ink); background: var(--cloud); border: 1.5px solid #E4F1F1;
+    border-radius: 11px; padding: 10px 13px; outline: none; line-height: 1.6;
+    max-height: 130px; transition: border-color .16s, box-shadow .16s;
+  }
+  .ai-send textarea:focus { border-color: var(--brand-soft); background: #fff; box-shadow: 0 0 0 3px rgba(91,197,192,.16); }
+  .ai-send textarea::placeholder { color: var(--mute); }
+  .ai-send .go {
+    flex: none; font-family: var(--grot); font-weight: 600; font-size: 13.5px;
+    color: #fff; background: var(--stamp); border: none; border-radius: 11px;
+    padding: 11px 20px; cursor: pointer; box-shadow: 0 5px 14px rgba(255,138,76,.3);
+  }
+  .ai-send .go:hover { transform: translateY(-1px); }
+  .ai-send .go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .ai-send .tip { font-size: 11.5px; color: var(--mute); margin-top: 7px; }
+
+  @media (max-width: 720px) {
+    .ai { width: 100%; }
+    .ai-msgs { padding: 14px 16px 18px; }
+    .ai-head, .ai-bar, .ai-send { padding-left: 16px; padding-right: 16px; }
+    .member .acts { margin-left: 0; }
+    .member { flex-wrap: wrap; }
+    .log .lw { display: none; }
+  }
+
   /* ===== 响应式 ===== */
   @media (max-width: 1100px) {
     .fields { grid-template-columns: repeat(2, 1fr); row-gap: 18px; }
@@ -436,6 +632,7 @@
     <div class="tabs" role="tablist" aria-label="详情分组" id="tabs" hidden>
       <button role="tab" aria-selected="true" aria-controls="pane-overview" id="tab-overview">概览</button>
       <button role="tab" aria-selected="false" aria-controls="pane-members" id="tab-members">成员</button>
+      <button role="tab" aria-selected="false" aria-controls="pane-logs" id="tab-logs">操作记录</button>
     </div>
 
     <div id="pane-overview" class="pane" role="tabpanel" aria-labelledby="tab-overview" hidden>
@@ -481,8 +678,48 @@
       </section>
     </div>
 
+    <div id="pane-logs" class="pane" role="tabpanel" aria-labelledby="tab-logs" hidden>
+      <section class="module-panel">
+        <div class="sec-head">
+          <span class="bar" style="background:#8FB4C4;"></span>
+          <span class="t">操作记录</span>
+          <span class="hint" id="logHint">…</span>
+        </div>
+        <div class="logs" id="logList">
+          <p style="padding:24px 0;text-align:center;color:var(--mute);" class="skeleton">…</p>
+        </div>
+      </section>
+    </div>
+
   </main>
 </div>
+
+<!-- ===== AI 助手抽屉 ===== -->
+<div class="ai-mask" id="aiMask" hidden></div>
+<aside class="ai" id="aiPanel" role="dialog" aria-modal="true" aria-labelledby="aiTitle" hidden>
+  <div class="ai-head">
+    <span class="bar"></span>
+    <span class="t" id="aiTitle">AI 助手</span>
+    <span class="sub" id="aiTripName"></span>
+    <button class="x" id="aiClose" aria-label="关闭 AI 助手">&#10005;</button>
+  </div>
+
+  <div class="ai-bar">
+    <select id="aiConvSel" aria-label="选择会话"></select>
+    <button type="button" id="aiNew">＋ 新建</button>
+    <button type="button" id="aiDel" title="删除当前会话">删除</button>
+  </div>
+
+  <div class="ai-msgs" id="aiMsgs" aria-live="polite"></div>
+
+  <div class="ai-send">
+    <div class="row">
+      <textarea id="aiInput" rows="1" placeholder="说说你想怎么安排这段旅程…" aria-label="给 AI 助手发消息"></textarea>
+      <button type="button" class="go" id="aiGo">发送</button>
+    </div>
+    <div class="tip">Enter 发送 · Shift + Enter 换行 · AI 只出草稿，确认后才写入行程</div>
+  </div>
+</aside>
 
 <div class="toast" id="toast"></div>
 
@@ -582,7 +819,7 @@
     }
 
     // ===== 拉数据 =====
-    var state = { trip: null, members: [], days: [], expenses: null, weather: [] };
+    var state = { trip: null, members: [], days: [], expenses: null, weather: [], counts: null, me: null };
 
     async function loadAll() {
       try {
@@ -592,12 +829,16 @@
           apiGet('/trips/' + tripId + '/days'),
           apiGet('/trips/' + tripId + '/expenses'),
           apiGet('/trips/' + tripId + '/weather'),
+          apiGet('/trips/' + tripId + '/photos'),
+          apiGet('/trips/' + tripId + '/documents'),
+          apiGet('/trips/' + tripId + '/packing-lists'),
+          apiGet('/trips/' + tripId + '/journals'),
+          apiGet('/auth/me'),
         ]);
-        var d0 = results[0].status === 'fulfilled' ? results[0].value : null;
-        var d1 = results[1].status === 'fulfilled' ? results[1].value : null;
-        var d2 = results[2].status === 'fulfilled' ? results[2].value : null;
-        var d3 = results[3].status === 'fulfilled' ? results[3].value : null;
-        var d4 = results[4].status === 'fulfilled' ? results[4].value : null;
+        function pick(i) { return results[i].status === 'fulfilled' ? results[i].value : null; }
+        var d0 = pick(0), d1 = pick(1), d2 = pick(2), d3 = pick(3), d4 = pick(4);
+        var d5 = pick(5), d6 = pick(6), d7 = pick(7), d8 = pick(8);
+        state.me = (pick(9) && pick(9).user) || null;
 
         state.trip = d0 && d0.trip;
         if (!state.trip) {
@@ -609,6 +850,13 @@
         state.days     = (d2 && d2.days) || [];
         state.expenses = d3 || { expenses: [], summary: { totalAmount: '0.00', currency: 'CNY' } };
         state.weather  = (d4 && d4.weather) || [];
+        // 四个模块的计数（列表接口本身已存在，之前漏算导致徽标显示「–」）
+        state.counts = {
+          photos:     (d5 && d5.photos || []).length,
+          documents:  (d6 && d6.documents || []).length,
+          packing:    (d7 && d7.packingLists || []).length,
+          journals:   (d8 && d8.journals || []).length
+        };
 
         render();
       } catch (err) {
@@ -689,16 +937,18 @@
         bookingsCount += (d.bookings || []).length;
       });
       var expenseCount = (state.expenses && state.expenses.expenses || []).length;
+      var c = state.counts || { photos: null, documents: null, packing: null, journals: null };
+      function cnt(n, unit) { return n == null ? null : n + ' ' + unit; }
 
       var modules = [
         { name: '行程安排', hint: '每日安排', badge: placesCount + ' 项', bg: '#E9F2FD', fg: '#2F6FB5', icon: '☰', link: '/itinerary/?trip=' + encodeURIComponent(tripId) },
         { name: '费用',     hint: '记账结算', badge: expenseCount + ' 笔', bg: '#E9F8EE', fg: '#2A8055', icon: '¥', link: '/expenses/?trip=' + encodeURIComponent(tripId) },
         { name: '地图',     hint: '地点标记', badge: placesCount + ' 点', bg: '#FDF5E2', fg: '#B8830F', icon: '◉', link: '/map/?trip=' + encodeURIComponent(tripId) },
-        { name: '照片',     hint: '旅途影像', badge: null, bg: '#FDEFF2', fg: '#C2566C', icon: '▣', link: '/photos/?trip=' + encodeURIComponent(tripId) },
-        { name: '文档',     hint: '证件票据', badge: null, bg: '#EFEAFB', fg: '#6B4FC0', icon: '▤', link: '/documents/?trip=' + encodeURIComponent(tripId) },
-        { name: '打包清单', hint: '行囊准备', badge: null, bg: '#E6F4EC', fg: '#3D8B64', icon: '◫', link: '/packing/?trip=' + encodeURIComponent(tripId) },
+        { name: '照片',     hint: '旅途影像', badge: cnt(c.photos, '张'), bg: '#FDEFF2', fg: '#C2566C', icon: '▣', link: '/photos/?trip=' + encodeURIComponent(tripId) },
+        { name: '文档',     hint: '证件票据', badge: cnt(c.documents, '份'), bg: '#EFEAFB', fg: '#6B4FC0', icon: '▤', link: '/documents/?trip=' + encodeURIComponent(tripId) },
+        { name: '打包清单', hint: '行囊准备', badge: cnt(c.packing, '单'), bg: '#E6F4EC', fg: '#3D8B64', icon: '◫', link: '/packing/?trip=' + encodeURIComponent(tripId) },
         { name: '预订',     hint: '机票酒店', badge: bookingsCount + ' 单', bg: '#FCECE4', fg: '#C1704A', icon: '▷', link: '/bookings/?trip=' + encodeURIComponent(tripId) },
-        { name: '游记',     hint: '记录时刻', badge: null, bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
+        { name: '游记',     hint: '记录时刻', badge: cnt(c.journals, '篇'), bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
       ];
 
       var target = document.getElementById('modules');
@@ -715,26 +965,50 @@
       }).join('');
     }
 
+    /* 天气：后端字段是 condition / tempLow / tempHigh / rainChance / iconCode */
+    var WICON = { sun: '☀', cloud: '☁', 'cloud-rain': '🌧', snowflake: '❄', 'cloud-lightning': '⛈' };
+    function wIcon(code, condition) {
+      if (WICON[code]) return WICON[code];
+      var c = String(condition || '');
+      if (c.indexOf('雷') >= 0) return '⛈';
+      if (c.indexOf('雪') >= 0) return '❄';
+      if (c.indexOf('雨') >= 0) return '🌧';
+      if (c.indexOf('晴') >= 0) return '☀';
+      if (c.indexOf('云') >= 0) return '☁';
+      return '☁';
+    }
+    function wTemp(v) {
+      if (v == null || v === '') return null;
+      var n = Number(v);
+      return isFinite(n) ? Math.round(n) : null;
+    }
+
     function renderWeather() {
-      var hint = (state.trip.destination || '目的地') + ' · 未来 6 天';
-      document.getElementById('weatherHint').textContent = hint;
       var box = document.getElementById('weatherBox');
       if (!state.weather || state.weather.length === 0) {
+        document.getElementById('weatherHint').textContent = (state.trip.destination || '目的地') + ' · 暂无预报';
         box.innerHTML = '<div class="weather-empty"><div class="ic">⛅</div>暂无天气数据</div>';
         return;
       }
+      var hintParts = [];
+      if (state.trip.destination) hintParts.push(state.trip.destination);
+      hintParts.push('共 ' + state.weather.length + ' 天预报');
+      document.getElementById('weatherHint').textContent = hintParts.join(' · ');
+
       box.innerHTML = '<div class="weathers">' + state.weather.slice(0, 6).map(function (w) {
-        var d = w.date || '';
-        var dt = new Date(d);
-        var md = isNaN(dt) ? d : fmtMonthDay(d);
-        var ic = w.icon || '☀';
-        var tmin = w.tempMin != null ? w.tempMin : (w.temp != null ? w.temp : '');
-        var tmax = w.tempMax != null ? w.tempMax : (w.temp != null ? w.temp : '');
-        var txt = '';
-        if (tmin !== '' && tmax !== '' && tmin !== tmax) txt = tmin + '<small>°</small> / ' + tmax + '<small>°</small>';
-        else if (tmax !== '') txt = tmax + '<small>°</small>';
+        var md = fmtMonthDay(w.date) || String(w.date || '');
+        var lo = wTemp(w.tempLow), hi = wTemp(w.tempHigh);
+        var txt;
+        if (lo != null && hi != null && lo !== hi) txt = lo + '<small>°</small> / ' + hi + '<small>°</small>';
+        else if (hi != null) txt = hi + '<small>°</small>';
+        else if (lo != null) txt = lo + '<small>°</small>';
         else txt = '–';
-        return '<div class="weather"><div class="d">' + escapeHtml(md) + '</div><div class="ic2">' + ic + '</div><div class="t">' + txt + '</div></div>';
+        var tip = (w.condition || '天气') + (w.rainChance != null ? ' · 降水概率 ' + w.rainChance + '%' : '');
+        return '<div class="weather" title="' + escapeHtml(tip) + '" aria-label="' + escapeHtml(md + ' ' + tip) + '">'
+          + '<div class="d">' + escapeHtml(md) + '</div>'
+          + '<div class="ic2">' + wIcon(w.iconCode, w.condition) + '</div>'
+          + '<div class="t">' + txt + '</div>'
+          + '</div>';
       }).join('') + '</div>';
     }
 
@@ -752,12 +1026,23 @@
         var roleCls = (m.role === 'owner' ? 'owner' : (m.role === 'admin' ? 'admin' : (m.role === 'member' ? 'member' : 'viewer')));
         var roleLabel = ({owner: '所有者', admin: '管理员', member: '成员', viewer: '观察者'})[m.role] || m.role;
         var letter = (m.displayName || m.username || '?').charAt(0).toUpperCase();
+        var isOwner = t.currentUserRole === 'owner';
+        var isSelf = m.userId === (state.me && state.me.id);
         var acts = '';
-        if (canInvite && m.role !== 'owner' && m.userId !== t.ownerId) {
-          acts = '<div class="acts">'
-               +   '<button data-act="role" data-mid="' + escapeHtml(m.id) + '" data-mrole="' + escapeHtml(m.role) + '">角色</button>'
-               +   '<button class="danger" data-act="remove" data-mid="' + escapeHtml(m.id) + '">移除</button>'
-               + '</div>';
+        if (m.role !== 'owner' && m.userId !== t.ownerId) {
+          acts = '<div class="acts">';
+          if (canInvite) {
+            acts += '<button data-act="role" data-mid="' + escapeHtml(m.id) + '" data-mrole="' + escapeHtml(m.role) + '">角色</button>';
+          }
+          if (isOwner && !isSelf) {
+            acts += '<button data-act="transfer" data-uid="' + escapeHtml(m.userId) + '"'
+                 +  ' data-name="' + escapeHtml(m.displayName || m.username) + '">移交</button>';
+          }
+          if (canInvite) {
+            acts += '<button class="danger" data-act="remove" data-mid="' + escapeHtml(m.id) + '">移除</button>';
+          }
+          acts += '</div>';
+          if (acts === '<div class="acts"></div>') acts = '';
         }
         return '<div class="member" data-id="' + escapeHtml(m.id) + '">'
              +   '<span class="av" style="background:var(--brand-soft);">' + escapeHtml(letter) + '</span>'
@@ -804,8 +1089,368 @@
       };
 
       document.getElementById('btnAi').onclick = function () {
-        showToast('AI 助手：稍后接入');
+        openAi();
       };
+    }
+
+    /* ================= 操作记录（审计日志） ================= */
+    var LOG_META = {
+      ai_conversation_deleted: { ic: '🤖', bg: '#EFEAFB', c: '#6B4FC0', label: '删除 AI 会话' },
+      ai_expense_applied:      { ic: '🤖', bg: '#EFEAFB', c: '#6B4FC0', label: 'AI 记账已应用' },
+      ai_itinerary_applied:    { ic: '🤖', bg: '#EFEAFB', c: '#6B4FC0', label: 'AI 行程变更已应用' },
+      booking_deleted:         { ic: '▷', bg: '#FCECE4', c: '#C1704A', label: '删除预订' },
+      document_deleted:        { ic: '▤', bg: '#EFEAFB', c: '#6B4FC0', label: '删除证件文档' },
+      expense_deleted:         { ic: '¥', bg: '#E9F8EE', c: '#2A8055', label: '删除花费' },
+      journal_deleted:         { ic: '✎', bg: '#E8F1F9', c: '#3A7FA5', label: '删除游记' },
+      member_invited:          { ic: '＋', bg: '#DCF2F0', c: '#0D6E6E', label: '邀请成员' },
+      member_removed:          { ic: '−', bg: '#FDEDF1', c: '#C2566C', label: '移除成员' },
+      owner_transferred:       { ic: '⇄', bg: '#FDF5E2', c: '#B8830F', label: '移交所有者' },
+      packing_list_deleted:    { ic: '◫', bg: '#E6F4EC', c: '#3D8B64', label: '删除打包清单' },
+      photo_deleted:           { ic: '▣', bg: '#FDEFF2', c: '#C2566C', label: '删除照片' },
+      role_changed:            { ic: '⇄', bg: '#FDF5E2', c: '#B8830F', label: '变更成员角色' },
+      settlement_confirmed:    { ic: '✓', bg: '#E9F8EE', c: '#2A8055', label: '确认结算' }
+    };
+    var LOG_PAGE_SIZE = 20;
+    var logState = { loaded: false, items: [], page: 1, totalPages: 1, loading: false };
+
+    function logMeta(action) {
+      return LOG_META[action] || { ic: '•', bg: '#F0F4F6', c: '#6E8A94', label: action || '未知操作' };
+    }
+    function whoOf(userId) {
+      var m = state.members.filter(function (x) { return x.userId === userId; })[0];
+      if (m) return m.displayName || m.username;
+      if (state.me && state.me.id === userId) return state.me.displayName || state.me.username;
+      return '某位成员';
+    }
+    function fmtTime(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      var now = new Date();
+      var sameDay = d.toDateString() === now.toDateString();
+      var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      if (sameDay) return '今天 ' + hm;
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
+    }
+    var LOG_ROLE = { owner: '所有者', admin: '管理员', member: '成员', viewer: '观察者' };
+    var LOG_BK = { flight: '机票', hotel: '酒店', train: '火车', ticket: '门票', other: '其他' };
+
+    /* 各 action 的 detail 字段并不一致，按类型解析才能给出准确文案 */
+    function logDetailText(l) {
+      var d = l.detail;
+      if (d == null) return '';
+      if (typeof d !== 'object') return String(d);
+      var role = d.role ? (LOG_ROLE[d.role] || d.role) : null;
+      var who = d.username ? '@' + d.username : null;
+
+      switch (l.action) {
+        case 'expense_deleted':
+          return [d.title, d.amount ? '¥ ' + d.amount : null].filter(Boolean).join(' · ');
+        case 'ai_expense_applied':
+          return d.amount ? String(d.amount) : '';
+        case 'ai_itinerary_applied':
+          return d.changes != null ? d.changes + ' 处变更' : '';
+        case 'booking_deleted':
+          return [d.title, d.type ? (LOG_BK[d.type] || d.type) : null].filter(Boolean).join(' · ');
+        case 'photo_deleted':
+          return d.caption || '';
+        case 'packing_list_deleted':
+          return d.name || '';
+        case 'document_deleted':
+        case 'journal_deleted':
+          return d.title || '';
+        case 'member_invited':
+        case 'member_removed':
+        case 'role_changed':
+          return [who, role].filter(Boolean).join(' · ');
+        case 'owner_transferred':
+          return [d.from ? '@' + d.from : null, d.to ? '@' + d.to : null].filter(Boolean).join(' → ');
+        case 'settlement_confirmed':
+          return [d.transfers != null ? d.transfers + ' 笔转账' : null,
+                  d.totalAmount ? '合计 ¥ ' + d.totalAmount : null].filter(Boolean).join(' · ');
+        case 'ai_conversation_deleted':
+          return '';
+        default:
+          break;
+      }
+      /* 兜底：挑几个常见的可读字段 */
+      var parts = [];
+      if (d.title) parts.push(d.title);
+      if (d.name) parts.push(d.name);
+      if (d.caption) parts.push(d.caption);
+      if (d.amount) parts.push('¥ ' + d.amount);
+      if (role) parts.push('角色 ' + role);
+      if (who) parts.push(who);
+      return parts.join(' · ');
+    }
+
+    function renderLogs() {
+      var box = document.getElementById('logList');
+      var hint = document.getElementById('logHint');
+      if (logState.loading && !logState.items.length) {
+        box.innerHTML = '<p style="padding:24px 0;text-align:center;color:var(--mute);" class="skeleton">…</p>';
+        return;
+      }
+      if (!logState.items.length) {
+        box.innerHTML = '<div class="weather-empty"><div class="ic">▤</div>还没有操作记录</div>';
+        hint.textContent = '共 0 条';
+        return;
+      }
+      hint.textContent = '共 ' + (logState.total || logState.items.length) + ' 条 · 只记录删除与权限类操作';
+      var html = logState.items.map(function (l) {
+        var m = logMeta(l.action);
+        var detail = logDetailText(l);
+        return '<div class="log">'
+             +   '<span class="li" style="background:' + m.bg + ';color:' + m.c + ';">' + m.ic + '</span>'
+             +   '<div class="lb"><div class="lt"><b>' + escapeHtml(whoOf(l.userId)) + '</b> '
+             +     escapeHtml(m.label) + '</div>'
+             +     (detail ? '<div class="ld">' + escapeHtml(detail) + '</div>' : '')
+             +   '</div>'
+             +   '<span class="lw">' + escapeHtml(fmtTime(l.createdAt)) + '</span>'
+             + '</div>';
+      }).join('');
+      if (logState.page < logState.totalPages) {
+        html += '<div class="logs-more"><button type="button" id="logMore">加载更多（'
+             +  logState.items.length + ' / ' + (logState.total || '?') + '）</button></div>';
+      }
+      box.innerHTML = html;
+      var more = document.getElementById('logMore');
+      if (more) more.onclick = function () { loadLogs(logState.page + 1); };
+    }
+
+    async function loadLogs(page) {
+      logState.loading = true;
+      renderLogs();
+      try {
+        var r = await apiGet('/trips/' + tripId + '/audit-logs?page=' + page + '&pageSize=' + LOG_PAGE_SIZE);
+        var rows = (r && r.logs) || [];
+        logState.items = page === 1 ? rows : logState.items.concat(rows);
+        logState.page = (r && r.page) || page;
+        logState.total = (r && r.total) || logState.items.length;
+        logState.totalPages = (r && r.totalPages) || 1;
+        logState.loaded = true;
+      } catch (err) {
+        document.getElementById('logList').innerHTML =
+          '<div class="weather-empty"><div class="ic">⚠</div>' + escapeHtml(humanError(err)) + '</div>';
+        return;
+      } finally {
+        logState.loading = false;
+      }
+      renderLogs();
+    }
+
+    /* ================= AI 助手 ================= */
+    var aiState = { convs: [], convId: null, messages: [], busy: false, loaded: false };
+
+    function aiEl(id) { return document.getElementById(id); }
+
+    function openAi() {
+      aiEl('aiPanel').hidden = false;
+      aiEl('aiMask').hidden = false;
+      aiEl('aiTripName').textContent = state.trip ? (state.trip.title || '') : '';
+      requestAnimationFrame(function () {
+        aiEl('aiPanel').classList.add('show');
+        aiEl('aiMask').classList.add('show');
+      });
+      document.body.style.overflow = 'hidden';
+      if (!aiState.loaded) loadConversations();
+      else renderAiMessages();
+    }
+
+    function closeAi() {
+      aiEl('aiPanel').classList.remove('show');
+      aiEl('aiMask').classList.remove('show');
+      document.body.style.overflow = '';
+      setTimeout(function () {
+        aiEl('aiPanel').hidden = true;
+        aiEl('aiMask').hidden = true;
+      }, 280);
+    }
+
+    async function loadConversations(selectId) {
+      try {
+        var r = await apiGet('/ai/conversations?tripId=' + encodeURIComponent(tripId));
+        aiState.convs = (r && r.conversations) || [];
+        aiState.loaded = true;
+      } catch (err) {
+        aiEl('aiMsgs').innerHTML = '<div class="ai-empty"><div class="ic">⚠</div><strong>读不到会话</strong><p>'
+          + escapeHtml(humanError(err)) + '</p></div>';
+        return;
+      }
+      renderConvSelect();
+      var want = selectId || (aiState.convs[0] && aiState.convs[0].id) || null;
+      if (want) await selectConversation(want);
+      else { aiState.convId = null; aiState.messages = []; renderAiMessages(); }
+    }
+
+    function renderConvSelect() {
+      var sel = aiEl('aiConvSel');
+      if (!aiState.convs.length) {
+        sel.innerHTML = '<option value="">（还没有会话）</option>';
+        sel.disabled = true;
+        aiEl('aiDel').disabled = true;
+        return;
+      }
+      sel.disabled = false;
+      aiEl('aiDel').disabled = false;
+      sel.innerHTML = aiState.convs.map(function (c) {
+        var label = c.title || '未命名会话';
+        return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(label) + '</option>';
+      }).join('');
+      if (aiState.convId) sel.value = aiState.convId;
+    }
+
+    async function selectConversation(convId) {
+      aiState.convId = convId;
+      var sel = aiEl('aiConvSel');
+      if (sel.value !== convId) sel.value = convId;
+      aiEl('aiMsgs').innerHTML = '<div class="ai-empty"><p>正在载入对话…</p></div>';
+      try {
+        var r = await apiGet('/ai/conversations/' + encodeURIComponent(convId) + '/messages?page=1&pageSize=100');
+        aiState.messages = (r && r.messages) || [];
+      } catch (err) {
+        aiEl('aiMsgs').innerHTML = '<div class="ai-empty"><div class="ic">⚠</div><strong>读不到消息</strong><p>'
+          + escapeHtml(humanError(err)) + '</p></div>';
+        return;
+      }
+      renderAiMessages();
+    }
+
+    function aiEmptyHtml() {
+      return '<div class="ai-empty">'
+        +   '<div class="ic">✦</div>'
+        +   '<strong>聊聊这段旅程</strong>'
+        +   '<p>AI 只生成「变更预览」，你点「应用」后才会写进行程或账目。</p>'
+        +   '<div class="ai-tips">'
+        +     '<button type="button" data-tip="帮我排一下第 1 天的行程，安排 3 个景点">帮我排第 1 天的行程</button>'
+        +     '<button type="button" data-tip="今天门票花了 240 元，帮我记一笔">记一笔门票花费</button>'
+        +     '<button type="button" data-tip="这段行程还有什么没准备好的？">行前还缺什么？</button>'
+        +   '</div>'
+        + '</div>';
+    }
+
+    function renderAiMessages() {
+      var box = aiEl('aiMsgs');
+      if (!aiState.messages.length) {
+        box.innerHTML = aiEmptyHtml();
+        return;
+      }
+      box.innerHTML = aiState.messages.map(function (m) {
+        var isUser = m.role === 'user';
+        var inner = escapeHtml(m.content || '');
+        if (!isUser && m.draft) inner += draftHtml(m);
+        return '<div class="ai-msg ' + (isUser ? 'user' : 'bot') + '">'
+             +   '<span class="av" aria-hidden="true">' + (isUser ? '我' : '✦') + '</span>'
+             +   '<div class="bd">' + inner + '</div>'
+             + '</div>';
+      }).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    var DRAFT_KIND = { expense: '变更预览 · 记一笔账', itinerary_change: '变更预览 · 行程调整' };
+
+    function draftHtml(m) {
+      var d = m.draft || {};
+      var status = m.draftStatus;
+      var done = status === 'applied' || status === 'discarded';
+      var html = '<div class="ai-draft' + (done ? ' done' : '') + '">';
+      html += '<div class="dh">' + escapeHtml(DRAFT_KIND[d.type] || '变更预览') + '</div>';
+      html += '<div class="db">';
+      html += '<div class="ds">' + escapeHtml(d.summary || m.content || '') + '</div>';
+      if (d.type === 'expense' && d.expense) {
+        var e = d.expense;
+        var bits = [];
+        if (e.amount) bits.push('¥ ' + e.amount);
+        if (e.category) bits.push(e.category);
+        if (e.title) bits.push(e.title);
+        if (bits.length) html += '<ul class="dlist"><li><span class="op">记账</span>' + escapeHtml(bits.join(' · ')) + '</li></ul>';
+      }
+      if (d.type === 'itinerary_change' && Array.isArray(d.changes)) {
+        html += '<ul class="dlist">' + d.changes.slice(0, 12).map(function (c) {
+          var op = c.action === 'update' ? '修改' : (c.action === 'delete' ? '删除' : '新增');
+          var txt = (c.name || c.placeId || '');
+          if (c.dayIndex != null) txt += ' · 第 ' + c.dayIndex + ' 天';
+          return '<li><span class="op">' + op + '</span>' + escapeHtml(txt) + '</li>';
+        }).join('') + '</ul>';
+      }
+      html += '</div>';
+      if (done) {
+        html += '<div class="dstat ' + (status === 'applied' ? 'ok' : 'no') + '">'
+             +  (status === 'applied' ? '✓ 已应用' : '已放弃') + '</div>';
+      } else {
+        html += '<div class="da">'
+             +   '<button type="button" class="ap" data-draft="apply" data-mid="' + escapeHtml(m.id) + '">应用</button>'
+             +   '<button type="button" class="dp" data-draft="discard" data-mid="' + escapeHtml(m.id) + '">放弃</button>'
+             + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function aiTyping(on) {
+      var box = aiEl('aiMsgs');
+      var old = box.querySelector('.ai-typing');
+      if (old) old.remove();
+      if (on) {
+        var el = document.createElement('div');
+        el.className = 'ai-msg bot ai-typing';
+        el.innerHTML = '<span class="av" aria-hidden="true">✦</span>'
+          + '<div class="bd"><span class="dot3"></span><span class="dot3"></span><span class="dot3"></span></div>';
+        box.appendChild(el);
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    async function sendAi() {
+      var input = aiEl('aiInput');
+      var text = input.value.trim();
+      if (!text) { showToast('说点什么再发送'); return; }
+      if (aiState.busy) return;
+
+      aiState.busy = true;
+      aiEl('aiGo').disabled = true;
+      input.value = '';
+      input.style.height = 'auto';
+
+      // 本地先回显用户消息，避免等待期间界面没反应
+      var optimistic = { id: 'tmp-' + Date.now(), role: 'user', content: text, draftStatus: null };
+      aiState.messages.push(optimistic);
+      renderAiMessages();
+      aiTyping(true);
+
+      try {
+        if (!aiState.convId) {
+          var created = await apiPost('/ai/conversations', { tripId: tripId, title: text.slice(0, 20) });
+          aiState.convId = created.conversation.id;
+          aiState.convs.unshift(created.conversation);
+          renderConvSelect();
+        }
+        await apiPost('/ai/conversations/' + encodeURIComponent(aiState.convId) + '/messages', { content: text });
+        await selectConversation(aiState.convId);
+      } catch (err) {
+        aiTyping(false);
+        var idx = aiState.messages.indexOf(optimistic);
+        if (idx >= 0) aiState.messages.splice(idx, 1);
+        renderAiMessages();
+        showToast(humanError(err));
+        input.value = text;
+      } finally {
+        aiState.busy = false;
+        aiEl('aiGo').disabled = false;
+      }
+    }
+
+    async function draftAction(kind, messageId, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        await apiPost('/ai/conversations/' + encodeURIComponent(aiState.convId)
+          + '/' + kind + '/' + encodeURIComponent(messageId), {});
+        showToast(kind === 'apply' ? '已应用变更' : '已放弃该草稿');
+        await selectConversation(aiState.convId);
+        if (kind === 'apply') await loadAll();   // 行程/账目变了，刷新页面数据
+      } catch (err) {
+        if (btn) btn.disabled = false;
+        showToast(humanError(err));
+      }
     }
 
     // 模块点击跳转
@@ -860,6 +1505,14 @@
           var next = cur === 'admin' ? 'member' : (cur === 'member' ? 'viewer' : 'admin');
           await apiPatch('/trips/' + tripId + '/members/' + mid + '/role', { role: next });
           showToast('已改为' + ({admin: '管理员', member: '成员', viewer: '观察者'})[next]);
+        } else if (act === 'transfer') {
+          var uid = btn.getAttribute('data-uid');
+          var nm = btn.getAttribute('data-name') || '该成员';
+          if (!confirm('把「所有者」转给 ' + nm + ' ？\n\n你会变成管理员，且无法自行改回。')) return;
+          await apiPost('/trips/' + tripId + '/transfer-owner', { targetUserId: uid });
+          showToast('已把所有者转给 ' + nm);
+          var rr = await apiGet('/trips/' + tripId);
+          if (rr && rr.trip) state.trip = rr.trip;
         }
         var r = await apiGet('/trips/' + tripId + '/members');
         state.members = (r && r.members) || [];
@@ -867,6 +1520,77 @@
       } catch (err) {
         showToast(humanError(err));
       }
+    });
+
+    // ===== AI 助手：抽屉交互 =====
+    aiEl('aiClose').onclick = closeAi;
+    aiEl('aiMask').onclick = closeAi;
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !aiEl('aiPanel').hidden) closeAi();
+    });
+
+    aiEl('aiConvSel').onchange = function () {
+      if (this.value) selectConversation(this.value);
+    };
+
+    aiEl('aiNew').onclick = async function () {
+      try {
+        var r = await apiPost('/ai/conversations', { tripId: tripId, title: '新会话' });
+        aiState.convs.unshift(r.conversation);
+        aiState.convId = r.conversation.id;
+        aiState.messages = [];
+        renderConvSelect();
+        renderAiMessages();
+        aiEl('aiInput').focus();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    };
+
+    aiEl('aiDel').onclick = async function () {
+      if (!aiState.convId) return;
+      if (!confirm('删除这个会话？对话记录将不可恢复。')) return;
+      try {
+        await apiDelete('/ai/conversations/' + encodeURIComponent(aiState.convId));
+        showToast('会话已删除');
+        aiState.convId = null;
+        aiState.messages = [];
+        await loadConversations();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    };
+
+    aiEl('aiGo').onclick = sendAi;
+
+    aiEl('aiInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendAi();
+      }
+    });
+    aiEl('aiInput').addEventListener('input', function () {
+      this.style.height = 'auto';
+      this.style.height = Math.min(130, this.scrollHeight) + 'px';
+    });
+
+    // 空态里的示例问题 → 直接填入输入框
+    aiEl('aiMsgs').addEventListener('click', function (e) {
+      var tip = e.target.closest('button[data-tip]');
+      if (tip) {
+        aiEl('aiInput').value = tip.getAttribute('data-tip');
+        aiEl('aiInput').focus();
+        return;
+      }
+      var btn = e.target.closest('button[data-draft]');
+      if (btn) draftAction(btn.getAttribute('data-draft'), btn.getAttribute('data-mid'), btn);
+    });
+
+    // ===== 操作记录：首次切到该 tab 时才拉取 =====
+    document.querySelectorAll('.tabs button').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        if (tab.getAttribute('aria-controls') === 'pane-logs' && !logState.loaded) loadLogs(1);
+      });
     });
 
     loadAll();

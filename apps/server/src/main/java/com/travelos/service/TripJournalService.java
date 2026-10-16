@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.ApiException;
 import com.travelos.entity.Photo;
 import com.travelos.entity.TripDay;
@@ -159,13 +160,13 @@ public class TripJournalService {
       throw ApiException.badRequest("只能调整当前游记已关联照片的顺序");
     }
     for (int index = 0; index < photoIds.size(); index++) {
-      TripJournalPhoto link = journalPhotoMapper.selectOne(new LambdaQueryWrapper<TripJournalPhoto>()
+      // trip_journal_photos 是复合主键（journal_id, photo_id），没有 id 列，
+      // 因此不能用 MyBatis-Plus 的 updateById（会报 Invalid bound statement），
+      // 必须按复合键 UPDATE。
+      journalPhotoMapper.update(null, new LambdaUpdateWrapper<TripJournalPhoto>()
           .eq(TripJournalPhoto::getJournalId, journalId)
-          .eq(TripJournalPhoto::getPhotoId, photoIds.get(index)));
-      if (link != null && link.getOrderIndex() != index) {
-        link.setOrderIndex(index);
-        journalPhotoMapper.updateById(link);
-      }
+          .eq(TripJournalPhoto::getPhotoId, photoIds.get(index))
+          .set(TripJournalPhoto::getOrderIndex, index));
     }
     return Map.of("journal", toJournalResponse(journal, true));
   }

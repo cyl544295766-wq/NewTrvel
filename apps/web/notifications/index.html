@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 通知中心</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -348,7 +349,7 @@
     };
     var $ = function (id) { return document.getElementById(id); };
     var PAGE_SIZE = 20;
-    var state = { items: [], total: 0, page: 1, totalPages: 1, status: 'all', type: null, trips: {} };
+    var state = { items: [], total: 0, page: 1, totalPages: 1, status: 'all', type: null, trips: {}, unreadCount: null };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -411,6 +412,7 @@
       state.total = d.total || 0;
       state.totalPages = d.totalPages || 1;
       render();
+      if (!append) refreshUnreadCount();   // 首屏顺带校正未读总数
     }
 
     async function boot() {
@@ -425,7 +427,10 @@
 
     /* ===== 渲染 ===== */
     function renderStats() {
-      var unread = state.items.filter(function (n) { return !n.isRead; }).length;
+      /* 未读数用独立接口，避免受分页影响（列表只加载了当前页） */
+      var unread = state.unreadCount != null
+        ? state.unreadCount
+        : state.items.filter(function (n) { return !n.isRead; }).length;
       var imp = state.items.filter(function (n) { return n.priority === 'high'; }).length;
       var today = state.items.filter(function (n) { return groupKey(n.createdAt) === '今天'; }).length;
       $('sUnread').textContent = unread;
@@ -433,13 +438,24 @@
       $('sToday').textContent = today;
       $('sTotal').textContent = state.total;
 
-      $('cAll').textContent = state.items.length;
+      $('cAll').textContent = state.total;
       $('cUnread').textContent = unread;
       $('cImp').textContent = imp;
 
       $('pageMeta').innerHTML = unread
         ? '有 <b>' + unread + '</b> 条未读 · 共 ' + state.total + ' 条通知'
         : '全部已读 · 共 ' + state.total + ' 条通知';
+    }
+
+    /* 未读总数：GET /notifications/unread-count */
+    async function refreshUnreadCount() {
+      try {
+        var r = await apiGet('/notifications/unread-count');
+        state.unreadCount = Number(r && r.count) || 0;
+      } catch (e) {
+        state.unreadCount = null;   // 失败则退回按已加载列表估算
+      }
+      renderStats();
     }
 
     function renderTypeFilters() {
@@ -579,6 +595,7 @@
           await apiPatch('/notifications/' + id + '/read', {});
           n.isRead = true;
           render();
+          refreshUnreadCount();
           showToast('已标记为已读');
         } catch (err) { showToast(humanError(err)); }
       }
@@ -589,7 +606,9 @@
       try {
         await apiPost('/notifications/read-all', {});
         state.items.forEach(function (n) { n.isRead = true; });
+        state.unreadCount = 0;
         render();
+        refreshUnreadCount();
         showToast('已全部标记为已读');
       } catch (err) { showToast(humanError(err)); }
     });

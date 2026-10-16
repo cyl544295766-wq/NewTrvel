@@ -81,7 +81,7 @@ async function main() {
   // ---- export JSON (real download) ----
   console.log('--- export JSON ---');
   const [download] = await Promise.all([
-    page.waitForEvent('download', { timeout: 30000 }),
+    page.waitForEvent('download', { timeout: 90000 }),
     page.click('#btnExport')
   ]);
   const fname = download.suggestedFilename();

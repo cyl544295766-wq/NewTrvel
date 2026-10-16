@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 游记阅读</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -172,6 +173,28 @@
   }
   .pb-item:hover .cap { opacity: 1; }
 
+  /* 照片顺序调整（PATCH .../photos/reorder） */
+  .pb-item .ord {
+    position: absolute; top: 8px; right: 8px; display: flex; gap: 4px;
+    opacity: 0; transition: opacity .18s;
+  }
+  .pb-item:hover .ord, .pb-item .ord:focus-within { opacity: 1; }
+  .pb-item .ord button {
+    width: 26px; height: 26px; border: none; border-radius: 8px; padding: 0;
+    background: rgba(255,255,255,.93); color: var(--brand); font-size: 13px;
+    line-height: 1; cursor: pointer; display: grid; place-items: center;
+    box-shadow: 0 2px 8px rgba(13,110,110,.18);
+  }
+  .pb-item .ord button:hover { background: #fff; }
+  .pb-item .ord button:disabled { opacity: .35; cursor: not-allowed; }
+  .pb-item .ord-n {
+    position: absolute; top: 8px; left: 8px; min-width: 20px; height: 20px; padding: 0 5px;
+    display: grid; place-items: center; border-radius: 6px;
+    background: rgba(13,110,110,.66); color: #fff; font-size: 11px; font-weight: 600;
+    opacity: 0; transition: opacity .18s;
+  }
+  .pb-item:hover .ord-n { opacity: 1; }
+
   /* 上下篇 */
   .pager { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .pager a {
@@ -307,6 +330,8 @@
     var qs = new URLSearchParams(location.search);
     var journalId = qs.get('id');
     var tripId = qs.get('trip');
+    /* 渲染上下文：照片调序后本地同步并重渲染，不必重新拉数据 */
+    var ctx = { j: null, trip: null, journals: null };
     if (!journalId) { location.replace('/trips/'); return; }
 
     /* ===== 壳 ===== */
@@ -444,6 +469,7 @@
       var photos = j.photos || [];
       var blocks = parseContent(j.content);
       var heads = blocks.filter(function (b) { return b.type === 'h'; });
+      ctx.j = j; ctx.trip = trip; ctx.journals = journals;
 
       /* 上下篇（列表按创建时间倒序，取相邻） */
       var sorted = (journals || []).slice().sort(function (a, b) {
@@ -472,9 +498,18 @@
 
       var photoBand = photos.length
         ? '<section class="photo-band">'
-          +   '<div class="bt">这一天的影像 <small>· ' + photos.length + ' 张</small></div>'
-          +   '<div class="pb-grid">' + photos.map(function (p) {
-                return '<figure class="pb-item"><img src="' + escapeHtml(p.url) + '" alt="' + escapeHtml(p.caption || '') + '" loading="lazy">'
+          +   '<div class="bt">这一天的影像 <small>· ' + photos.length + ' 张'
+          +     (photos.length > 1 ? ' · 悬停可调整顺序' : '') + '</small></div>'
+          +   '<div class="pb-grid">' + photos.map(function (p, i) {
+                return '<figure class="pb-item" data-pid="' + escapeHtml(p.id) + '">'
+                  + '<img src="' + escapeHtml(p.url) + '" alt="' + escapeHtml(p.caption || '') + '" loading="lazy">'
+                  + '<span class="ord-n">' + (i + 1) + '</span>'
+                  + '<div class="ord">'
+                  +   '<button type="button" data-mv="-1" data-pid="' + escapeHtml(p.id) + '"'
+                  +     ' aria-label="这张往前移"' + (i === 0 ? ' disabled' : '') + '>&#8592;</button>'
+                  +   '<button type="button" data-mv="1" data-pid="' + escapeHtml(p.id) + '"'
+                  +     ' aria-label="这张往后移"' + (i === photos.length - 1 ? ' disabled' : '') + '>&#8594;</button>'
+                  + '</div>'
                   + (p.caption ? '<figcaption class="cap">' + escapeHtml(p.caption) + '</figcaption>' : '')
                   + '</figure>';
               }).join('') + '</div>'
@@ -610,6 +645,38 @@
         });
       }
     }
+
+    /* ===== 照片调序（PATCH /trips/{id}/journals/{jid}/photos/reorder） ===== */
+    document.addEventListener('click', async function (e) {
+      var btn = e.target.closest('button[data-mv]');
+      if (!btn || btn.disabled) return;
+      var j = ctx.j;
+      if (!j || !j.photos || j.photos.length < 2) return;
+
+      var pid = btn.getAttribute('data-pid');
+      var delta = Number(btn.getAttribute('data-mv'));
+      var i = j.photos.findIndex(function (p) { return p.id === pid; });
+      var k = i + delta;
+      if (i < 0 || k < 0 || k >= j.photos.length) return;
+
+      var ids = j.photos.map(function (p) { return p.id; });
+      var next = ids.slice();
+      next[i] = ids[k];
+      next[k] = ids[i];
+
+      btn.disabled = true;
+      try {
+        await apiPatch('/trips/' + tripId + '/journals/' + j.id + '/photos/reorder', { photoIds: next });
+        var tmp = j.photos[i];
+        j.photos[i] = j.photos[k];
+        j.photos[k] = tmp;
+        render(j, ctx.trip, ctx.journals);
+        showToast('已调整照片顺序');
+      } catch (err) {
+        btn.disabled = false;
+        showToast(humanError(err));
+      }
+    });
 
     /* ===== 启动 ===== */
     load();

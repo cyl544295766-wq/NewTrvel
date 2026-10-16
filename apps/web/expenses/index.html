@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Travel OS · 费用记账</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -290,6 +291,40 @@
   .bd-bar .es { background: repeating-linear-gradient(45deg, #F3B596 0 4px, #FBD9C4 4px 8px); }
   .bd-row .warn-lab { font-size: 11px; color: #D2543A; margin-top: 4px; }
 
+  /* 类别预算：编辑态 */
+  .rp-card .t .rp-edit {
+    margin-left: auto; font-family: var(--grot); font-size: 12.5px; font-weight: 500;
+    color: var(--brand); background: var(--mist); border: none;
+    padding: 5px 13px; border-radius: 8px; cursor: pointer; align-self: center;
+    transition: background .16s;
+  }
+  .rp-card .t .rp-edit:hover { background: #CFEBE8; }
+  .bd-edit {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px dashed var(--line);
+  }
+  .bd-edit:last-of-type { border-bottom: none; }
+  .bd-edit .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .bd-edit .nm { font-size: 12.5px; color: var(--ink-2); width: 76px; flex: none; }
+  .bd-edit input {
+    width: 108px; flex: none; font-family: var(--grot); font-size: 13px; color: var(--ink);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 7px 10px; outline: none; text-align: right;
+    transition: border-color .16s, background .16s;
+  }
+  .bd-edit input:focus { border-color: var(--brand-soft); background: #fff; }
+  .bd-edit input::-webkit-outer-spin-button, .bd-edit input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .bd-edit .hint2 { margin-left: auto; font-size: 11.5px; color: var(--mute); text-align: right; }
+  .bd-edit-foot { display: flex; align-items: center; gap: 9px; padding-top: 15px; }
+  .bd-edit-foot .total { font-size: 12px; color: var(--mute); margin-right: auto; }
+  .bd-edit-foot .total b { color: var(--ink); font-weight: 600; font-family: var(--grot); }
+  .bd-edit-foot .total.over b { color: #D2543A; }
+  .bd-edit-foot button { border: none; cursor: pointer; font-family: var(--grot); border-radius: 9px; padding: 9px 18px; font-size: 13px; }
+  .bd-edit-foot .save { background: var(--brand); color: #fff; font-weight: 600; box-shadow: 0 4px 12px rgba(13,110,110,.22); }
+  .bd-edit-foot .save:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+  .bd-edit-foot .cancel { background: none; color: var(--ink-2); border: 1.5px solid var(--line) !important; }
+  .bd-edit-foot .cancel:hover { border-color: var(--brand-soft) !important; color: var(--brand); }
+
   /* 空态 */
   .empty-state {
     margin-top: 20px; background: #fff; border-radius: 16px; box-shadow: var(--card-shadow);
@@ -475,7 +510,9 @@
           <div id="rpMember"></div>
         </div>
         <div class="rp-card">
-          <div class="t">类别预算 <small>· 实线已花费 / 斜纹预估</small></div>
+          <div class="t">类别预算 <small>· 实线已花费 / 斜纹预估</small>
+            <button type="button" class="rp-edit" id="btnBudget">设置</button>
+          </div>
           <div id="rpBudget"></div>
         </div>
       </div>
@@ -722,6 +759,15 @@
       });
     });
 
+    // 类别预算：切换查看 / 编辑
+    var btnBudgetEl = $('btnBudget');
+    if (btnBudgetEl) {
+      btnBudgetEl.onclick = function () {
+        budgetEdit = !budgetEdit;
+        renderBudget();
+      };
+    }
+
     /* ===== 报表（手绘 SVG / DOM 条形） ===== */
     function renderReport() {
       var rep = state.report || {};
@@ -766,12 +812,13 @@
         dayBox.innerHTML = '<div class="rp-empty">记账后这里会出现每日柱状</div>';
       } else {
         var maxDay = Math.max.apply(null, byDay.map(function (x) { return Number(x.amount); }));
-        dayBox.innerHTML = '<div style="display:flex;align-items:flex-end;gap:12px;height:150px;padding:8px 4px 0;">'
+        dayBox.innerHTML = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:12px;height:150px;padding:8px 4px 0;">'
           + byDay.map(function (x) {
             var h = maxDay > 0 ? Math.max(6, Math.round(Number(x.amount) / maxDay * 120)) : 6;
-            return '<div style="flex:1;text-align:center;" title="' + escapeHtml(x.label || x.day || '') + '">'
+            /* 列宽设上限：只有一天时柱子才不会撑满整幅 */
+            return '<div style="flex:1;max-width:88px;text-align:center;" title="' + escapeHtml(x.label || x.day || '') + '">'
               + '<div style="font-size:10px;color:var(--mute);margin-bottom:4px;">' + money(x.amount).replace('¥', '') + '</div>'
-              + '<div style="height:' + h + 'px;background:linear-gradient(180deg,var(--brand-soft),var(--brand));border-radius:6px 6px 2px 2px;"></div>'
+              + '<div style="height:' + h + 'px;max-width:64px;margin:0 auto;background:linear-gradient(180deg,var(--brand-soft),var(--brand));border-radius:6px 6px 2px 2px;"></div>'
               + '<div style="font-size:10px;color:var(--mute);margin-top:5px;">' + escapeHtml(x.label || '') + '</div>'
               + '</div>';
           }).join('') + '</div>';
@@ -800,25 +847,115 @@
       }
 
       /* 类别预算 */
+      renderBudget();
+    }
+
+    /* 类别预算：查看 / 编辑两态（写接口是 PUT /trips/{id}/budget） */
+    var budgetEdit = false;
+
+    function renderBudget() {
       var bdBox = $('rpBudget');
-      var cats = (state.budget && state.budget.categories || []).filter(function (x) { return x.hasBudget || Number(x.spent) > 0 || Number(x.estimated) > 0; });
-      if (!cats.length) {
-        bdBox.innerHTML = '<div class="rp-empty">在「预算」中设置类别预算后展示</div>';
-      } else {
-        bdBox.innerHTML = cats.map(function (x) {
-          var c = catOf(x.category);
-          var bud = Number(x.budget) || 0;
-          var sp = Number(x.spent) || 0, es = Number(x.estimated) || 0;
-          var spW = bud > 0 ? Math.min(100, Math.round(sp / bud * 100)) : 0;
-          var esW = bud > 0 ? Math.min(100 - spW, Math.round(es / bud * 100)) : 0;
-          return '<div class="bd-row" style="--cc:' + c.c + ';">'
-            + '<div class="bd-top"><span class="nm">' + c.label + '</span>'
-            + '<span class="am">' + money(sp) + (bud ? ' <small>/ ' + money(bud) + (es > 0 ? ' +预估' + money(es) : '') + '</small>' : '') + '</span></div>'
-            + '<div class="bd-bar"><span class="sp" style="width:' + spW + '%"></span><span class="es" style="width:' + esW + '%"></span></div>'
-            + (x.overspent ? '<div class="warn-lab">⚠ 已超支 ' + money(sp - bud) + '</div>' : (x.warning ? '<div class="warn-lab" style="color:#B8830F;">⚠ 接近预算上限</div>' : ''))
-            + '</div>';
-        }).join('');
+      var cats = (state.budget && state.budget.categories) || [];
+
+      if (budgetEdit) {
+        $('btnBudget').hidden = true;   // 编辑态用底部「取消 / 保存」，避免歧义
+        bdBox.innerHTML = budgetEditorHtml(cats);
+        bindBudgetEditor();
+        return;
       }
+      $('btnBudget').hidden = false;
+
+      var shown = cats.filter(function (x) {
+        return x.hasBudget || Number(x.spent) > 0 || Number(x.estimated) > 0;
+      });
+      $('btnBudget').textContent = shown.length ? '调整' : '设置';
+
+      if (!shown.length) {
+        bdBox.innerHTML = '<div class="rp-empty">还没有类别预算 · 点右上角「设置」给各类别分钱</div>';
+        return;
+      }
+      bdBox.innerHTML = shown.map(function (x) {
+        var c = catOf(x.category);
+        var bud = Number(x.budget) || 0;
+        var sp = Number(x.spent) || 0, es = Number(x.estimated) || 0;
+        var spW = bud > 0 ? Math.min(100, Math.round(sp / bud * 100)) : 0;
+        var esW = bud > 0 ? Math.min(100 - spW, Math.round(es / bud * 100)) : 0;
+        return '<div class="bd-row" style="--cc:' + c.c + ';">'
+          + '<div class="bd-top"><span class="nm">' + c.label + '</span>'
+          + '<span class="am">' + money(sp) + (bud ? ' <small>/ ' + money(bud) + (es > 0 ? ' +预估' + money(es) : '') + '</small>' : '') + '</span></div>'
+          + '<div class="bd-bar"><span class="sp" style="width:' + spW + '%"></span><span class="es" style="width:' + esW + '%"></span></div>'
+          + (x.overspent ? '<div class="warn-lab">⚠ 已超支 ' + money(sp - bud) + '</div>' : (x.warning ? '<div class="warn-lab" style="color:#B8830F;">⚠ 接近预算上限</div>' : ''))
+          + '</div>';
+      }).join('');
+    }
+
+    function budgetEditorHtml(cats) {
+      if (!cats.length) return '<div class="rp-empty">类别数据加载失败</div>';
+      var rows = cats.map(function (x) {
+        var c = catOf(x.category);
+        var val = x.hasBudget ? Number(x.budget) : '';
+        var sp = Number(x.spent) || 0;
+        return '<div class="bd-edit">'
+          + '<span class="dot" style="background:' + c.c + ';"></span>'
+          + '<span class="nm">' + c.label + '</span>'
+          + '<input type="number" min="0" step="10" inputmode="decimal"'
+          +  ' data-bcat="' + x.category + '" value="' + (val === '' ? '' : val) + '"'
+          +  ' placeholder="不设" aria-label="' + c.label + ' 类别预算">'
+          + (sp > 0 ? '<span class="hint2">已花 ' + money(sp) + '</span>' : '')
+          + '</div>';
+      }).join('');
+      return rows
+        + '<div class="bd-edit-foot">'
+        +   '<span class="total" id="bdTotal"></span>'
+        +   '<button type="button" class="cancel" id="bdCancel">取消</button>'
+        +   '<button type="button" class="save" id="bdSave">保存</button>'
+        + '</div>';
+    }
+
+    function syncBudgetTotal() {
+      var sum = 0;
+      document.querySelectorAll('#rpBudget input[data-bcat]').forEach(function (i) {
+        var n = Number(i.value);
+        if (i.value.trim() !== '' && isFinite(n) && n > 0) sum += n;
+      });
+      var tripBudget = Number((state.budget && state.budget.tripBudget) || (state.trip && state.trip.budget) || 0);
+      var el = $('bdTotal');
+      if (!el) return;
+      var over = tripBudget > 0 && sum > tripBudget;
+      el.className = 'total' + (over ? ' over' : '');
+      el.innerHTML = '类别合计 <b>' + money(sum) + '</b>'
+        + (tripBudget > 0 ? ' / 行程预算 <b>' + money(tripBudget) + '</b>' + (over ? ' · 已超出' : '') : '');
+    }
+
+    function bindBudgetEditor() {
+      var box = $('rpBudget');
+      box.querySelectorAll('input[data-bcat]').forEach(function (i) {
+        i.addEventListener('input', syncBudgetTotal);
+      });
+      $('bdCancel').onclick = function () { budgetEdit = false; renderBudget(); };
+      $('bdSave').onclick = async function () {
+        var budgets = [];
+        box.querySelectorAll('input[data-bcat]').forEach(function (i) {
+          var v = i.value.trim();
+          budgets.push({ category: i.getAttribute('data-bcat'), amount: v === '' ? null : v });
+        });
+        var btn = $('bdSave');
+        btn.disabled = true;
+        try {
+          await apiPut('/trips/' + tripId + '/budget', { budgets: budgets });
+          showToast('类别预算已保存');
+          budgetEdit = false;
+          state.budget = await apiGet('/trips/' + tripId + '/expenses/budget');
+          renderBudget();
+          renderWallet();
+          renderReport();
+        } catch (err) {
+          showToast(humanError(err));
+        } finally {
+          btn.disabled = false;
+        }
+      };
+      syncBudgetTotal();
     }
 
     /* ===== 结算 ===== */
