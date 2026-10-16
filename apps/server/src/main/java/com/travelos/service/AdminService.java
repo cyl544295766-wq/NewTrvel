@@ -5,8 +5,10 @@ import com.travelos.auth.UserContext;
 import com.travelos.common.ApiException;
 import com.travelos.entity.Trip;
 import com.travelos.entity.TripJournal;
+import com.travelos.entity.AiMessage;
 import com.travelos.entity.TripExpense;
 import com.travelos.entity.User;
+import com.travelos.mapper.AiMessageMapper;
 import com.travelos.mapper.TripExpenseMapper;
 import com.travelos.mapper.TripJournalMapper;
 import com.travelos.mapper.TripMapper;
@@ -38,6 +40,7 @@ public class AdminService {
   private final TripMapper tripMapper;
   private final TripJournalMapper journalMapper;
   private final TripExpenseMapper expenseMapper;
+  private final AiMessageMapper aiMessageMapper;
   private final UserService userService;
 
   /** 服务器本地 CI 记录文件（与静态站 /ci/ 同源；本机为部署机时可直接读盘） */
@@ -50,11 +53,12 @@ public class AdminService {
 
   public AdminService(UserMapper userMapper, TripMapper tripMapper,
       TripJournalMapper journalMapper, TripExpenseMapper expenseMapper,
-      UserService userService) {
+      AiMessageMapper aiMessageMapper, UserService userService) {
     this.userMapper = userMapper;
     this.tripMapper = tripMapper;
     this.journalMapper = journalMapper;
     this.expenseMapper = expenseMapper;
+    this.aiMessageMapper = aiMessageMapper;
     this.userService = userService;
   }
 
@@ -68,13 +72,27 @@ public class AdminService {
   // ==================== 平台概览 ====================
 
   public Map<String, Object> overview() {
+    // 平台级统计需绕过「行程成员」数据范围过滤（超管看全局数字）
+    return bypassed(() -> overviewInner());
+  }
+
+  private Map<String, Object> overviewInner() {
     Long users = userMapper.selectCount(null);
     Long activeUsers = userMapper.selectCount(new LambdaQueryWrapper<User>()
         .eq(User::getStatus, "active"));
     Long trips = tripMapper.selectCount(new LambdaQueryWrapper<Trip>()
         .isNull(Trip::getDeletedAt));
     Long journals = journalMapper.selectCount(null);
-    Long expenses = expenseMapper.selectCount(null);
+    // 今日 AI 请求次数 = 今日新增的用户消息数（每次发送触发一次 AI 调用）
+    java.util.Calendar cal = java.util.Calendar.getInstance();
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
+    cal.set(java.util.Calendar.MINUTE, 0);
+    cal.set(java.util.Calendar.SECOND, 0);
+    cal.set(java.util.Calendar.MILLISECOND, 0);
+    java.util.Date todayStart = cal.getTime();
+    Long aiRequestsToday = aiMessageMapper.selectCount(new LambdaQueryWrapper<AiMessage>()
+        .eq(AiMessage::getRole, "user")
+        .ge(AiMessage::getCreatedAt, todayStart));
 
     Map<String, Object> ci = ciRuns();
     List<Map<String, Object>> runs = (List<Map<String, Object>>) ci.get("runs");
@@ -84,7 +102,7 @@ public class AdminService {
     body.put("activeUsers", activeUsers);
     body.put("trips", trips);
     body.put("journals", journals);
-    body.put("expenses", expenses);
+    body.put("aiRequestsToday", aiRequestsToday);
     body.put("ciTotalRuns", ci.get("total"));
     body.put("ciLastRun", runs.isEmpty() ? null : runs.get(0));
     return body;
@@ -172,6 +190,17 @@ public class AdminService {
     body.put("successRate", total == 0 ? null : Math.round(success * 1000.0 / total) / 10.0);
     body.put("lastRun", runs.isEmpty() ? null : runs.get(0));
     return body;
+  }
+
+  /** 绕过行程数据范围过滤执行查询（平台级统计）。 */
+  private <T> T bypassed(java.util.function.Supplier<T> action) {
+    boolean prev = com.travelos.common.TripScopeContext.isBypassed();
+    com.travelos.common.TripScopeContext.setBypassed(true);
+    try {
+      return action.get();
+    } finally {
+      com.travelos.common.TripScopeContext.setBypassed(prev);
+    }
   }
 
   private String readRunsJson() {

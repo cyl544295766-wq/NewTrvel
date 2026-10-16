@@ -298,15 +298,15 @@
       try {
         var d = await apiGet('/admin/overview');
         var last = d.ciLastRun || {};
+        var lastDeployTime = last.finished_at ? fmtTime(last.finished_at) : '暂无部署';
         $('ovStats').innerHTML =
-          '<div class="stat"><b>' + (d.users ?? '—') + '</b><span>注册用户（活跃 ' + (d.activeUsers ?? '—') + '）</span></div>'
-          + '<div class="stat"><b>' + (d.trips ?? '—') + '</b><span>行程（账本）</span></div>'
-          + '<div class="stat"><b>' + (d.journals ?? '—') + '</b><span>攻略</span></div>'
-          + '<div class="stat"><b>' + (d.expenses ?? '—') + '</b><span>花费记录</span></div>'
-          + '<div class="stat"><b>' + (d.ciTotalRuns ?? '—') + '</b><span>CI 运行次数</span></div>'
-          + '<div class="stat"><b style="font-size:15px;">#' + escapeHtml(String(last.run_number ?? '—')) + ' '
-          + (last.conclusion === 'success' ? '✅' : last.conclusion === 'failure' ? '❌' : '⏳') + '</b>'
-          + '<span>最近部署 ' + fmtTime(last.finished_at) + '</span></div>';
+          '<div class="stat"><b>' + (d.users ?? 0) + '</b><span>注册用户总数（活跃 ' + (d.activeUsers ?? 0) + '）</span></div>'
+          + '<div class="stat"><b>' + (d.trips ?? 0) + '</b><span>行程总数（所有用户）</span></div>'
+          + '<div class="stat"><b>' + (d.journals ?? 0) + '</b><span>攻略总数</span></div>'
+          + '<div class="stat"><b>' + (d.aiRequestsToday ?? 0) + '</b><span>今日 AI 请求次数</span></div>'
+          + '<div class="stat"><b>' + (d.ciTotalRuns ?? 0) + '</b><span>CI 运行总次数</span></div>'
+          + '<div class="stat"><b style="font-size:17px;">' + escapeHtml(lastDeployTime) + '</b>'
+          + '<span>最近一次部署时间' + (last.run_number ? '（#' + escapeHtml(String(last.run_number)) + '）' : '') + '</span></div>';
       } catch (err) {
         showToast(humanError(err));
       }
@@ -380,6 +380,7 @@
           d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'disabled' });
         } else if (act === 'enable') {
           d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'active' });
+        }
 
         showToast((d && d.message) || '操作成功');
         await Promise.all([loadUsers($('userKw').value.trim()), loadOverview()]);
