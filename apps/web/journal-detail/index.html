@@ -280,6 +280,65 @@
     .hero-l { padding: 24px 26px; }
     .state-box { margin: 24px; }
   }
+  /* ===== 共同编辑抽屉 ===== */
+  .edit-mask { position: fixed; inset: 0; background: rgba(13,60,60,.28); z-index: 90; }
+  .edit-mask[hidden] { display: none; }
+  .edit-drawer {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 560px; max-width: 94vw;
+    background: #fff; z-index: 91; display: flex; flex-direction: column;
+    box-shadow: -12px 0 40px rgba(13,110,110,.20);
+    transform: translateX(100%); transition: transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .edit-drawer.open { transform: none; }
+  .edit-drawer[hidden] { display: none; }
+  .edit-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px dashed #D8ECEB; background: var(--mist, #F2FAF9); flex: none;
+  }
+  .edit-head .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--ink); flex: 1; }
+  .edit-head .lock-hint { font-size: 11px; color: #2A8055; font-family: var(--grot); }
+  .edit-head .x {
+    width: 30px; height: 30px; border: none; border-radius: 8px; background: rgba(13,110,110,.08);
+    color: var(--mute); cursor: pointer; font-size: 13px;
+  }
+  .edit-body { flex: 1 1 auto; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .edit-body label { font-size: 12px; color: var(--mute); font-family: var(--grot); letter-spacing: .05em; }
+  .edit-body input[type="text"] {
+    width: 100%; font-family: var(--grot); font-size: 14.5px; font-weight: 600; color: var(--ink);
+    border: 1.5px solid #E4F1F1; border-radius: 10px; padding: 11px 13px; outline: none; margin-top: 5px;
+  }
+  .edit-body input[type="text"]:focus, .edit-body textarea:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .edit-body textarea {
+    width: 100%; min-height: 300px; font-family: var(--grot); font-size: 13.5px; line-height: 1.7; color: var(--ink);
+    border: 1.5px solid #E4F1F1; border-radius: 10px; padding: 12px 14px; outline: none; resize: vertical; margin-top: 5px;
+  }
+  .edit-foot {
+    display: flex; align-items: center; gap: 10px; padding: 13px 18px;
+    border-top: 1px dashed #D8ECEB; background: var(--mist, #F2FAF9); flex: none;
+  }
+  .edit-foot .lock-info { font-size: 11px; color: #2A8055; font-family: var(--grot); flex: 1; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 12.5px; color: #3D6A6C; background: var(--mist, #F2FAF9);
+    border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  }
+  .btn-plain:hover { background: #CDEBE9; color: var(--brand); }
+  .btn-primary-sm {
+    font-family: var(--grot); font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--brand); border: none; border-radius: 9px; padding: 9px 18px; cursor: pointer;
+  }
+  .edit-cta {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600; color: #fff;
+    background: var(--brand); border: none; border-radius: 999px; padding: 9px 18px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(13,110,110,.24); transition: transform .14s;
+  }
+  .edit-cta:hover { transform: translateY(-1px); }
+  .edit-lockbar {
+    margin-top: 14px; padding: 10px 16px; border-radius: 11px;
+    background: #FDF5E2; border: 1.5px dashed #E5C87A;
+    font-size: 12.5px; color: #8A6D1F; font-family: var(--grot);
+  }
+
   @media (max-width: 720px) {
     .shell { grid-template-columns: 1fr !important; }
     .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
@@ -336,6 +395,31 @@
     </div>
   </main>
 </div>
+
+<!-- 共同编辑抽屉 -->
+<div class="edit-mask" id="editMask" hidden></div>
+<aside class="edit-drawer" id="editDrawer" hidden aria-label="共同编辑攻略">
+  <div class="edit-head">
+    <span class="t" id="edTitle">共同编辑</span>
+    <span class="lock-hint" id="edLockHint">🔒 编辑锁已持有</span>
+    <button type="button" class="x" id="edClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="edit-body">
+    <div>
+      <label for="edName">标题</label>
+      <input type="text" id="edName" maxlength="200">
+    </div>
+    <div>
+      <label for="edContent">正文</label>
+      <textarea id="edContent" placeholder="补充你的攻略内容……"></textarea>
+    </div>
+  </div>
+  <div class="edit-foot">
+    <span class="lock-info" id="edLockInfo"></span>
+    <button type="button" class="btn-plain" id="edCancel">取消</button>
+    <button type="button" class="btn-primary-sm" id="edSave">保存</button>
+  </div>
+</aside>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -445,6 +529,7 @@
         var detail = await apiGet('/journals/' + encodeURIComponent(journalId));
         var j = detail && detail.journal;
         if (!j) throw new Error('not found');
+        window.__jvCanEdit = !!(detail.canEdit);
         var trip = detail.trip || null;
 
         /* 同行程的其他攻略（用于上/下篇翻页；无成员身份时为空，仅隐藏翻页） */
@@ -469,6 +554,96 @@
       }
     }
 
+    /* ===== 共同编辑（互斥锁：取锁 → 心跳 → 保存/释放） ===== */
+    var LOCK_TTL_SEC = 90, HEARTBEAT_SEC = 30;
+    var editState = { heartbeat: null, countdown: null, remaining: 0 };
+
+    function showToast(msg) {
+      var t = document.getElementById('toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(function () { t.style.opacity = '0'; }, 2600);
+    }
+
+    async function openEditor() {
+      // apiPost 对非 2xx 直接抛错（409 = 他人持锁 / 403 = 无编辑资格），message 已是友好文案
+      try {
+        await apiPost('/journals/' + encodeURIComponent(ctx.j.id) + '/edit-lock', {});
+      } catch (err) {
+        showToast(humanError(err));
+        return;
+      }
+      $('edTitle').textContent = '共同编辑 · ' + (ctx.j.title || '无题');
+      $('edName').value = ctx.j.title || '';
+      $('edContent').value = ctx.j.content || '';
+      $('editMask').hidden = false;
+      $('editDrawer').hidden = false;
+      requestAnimationFrame(function () { $('editDrawer').classList.add('open'); });
+      startHeartbeat();
+      $('edContent').focus();
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      editState.remaining = LOCK_TTL_SEC;
+      $('edLockInfo').textContent = '编辑锁有效期剩余 ' + editState.remaining + ' 秒（自动续期）';
+      editState.countdown = setInterval(function () {
+        editState.remaining -= 1;
+        if (editState.remaining <= 0) editState.remaining = LOCK_TTL_SEC;
+        $('edLockInfo').textContent = '编辑锁有效期剩余 ' + editState.remaining + ' 秒（自动续期）';
+      }, 1000);
+      editState.heartbeat = setInterval(async function () {
+        try {
+          await apiPost('/journals/' + encodeURIComponent(ctx.j.id) + '/edit-lock', {});
+        } catch (e) { /* 网络抖动由 TTL 兜底 */ }
+      }, HEARTBEAT_SEC * 1000);
+    }
+
+    function stopHeartbeat() {
+      if (editState.heartbeat) { clearInterval(editState.heartbeat); editState.heartbeat = null; }
+      if (editState.countdown) { clearInterval(editState.countdown); editState.countdown = null; }
+    }
+
+    async function releaseLock() {
+      try { await apiDelete('/journals/' + encodeURIComponent(ctx.j.id) + '/edit-lock'); } catch (e) {}
+      stopHeartbeat();
+    }
+
+    function closeEditor() {
+      $('editDrawer').classList.remove('open');
+      $('editMask').hidden = true;
+      $('editDrawer').hidden = true;
+      releaseLock();
+    }
+
+    async function saveEditor() {
+      var title = $('edName').value.trim();
+      var content = $('edContent').value;
+      if (!title) { showToast('标题不能为空'); return; }
+      var btn = $('edSave');
+      btn.disabled = true;
+      try {
+        await apiPatch('/journals/' + encodeURIComponent(ctx.j.id), { title: title, content: content });
+        showToast('已保存，感谢共同编辑！');
+        stopHeartbeat();
+        setTimeout(function () { location.reload(); }, 700);
+      } catch (err) {
+        showToast(humanError(err));
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('#btnCoEdit')) openEditor();
+    });
+    $('edClose').addEventListener('click', closeEditor);
+    $('edCancel').addEventListener('click', closeEditor);
+    $('editMask').addEventListener('click', closeEditor);
+    $('edSave').addEventListener('click', saveEditor);
+    window.addEventListener('beforeunload', function () { releaseLock(); });
+
     /* ===== 渲染 ===== */
     function ctxRow(k, v) {
       return '<div class="ctx-row"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
@@ -479,7 +654,7 @@
       var photos = j.photos || [];
       var blocks = parseContent(j.content);
       var heads = blocks.filter(function (b) { return b.type === 'h'; });
-      ctx.j = j; ctx.trip = trip; ctx.journals = journals;
+      ctx.j = j; ctx.trip = trip; ctx.journals = journals; ctx.canEdit = !!window.__jvCanEdit;
 
       /* 上下篇（列表按创建时间倒序，取相邻） */
       var sorted = (journals || []).slice().sort(function (a, b) {
@@ -568,6 +743,7 @@
         +         (photos.length ? '<span>🖼 <b>' + photos.length + '</b> 张照片</span>' : '')
         +         '<span>' + WD[new Date(j.createdAt).getDay()] + '</span>'
         +         (j.isDraft ? '<span style="color:#B8830F;font-weight:600;">草稿 · 未发布</span>' : '')
+        +       (ctx.canEdit ? '<button type="button" class="edit-cta" id="btnCoEdit">✎ 共同编辑这篇攻略</button>' : '')
         +       '</div>'
         +       ((dayCtx || placeCtx)
             ? '<div class="ctx-chips">'

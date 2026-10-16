@@ -1,9 +1,12 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.ApiException;
+import com.travelos.entity.FriendMessage;
 import com.travelos.entity.User;
 import com.travelos.entity.UserFriend;
+import com.travelos.mapper.FriendMessageMapper;
 import com.travelos.mapper.UserFriendMapper;
 import com.travelos.mapper.UserMapper;
 import org.springframework.stereotype.Service;
@@ -25,10 +28,13 @@ public class FriendService {
 
   private final UserFriendMapper userFriendMapper;
   private final UserMapper userMapper;
+  private final FriendMessageMapper friendMessageMapper;
 
-  public FriendService(UserFriendMapper userFriendMapper, UserMapper userMapper) {
+  public FriendService(UserFriendMapper userFriendMapper, UserMapper userMapper,
+      FriendMessageMapper friendMessageMapper) {
     this.userFriendMapper = userFriendMapper;
     this.userMapper = userMapper;
+    this.friendMessageMapper = friendMessageMapper;
   }
 
   // ==================== 搜索 ====================
@@ -239,6 +245,160 @@ public class FriendService {
     map.put("displayName", u.getDisplayName());
     map.put("relation", relation);
     return map;
+  }
+
+  // ==================== 好友聊天 ====================
+
+  /**
+   * 发送私信：仅可发送给互为好友。
+   * 统一返回 { message, unreadForReceiver }。
+   */
+  public Map<String, Object> sendMessage(String senderId, String friendId, Map<String, Object> dto) {
+    if (!isMutualFriend(senderId, friendId)) {
+      throw ApiException.forbidden("只能与互为好友的用户聊天");
+    }
+    String content = dto.get("content") == null ? "" : dto.get("content").toString().trim();
+    if (content.isEmpty()) {
+      throw ApiException.badRequest("消息内容不能为空");
+    }
+    if (content.length() > 2000) {
+      throw ApiException.badRequest("消息内容不能超过 2000 字");
+    }
+    FriendMessage msg = new FriendMessage();
+    msg.setSenderId(senderId);
+    msg.setReceiverId(friendId);
+    msg.setContent(content);
+    msg.setCreatedAt(new Date());
+    friendMessageMapper.insert(msg);
+    return Map.of("message", toMessageResponse(msg), "sentAt", msg.getCreatedAt());
+  }
+
+  /**
+   * 与某好友的聊天记录（时间升序，latest=true 取最新 pageSize 条），
+   * 同时把对方发来的消息标记为已读。统一 { friend, messages, total, unread }。
+   */
+  public Map<String, Object> chatMessages(String userId, String friendId, String pageValue,
+      String pageSizeValue, String latestValue) {
+    requireMutualFriend(userId, friendId);
+    int pageSize = Math.min(Math.max(parseInt(pageSizeValue, 50), 1), 100);
+    boolean latest = latestValue == null || "true".equalsIgnoreCase(latestValue); // 默认取最新
+    List<FriendMessage> rows = new ArrayList<>();
+    long total;
+    try {
+      total = bypassRead(() -> {
+        Long c = friendMessageMapper.selectCount(new LambdaQueryWrapper<FriendMessage>()
+            .and(q -> q.and(w -> w.eq(FriendMessage::getSenderId, userId).eq(FriendMessage::getReceiverId, friendId))
+                .or(w -> w.eq(FriendMessage::getSenderId, friendId).eq(FriendMessage::getReceiverId, userId))));
+        return c == null ? 0 : c;
+      });
+      long offset = latest ? Math.max(0, total - pageSize) : Math.max(0, (parseInt(pageValue, 1) - 1) * pageSize);
+      List<FriendMessage> page = bypassRead(() -> friendMessageMapper.selectList(
+          new LambdaQueryWrapper<FriendMessage>()
+              .and(q -> q.and(w -> w.eq(FriendMessage::getSenderId, userId).eq(FriendMessage::getReceiverId, friendId))
+                  .or(w -> w.eq(FriendMessage::getSenderId, friendId).eq(FriendMessage::getReceiverId, userId)))
+              .orderByAsc(FriendMessage::getCreatedAt)
+              .last("LIMIT " + pageSize + " OFFSET " + offset)));
+      rows.addAll(page);
+    } catch (RuntimeException ex) {
+      throw ex;
+    }
+    // 标记对方发来的消息为已读
+    bypassRead(() -> {
+      friendMessageMapper.update(null, new LambdaUpdateWrapper<FriendMessage>()
+          .eq(FriendMessage::getSenderId, friendId)
+          .eq(FriendMessage::getReceiverId, userId)
+          .isNull(FriendMessage::getReadAt)
+          .set(FriendMessage::getReadAt, new Date()));
+      return null;
+    });
+    List<Map<String, Object>> items = new ArrayList<>();
+    for (FriendMessage m : rows) {
+      items.add(toMessageResponse(m));
+    }
+    User friend = userMapper.selectById(friendId);
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("friend", friend == null ? Map.of("id", friendId) : toUserResponse(userId, friend));
+    body.put("messages", items);
+    body.put("total", total);
+    body.put("unread", 0);
+    return body;
+  }
+
+  /** 聊天列表：互为好友 + 最近一条消息 + 未读数。{ chats: [...] } */
+  public Map<String, Object> chatList(String userId) {
+    List<UserFriend> mine = userFriendMapper.selectList(new LambdaQueryWrapper<UserFriend>()
+        .eq(UserFriend::getUserId, userId));
+    List<Map<String, Object>> chats = new ArrayList<>();
+    for (UserFriend row : mine) {
+      User u = userMapper.selectById(row.getFriendId());
+      if (u == null || !"active".equals(u.getStatus())) {
+        continue;
+      }
+      if (!isMutualFriend(userId, u.getId())) {
+        continue; // 只展示互为好友的会话
+      }
+      List<FriendMessage> last = bypassRead(() -> friendMessageMapper.selectList(
+          new LambdaQueryWrapper<FriendMessage>()
+              .and(q -> q.and(w -> w.eq(FriendMessage::getSenderId, userId).eq(FriendMessage::getReceiverId, u.getId()))
+                  .or(w -> w.eq(FriendMessage::getSenderId, u.getId()).eq(FriendMessage::getReceiverId, userId)))
+              .orderByDesc(FriendMessage::getCreatedAt)
+              .last("LIMIT 1")));
+      Long unread = bypassRead(() -> friendMessageMapper.selectCount(new LambdaQueryWrapper<FriendMessage>()
+          .eq(FriendMessage::getSenderId, u.getId())
+          .eq(FriendMessage::getReceiverId, userId)
+          .isNull(FriendMessage::getReadAt)));
+      Map<String, Object> item = toUserResponse(userId, u);
+      item.put("lastMessage", last.isEmpty() ? null : last.get(0).getContent());
+      item.put("lastAt", last.isEmpty() ? null : last.get(0).getCreatedAt());
+      item.put("unread", unread == null ? 0 : unread.intValue());
+      chats.add(item);
+    }
+    chats.sort((a, b) -> {
+      Object ta = a.get("lastAt"), tb = b.get("lastAt");
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return ((java.util.Date) tb).compareTo((java.util.Date) ta);
+    });
+    return Map.of("chats", chats);
+  }
+
+  /** 未读私信总数（侧栏提醒用）。{ unread } */
+  public Map<String, Object> unreadCount(String userId) {
+    Long unread = bypassRead(() -> friendMessageMapper.selectCount(new LambdaQueryWrapper<FriendMessage>()
+        .eq(FriendMessage::getReceiverId, userId)
+        .isNull(FriendMessage::getReadAt)));
+    return Map.of("unread", unread == null ? 0 : unread.intValue());
+  }
+
+  private Map<String, Object> toMessageResponse(FriendMessage m) {
+    Map<String, Object> map = new LinkedHashMap<>();
+    map.put("id", m.getId());
+    map.put("senderId", m.getSenderId());
+    map.put("receiverId", m.getReceiverId());
+    map.put("content", m.getContent());
+    map.put("readAt", m.getReadAt());
+    map.put("createdAt", m.getCreatedAt());
+    return map;
+  }
+
+  /** 聊天记录读取不经过行程数据范围过滤（好友不是行程成员）。 */
+  private <T> T bypassRead(java.util.function.Supplier<T> action) {
+    boolean prev = com.travelos.common.TripScopeContext.isBypassed();
+    com.travelos.common.TripScopeContext.setBypassed(true);
+    try {
+      return action.get();
+    } finally {
+      com.travelos.common.TripScopeContext.setBypassed(prev);
+    }
+  }
+
+  private int parseInt(String raw, int def) {
+    try {
+      return Integer.parseInt(raw == null || raw.isBlank() ? String.valueOf(def) : raw.trim());
+    } catch (NumberFormatException ex) {
+      return def;
+    }
   }
 
   private String str(Object value) {

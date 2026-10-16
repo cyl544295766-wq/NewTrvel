@@ -51,4 +51,35 @@ public class FriendController {
       @CurrentUser UserContext user) {
     return friendService.remove(user.id(), friendId);
   }
+
+  // ==================== 好友聊天 ====================
+
+  /** 聊天会话列表（互为好友 + 最近消息 + 未读数）：{ chats: [...] } */
+  @GetMapping("/chats")
+  public Map<String, Object> chats(@CurrentUser UserContext user) {
+    return friendService.chatList(user.id());
+  }
+
+  /** 未读私信总数：{ unread } */
+  @GetMapping("/unread-count")
+  public Map<String, Object> unreadCount(@CurrentUser UserContext user) {
+    return friendService.unreadCount(user.id());
+  }
+
+  /** 与某好友的聊天记录（?latest=true 取最新 N 条，自动标记已读）。 */
+  @GetMapping("/{friendId}/messages")
+  public Map<String, Object> messages(@PathVariable String friendId,
+      @RequestParam(value = "page", required = false) String page,
+      @RequestParam(value = "pageSize", required = false) String pageSize,
+      @RequestParam(value = "latest", required = false) String latest,
+      @CurrentUser UserContext user) {
+    return friendService.chatMessages(user.id(), friendId, page, pageSize, latest);
+  }
+
+  /** 发送私信：{ content }。 */
+  @PostMapping("/{friendId}/messages")
+  public Map<String, Object> send(@PathVariable String friendId,
+      @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
+    return friendService.sendMessage(user.id(), friendId, dto);
+  }
 }

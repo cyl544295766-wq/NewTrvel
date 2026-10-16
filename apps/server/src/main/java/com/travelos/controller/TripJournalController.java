@@ -3,6 +3,7 @@ package com.travelos.controller;
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import com.travelos.trip.RequireTripRole;
+import com.travelos.service.JournalCollabService;
 import com.travelos.service.TripJournalService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,9 +22,11 @@ import java.util.Map;
 public class TripJournalController {
 
   private final TripJournalService journalService;
+  private final JournalCollabService collabService;
 
-  public TripJournalController(TripJournalService journalService) {
+  public TripJournalController(TripJournalService journalService, JournalCollabService collabService) {
     this.journalService = journalService;
+    this.collabService = collabService;
   }
 
   @GetMapping
@@ -48,6 +51,8 @@ public class TripJournalController {
   @PatchMapping("/{journalId}")
   public Map<String, Object> update(@PathVariable String tripId, @PathVariable String journalId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
+    // 共同编辑互斥：行程内保存同样必须持有编辑锁（与全局共同编辑共用一把锁）
+    collabService.requireLockHolder(journalId, user.id());
     return journalService.update(tripId, journalId, dto, user.id());
   }
 

@@ -119,8 +119,13 @@ public class TripJournalService {
     if (!canView(journal, userId)) {
       throw ApiException.forbidden("没有权限查看这篇攻略");
     }
+    boolean isAuthor = journal.getAuthorId() != null && journal.getAuthorId().equals(userId);
+    boolean canEdit = isAuthor
+        || (!Boolean.TRUE.equals(journal.getIsDraft())
+            && friendService.isMutualFriend(journal.getAuthorId(), userId));
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("journal", toJournalResponse(journal, true));
+    body.put("canEdit", canEdit);
     Trip trip = bypassed(() -> tripMapper.selectById(journal.getTripId()));
     if (trip != null) {
       Map<String, Object> tripMap = new LinkedHashMap<>();
@@ -130,6 +135,77 @@ public class TripJournalService {
       body.put("trip", tripMap);
     }
     return body;
+  }
+
+  /** 按 ID 加载攻略（bypass，供共同编辑等跨成员场景使用；不存在抛 404）。 */
+  public TripJournal requireJournalGlobal(String journalId) {
+    return bypassed(() -> {
+      TripJournal journal = journalMapper.selectById(journalId);
+      if (journal == null) {
+        throw ApiException.notFound("攻略不存在");
+      }
+      return journal;
+    });
+  }
+
+  /**
+   * 全局更新（共同编辑入口，不要求行程成员身份）：
+   *   - 编辑资格：作者或互为好友（且对该攻略可见）；
+   *   - 互斥约束：必须持有该攻略的编辑锁（JournalCollabService.requireLockHolder）；
+   *   - 可见性/名单仅作者可改；草稿状态仅作者可改。
+   */
+  @Transactional
+  public Map<String, Object> updateGlobally(String journalId, Map<String, Object> dto, String userId) {
+    TripJournal journal = requireJournalGlobal(journalId);
+    boolean isAuthor = journal.getAuthorId() != null && journal.getAuthorId().equals(userId);
+    requireEditor(journal, userId);
+    if (dto.containsKey("title") && dto.get("title") != null) {
+      journal.setTitle(normalizeTitle(string(dto.get("title"))));
+    }
+    if (dto.containsKey("content") && dto.get("content") != null) {
+      journal.setContent(validateContent(string(dto.get("content"))));
+    }
+    if (dto.containsKey("mood")) {
+      journal.setMood(validateMood(optionalString(dto.get("mood"))));
+    }
+    if (isAuthor) {
+      if (dto.containsKey("isDraft") && dto.get("isDraft") != null) {
+        journal.setIsDraft(Boolean.parseBoolean(dto.get("isDraft").toString()));
+      }
+      if (dto.containsKey("visibility") && dto.get("visibility") != null) {
+        journal.setVisibility(normalizeVisibility(dto.get("visibility")));
+      }
+    }
+    journal.setUpdatedAt(new Date());
+    bypassed(() -> {
+      journalMapper.updateById(journal);
+      return null;
+    });
+    if (isAuthor && dto.containsKey("photoIds")) {
+      List<String> photoIds = validatePhotos(journal.getTripId(), stringList(dto.get("photoIds")));
+      saveJournalPhotos(journalId, photoIds);
+    }
+    if (isAuthor && (dto.containsKey("visibility") || dto.containsKey("visibleFriendIds"))) {
+      String visibility = journal.getVisibility() == null ? "private" : journal.getVisibility();
+      if ("specified".equals(visibility)) {
+        saveAudience(journalId, normalizeAudience(journal.getAuthorId(), stringList(dto.get("visibleFriendIds"))));
+      } else {
+        saveAudience(journalId, List.of());
+      }
+    }
+    return Map.of("journal", toJournalResponse(journal, true));
+  }
+
+  private void requireEditor(TripJournal journal, String userId) {
+    boolean isAuthor = journal.getAuthorId() != null && journal.getAuthorId().equals(userId);
+    if (isAuthor) {
+      return;
+    }
+    boolean canView = canView(journal, userId);
+    boolean mutual = friendService.isMutualFriend(journal.getAuthorId(), userId);
+    if (!(canView && mutual)) {
+      throw ApiException.forbidden("只有作者与互为好友（且对 TA 可见）的用户可以共同编辑这篇攻略");
+    }
   }
 
   // ==================== 可见性 ====================

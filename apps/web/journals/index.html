@@ -837,8 +837,17 @@
       state.visFriends = (journal && journal.visibleFriendIds) ? journal.visibleFriendIds.slice() : [];
       loadMyFriends().then(renderVisPick);
       renderVisPick();
-      DRM.hidden = false;
-      DR.hidden = false;
+      /* 共同编辑互斥：编辑已有攻略必须先取得编辑锁（作者同样遵守） */
+      if (journal) {
+        acquireLock(journal.id).then(function (okLock) {
+          if (!okLock) return; // 409 已提示持有人
+          DRM.hidden = false;
+          DR.hidden = false;
+        });
+      } else {
+        DRM.hidden = false;
+        DR.hidden = false;
+      }
     }
     function syncDraftLab() {
       var on = $('drDraftToggle').classList.contains('on');
@@ -847,7 +856,50 @@
         : (on ? '存为草稿' : '保存并发布');
       $('drDraftLab').textContent = on ? '先存为草稿' : '直接发布';
     }
-    function closeDrawer() { DR.hidden = true; DRM.hidden = true; state.editing = null; }
+    /* ===== 编辑锁（互斥）：取锁/续期/释放 ===== */
+    var lockState = { heartbeat: null, journalId: null };
+
+    async function acquireLock(journalId) {
+      try {
+        var r = await apiPost('/journals/' + encodeURIComponent(journalId) + '/edit-lock', {});
+        if (r.status === 200) {
+          lockState.journalId = journalId;
+          startHeartbeat();
+          return true;
+        }
+        showToast(r.message || '其他好友正在编辑，请稍后再试');
+        return false;
+      } catch (err) {
+        showToast(humanError(err));
+        return false;
+      }
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      lockState.heartbeat = setInterval(async function () {
+        if (!lockState.journalId) return;
+        try { await apiPost('/journals/' + encodeURIComponent(lockState.journalId) + '/edit-lock', {}); }
+        catch (e) { /* TTL 兜底 */ }
+      }, 30000);
+    }
+
+    function stopHeartbeat() {
+      if (lockState.heartbeat) { clearInterval(lockState.heartbeat); lockState.heartbeat = null; }
+    }
+
+    async function releaseLock() {
+      stopHeartbeat();
+      if (!lockState.journalId) return;
+      try { await apiDelete('/journals/' + encodeURIComponent(lockState.journalId) + '/edit-lock'); } catch (e) {}
+      lockState.journalId = null;
+    }
+
+    function closeDrawer() {
+      DR.hidden = true; DRM.hidden = true;
+      if (state.editing) releaseLock(); // 编辑模式关闭 → 释放锁
+      state.editing = null;
+    }
 
     /* ===== 好友与公开攻略流 ===== */
     async function loadFeed() {
@@ -955,6 +1007,7 @@
           await apiPost('/trips/' + tripId + '/journals', body);
           showToast(isDraft ? '草稿已保存' : '游记已发布');
         }
+        await releaseLock(); // 保存成功 → 释放编辑锁（closeDrawer 也会兜底）
         closeDrawer();
         await load();
       } catch (err) { showToast(humanError(err)); }
