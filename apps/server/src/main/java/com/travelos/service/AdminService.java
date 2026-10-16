@@ -128,20 +128,9 @@ public class AdminService {
         "disabled".equals(status) ? "已禁用账户「" + target.getUsername() + "」" : "已启用账户「" + target.getUsername() + "」");
   }
 
-  /** 角色调整：user / super_admin；不可操作自己，防止误降级唯一超管。 */
-  public Map<String, Object> updateRole(String operatorId, String targetId, String role) {
-    if (!"user".equals(role) && !"super_admin".equals(role)) {
-      throw ApiException.badRequest("角色仅支持 user / super_admin");
-    }
-    User target = requireTarget(operatorId, targetId);
-    target.setRole(role);
-    target.setUpdatedAt(new Date());
-    userMapper.updateById(target);
-    return Map.of("success", true, "message",
-        "super_admin".equals(role) ? "已将「" + target.getUsername() + "」提升为超级管理员"
-            : "已将「" + target.getUsername() + "」降为普通用户");
-  }
+  // ==================== CI / 部署状态集成 ====================
 
+  /** 目标用户校验：不能操作自己、用户须存在、不能修改其他超级管理员。 */
   private User requireTarget(String operatorId, String targetId) {
     if (operatorId.equals(targetId)) {
       throw ApiException.badRequest("不能修改自己的账户状态/角色");
@@ -155,8 +144,6 @@ public class AdminService {
     }
     return target;
   }
-
-  // ==================== CI / 部署状态集成 ====================
 
   /**
    * 读取部署服务器的 CI 运行记录（/ci/runs.json）：

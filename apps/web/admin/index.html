@@ -355,9 +355,7 @@
             acts += u.status === 'active'
               ? '<button type="button" class="btn-plain danger" data-act="disable" data-uid="' + escapeHtml(u.id) + '">禁用</button>'
               : '<button type="button" class="btn-plain" data-act="enable" data-uid="' + escapeHtml(u.id) + '">启用</button>';
-            acts += u.role === 'super_admin'
-              ? ''
-              : '<button type="button" class="btn-plain" data-act="promote" data-uid="' + escapeHtml(u.id) + '">设为超管</button>';
+
           }
           return '<tr>'
             + '<td><b>' + escapeHtml(u.displayName || u.username) + '</b> <span class="mono">@' + escapeHtml(u.username) + '</span>'
@@ -382,10 +380,7 @@
           d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'disabled' });
         } else if (act === 'enable') {
           d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/status', { status: 'active' });
-        } else if (act === 'promote') {
-          if (!confirm('将该用户提升为超级管理员？TA 将拥有平台全部管理权限。')) return;
-          d = await apiPatch('/admin/users/' + encodeURIComponent(uid) + '/role', { role: 'super_admin' });
-        }
+
         showToast((d && d.message) || '操作成功');
         await Promise.all([loadUsers($('userKw').value.trim()), loadOverview()]);
       } catch (err) {

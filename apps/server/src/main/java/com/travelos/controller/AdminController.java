@@ -51,15 +51,6 @@ public class AdminController {
         dto.get("status") == null ? "" : dto.get("status").toString());
   }
 
-  /** 角色调整：{ role: "user" | "super_admin" }。 */
-  @PatchMapping("/users/{userId}/role")
-  public Map<String, Object> updateRole(@PathVariable String userId,
-      @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
-    adminService.requireSuperAdmin(user);
-    return adminService.updateRole(user.id(), userId,
-        dto.get("role") == null ? "" : dto.get("role").toString());
-  }
-
   /** CI / 部署状态（集成服务器 /ci/ 的 runs.json 数据）。 */
   @GetMapping("/ci/runs")
   public Map<String, Object> ciRuns(@CurrentUser UserContext user) {

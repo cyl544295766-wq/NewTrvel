@@ -60,14 +60,12 @@ async function main() {
   const self = await api('PATCH', '/api/admin/users/' + adm.json.user.id + '/status', { status: 'disabled' }, T0);
   check(self.status === 400 && /不能修改自己/.test(self.message), '不能修改自己 → 400');
   const promoSelf = await api('PATCH', '/api/admin/users/' + adm.json.user.id + '/role', { role: 'user' }, T0);
-  check(promoSelf.status === 400, '不能降级自己 → 400');
+  check(promoSelf.status === 404, '降级接口已移除（无法自降/制造角色变更）→ 404');
+  // 超级管理员只能是 admin 账号：角色授予接口已整体移除（PATCH /role → 404）
   const promo = await api('PATCH', '/api/admin/users/' + idN + '/role', { role: 'super_admin' }, T0);
-  check(promo.status === 200 && /超级管理员/.test(promo.message), '提升为超级管理员');
-  const demoteOther = await api('PATCH', '/api/admin/users/' + idN + '/status', { status: 'disabled' }, T0);
-  check(demoteOther.status === 403 && /不能修改其他超级管理员/.test(demoteOther.message), '不能修改其他超管 → 403');
-  const roleBack = await api('PATCH', '/api/admin/users/' + idN + '/role', { role: 'user' }, T0);
-  // 注意：此时 idN 已是 super_admin，接口禁止修改其他超管 → 需要它自己操作？改为预期 403
-  check(roleBack.status === 403, '其他超管不可被修改（含降级）→ 403');
+  check(promo.status === 404, '角色授予接口已移除（PATCH /role → 404，无法制造第二个超管）');
+  const normRole = users[0].role;
+  check(normRole === 'user', '普通用户角色恒为 user，不存在第二个超管');
 
   console.log('\n=== 5. 清理 ===');
   // 临时普通用户：由超管禁用后无法登录；直接由其注销需要登录 —— 改为 DB 外清理：注销接口需登录，
