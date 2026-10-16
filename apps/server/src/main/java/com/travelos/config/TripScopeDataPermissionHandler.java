@@ -15,7 +15,7 @@ import java.util.Set;
  * - trips 按 id、其余 trip 属下表按 trip_id 注入「当前用户是该行程成员」子查询；
  *   packing_items / trip_expense_shares / trip_journal_photos 无 trip_id，
  *   通过父表嵌套子查询过滤；
- * - notifications 按 user_id = 当前用户过滤；
+ * - notifications / user_preferences 按 user_id = 当前用户过滤；
  * - users / trip_members / audit_logs / system_settings / trip_journal_photos 等
  *   不适合成员过滤的表忽略（trip_members 的跨成员管理操作由手写校验覆盖，
  *   详见《数据隔离改造清单.md》第三阶段记录）；
@@ -55,6 +55,9 @@ public class TripScopeDataPermissionHandler implements MultiDataPermissionHandle
       return parse("id IN " + memberSubquery);
     }
     if (tableName.equals("notifications")) {
+      return parse("user_id = '" + userId + "'");
+    }
+    if (tableName.equals("user_preferences")) {
       return parse("user_id = '" + userId + "'");
     }
     if (NESTED_PACKING_ITEM.contains(tableName)) {

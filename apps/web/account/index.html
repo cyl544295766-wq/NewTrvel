@@ -180,6 +180,31 @@
   .sw.on::after { transform: translateX(18px); }
   .sw.locked { opacity: .6; cursor: not-allowed; }
 
+  /* 修改密码内联表单 */
+  .pwd-form {
+    margin: 4px 0 4px 62px; padding: 16px 18px;
+    background: var(--mist, #F2FAF9); border: 1.5px dashed #B9DEDC; border-radius: 12px;
+    max-width: 640px;
+  }
+  .pwd-form[hidden] { display: none; }
+  .pf-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .pf-hint { font-size: 12px; color: #D2543A; margin-top: 8px; min-height: 16px; }
+  .pf-hint.ok { color: #2A8055; }
+  .pf-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+
+  /* 通知偏好 2×2 开关 */
+  .notif-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin-top: 8px; }
+  .nf { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .nf .sw { width: 36px; height: 20px; }
+  .nf .sw::after { width: 14px; height: 14px; top: 3px; left: 3px; }
+  .nf .sw.on::after { transform: translateX(16px); }
+  .nf .sw:hover { background: #C4DBD9; }
+  .nf .sw.on:hover { background: #9CC8C6; }
+  @media (max-width: 720px) {
+    .pf-grid { grid-template-columns: 1fr; }
+    .pwd-form { margin-left: 0; }
+  }
+
   /* 危险区表单 */
   .danger-form { display: flex; flex-direction: column; gap: 14px; max-width: 460px; }
   .confirm-line { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; line-height: 1.6; }
@@ -260,7 +285,7 @@
         <a href="#sec-profile">账户资料</a>
         <a href="#sec-security">安全与登录</a>
         <a href="#sec-data">数据管理</a>
-        <a href="#sec-pref">偏好与显示<span class="nn">待接入</span></a>
+        <a href="#sec-pref">偏好与显示</a>
         <a href="#sec-danger">危险区</a>
       </nav>
 
@@ -303,11 +328,26 @@
           <div class="row-item">
             <span class="ri-ic" style="background:#FDF5E2;color:#B8830F;">🔒</span>
             <div class="ri-main">
-              <div class="ri-t">修改密码 <span class="pill-soon">待后端接入</span></div>
-              <div class="ri-d">后端目前没有提供修改密码接口，表单已保留但不可提交。</div>
+              <div class="ri-t">修改密码</div>
+              <div class="ri-d">修改后当前设备保持登录；其他已登录设备在令牌到期（7 天）前仍可继续使用。</div>
             </div>
-            <div class="ri-act"><button type="button" class="btn-plain" disabled>修改密码</button></div>
+            <div class="ri-act"><button type="button" class="btn-plain" id="btnChangePwd">修改密码</button></div>
           </div>
+          <form class="pwd-form" id="pwdForm" hidden>
+            <div class="pf-grid">
+              <div class="fld"><label for="pfOld">当前密码</label>
+                <input type="password" id="pfOld" autocomplete="current-password" placeholder="输入现在的密码"></div>
+              <div class="fld"><label for="pfNew">新密码</label>
+                <input type="password" id="pfNew" autocomplete="new-password" placeholder="至少 8 位，含字母和数字"></div>
+              <div class="fld"><label for="pfNew2">确认新密码</label>
+                <input type="password" id="pfNew2" autocomplete="new-password" placeholder="再输入一次新密码"></div>
+            </div>
+            <div class="pf-hint" id="pfHint"></div>
+            <div class="pf-actions">
+              <button type="button" class="btn-plain" id="pfCancel">取消</button>
+              <button type="button" class="btn-primary-sm" id="pfSave" disabled>确认修改</button>
+            </div>
+          </form>
         </section>
 
         <!-- 数据管理 -->
@@ -331,34 +371,58 @@
           </div>
         </section>
 
-        <!-- 偏好（待接入） -->
+        <!-- 偏好 -->
         <section class="card" id="sec-pref">
-          <div class="ct">偏好与显示 <span class="pill-soon">待后端接入</span></div>
-          <div class="notice">
-            <span>⚠</span>
-            <span>这些偏好需要服务端保存（当前后端没有用户设置接口），所以控件已置灰、不会提交。等接口就绪后可直接启用。</span>
+          <div class="ct">偏好与显示 <small>· 保存到你的账户，所有设备同步</small>
+            <span style="margin-left:auto;"><button type="button" class="btn-primary-sm" id="btnSavePref" disabled>保存偏好</button></span>
           </div>
           <div class="grid3">
-            <div class="fld"><label>主题</label>
-              <select disabled><option>跟随系统</option><option>浅色</option><option>深色</option></select></div>
-            <div class="fld"><label>时区</label>
-              <select disabled><option>Asia/Shanghai (UTC+8)</option><option>Asia/Tokyo (UTC+9)</option></select></div>
-            <div class="fld"><label>距离单位</label>
-              <select disabled><option>公里 km</option><option>英里 mi</option></select></div>
-            <div class="fld"><label>默认货币</label>
-              <select disabled><option>CNY ¥ 人民币</option><option>USD $ 美元</option><option>EUR € 欧元</option></select></div>
-            <div class="fld"><label>日期格式</label>
-              <select disabled><option>2026年7月24日</option><option>2026/07/24</option><option>07/24/2026</option></select></div>
-            <div class="fld"><label>一周起始日</label>
-              <select disabled><option>周一</option><option>周日</option></select></div>
+            <div class="fld"><label for="prTheme">主题</label>
+              <select id="prTheme">
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select></div>
+            <div class="fld"><label for="prTimezone">时区</label>
+              <select id="prTimezone">
+                <option value="Asia/Shanghai">Asia/Shanghai (UTC+8)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                <option value="UTC">UTC</option>
+              </select></div>
+            <div class="fld"><label for="prUnit">距离单位</label>
+              <select id="prUnit">
+                <option value="km">公里 km</option>
+                <option value="mi">英里 mi</option>
+              </select></div>
+            <div class="fld"><label for="prCurrency">默认货币</label>
+              <select id="prCurrency">
+                <option value="CNY">CNY ¥ 人民币</option>
+                <option value="USD">USD $ 美元</option>
+                <option value="EUR">EUR € 欧元</option>
+              </select></div>
+            <div class="fld"><label for="prDateFmt">日期格式</label>
+              <select id="prDateFmt">
+                <option value="cn">2026年7月24日</option>
+                <option value="slash">2026/07/24</option>
+                <option value="us">07/24/2026</option>
+              </select></div>
+            <div class="fld"><label for="prWeekStart">一周起始日</label>
+              <select id="prWeekStart">
+                <option value="mon">周一</option>
+                <option value="sun">周日</option>
+              </select></div>
           </div>
           <div class="row-item" style="margin-top:8px;">
             <span class="ri-ic" style="background:#FDEFF2;color:#C2566C;">🔔</span>
             <div class="ri-main">
               <div class="ri-t">通知偏好</div>
-              <div class="ri-d">行前提醒 / 文档到期 / 成员邀请 / 每周摘要 —— 目前所有提醒都由后端默认规则触发。</div>
+              <div class="notif-grid">
+                <label class="nf"><span class="sw" data-ns="notifyTrip"></span>行前提醒</label>
+                <label class="nf"><span class="sw" data-ns="notifyDocument"></span>文档到期</label>
+                <label class="nf"><span class="sw" data-ns="notifyMember"></span>成员邀请</label>
+                <label class="nf"><span class="sw" data-ns="notifySummary"></span>每周摘要</label>
+              </div>
             </div>
-            <div class="ri-act"><span class="sw on locked" title="待后端接入"></span></div>
           </div>
         </section>
 
@@ -584,7 +648,144 @@
       }
     });
 
+    /* ===== 修改密码 ===== */
+    var pwdOpen = false;
+    $('btnChangePwd').addEventListener('click', function () {
+      pwdOpen = !pwdOpen;
+      $('pwdForm').hidden = !pwdOpen;
+      if (pwdOpen) { $('pfOld').focus(); }
+    });
+    $('pfCancel').addEventListener('click', function () {
+      pwdOpen = false;
+      $('pwdForm').hidden = true;
+      ['pfOld', 'pfNew', 'pfNew2'].forEach(function (id) { $(id).value = ''; });
+      $('pfHint').textContent = '';
+      $('pfSave').disabled = true;
+    });
+
+    function pwdPolicyOk(v) {
+      return v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v);
+    }
+    function syncPwdForm() {
+      var hint = $('pfHint');
+      hint.className = 'pf-hint';
+      var n1 = $('pfNew').value, n2 = $('pfNew2').value;
+      var allFilled = $('pfOld').value && n1 && n2;
+      if (!allFilled) {
+        $('pfSave').disabled = true;
+        hint.textContent = n1 && !pwdPolicyOk(n1) ? '新密码至少 8 位，且须同时包含字母和数字' : '';
+        return;
+      }
+      if (!pwdPolicyOk(n1)) {
+        $('pfSave').disabled = true;
+        hint.textContent = '新密码至少 8 位，且须同时包含字母和数字';
+        return;
+      }
+      if (n1 !== n2) {
+        $('pfSave').disabled = true;
+        hint.textContent = '两次输入的新密码不一致';
+        return;
+      }
+      if (n1 === $('pfOld').value) {
+        $('pfSave').disabled = true;
+        hint.textContent = '新密码不能与当前密码相同';
+        return;
+      }
+      $('pfSave').disabled = false;
+      hint.textContent = '密码符合要求';
+      hint.className = 'pf-hint ok';
+    }
+    ['pfOld', 'pfNew', 'pfNew2'].forEach(function (id) {
+      $(id).addEventListener('input', syncPwdForm);
+    });
+
+    $('pfSave').addEventListener('click', async function () {
+      var b = $('pfSave');
+      b.disabled = true; b.textContent = '正在提交…';
+      try {
+        await apiPost('/auth/password', { oldPassword: $('pfOld').value, newPassword: $('pfNew').value });
+        showToast('密码已修改');
+        $('pfCancel').click();
+      } catch (err) {
+        showToast(humanError(err));
+      }
+      b.textContent = '确认修改';
+      syncPwdForm();
+    });
+
+    /* ===== 偏好与显示 ===== */
+    var prefDirty = false;
+    var PREF_SELECTS = ['prTheme', 'prTimezone', 'prUnit', 'prCurrency', 'prDateFmt', 'prWeekStart'];
+    var PREF_SW = Array.prototype.slice.call(document.querySelectorAll('.sw[data-ns]'));
+
+    function markPrefDirty() {
+      prefDirty = true;
+      $('btnSavePref').disabled = false;
+      $('btnSavePref').textContent = '保存偏好';
+    }
+    PREF_SELECTS.forEach(function (id) {
+      $(id).addEventListener('change', markPrefDirty);
+    });
+    PREF_SW.forEach(function (sw) {
+      sw.addEventListener('click', function () {
+        sw.classList.toggle('on');
+        markPrefDirty();
+      });
+    });
+
+    async function loadPreferences() {
+      try {
+        var d = await apiGet('/auth/preferences');
+        var p = (d && d.preferences) || {};
+        $('prTheme').value = p.theme || 'system';
+        $('prTimezone').value = p.timezone || 'Asia/Shanghai';
+        $('prUnit').value = p.distanceUnit || 'km';
+        $('prCurrency').value = p.currency || 'CNY';
+        $('prDateFmt').value = p.dateFormat || 'cn';
+        $('prWeekStart').value = p.weekStart || 'mon';
+        PREF_SW.forEach(function (sw) {
+          sw.classList.toggle('on', p[sw.getAttribute('data-ns')] !== false);
+        });
+        prefDirty = false;
+        $('btnSavePref').disabled = true;
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    $('btnSavePref').addEventListener('click', async function () {
+      var b = $('btnSavePref');
+      b.disabled = true; b.textContent = '正在保存…';
+      try {
+        await apiPut('/auth/preferences', {
+          theme: $('prTheme').value,
+          timezone: $('prTimezone').value,
+          distanceUnit: $('prUnit').value,
+          currency: $('prCurrency').value,
+          dateFormat: $('prDateFmt').value,
+          weekStart: $('prWeekStart').value,
+          notifyTrip: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyTrip'; })[0].classList.contains('on'),
+          notifyDocument: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyDocument'; })[0].classList.contains('on'),
+          notifyMember: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyMember'; })[0].classList.contains('on'),
+          notifySummary: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifySummary'; })[0].classList.contains('on')
+        });
+        prefDirty = false;
+        showToast('偏好已保存');
+      } catch (err) {
+        showToast(humanError(err));
+        b.disabled = false;
+      }
+      b.textContent = prefDirty ? '保存偏好' : '已保存';
+      if (!prefDirty) { setTimeout(function () { b.textContent = '保存偏好'; }, 1600); }
+    });
+
+    /* 离开页面时若有未保存改动，给出提示 */
+    window.addEventListener('beforeunload', function (e) {
+      if (prefDirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+
     loadMe();
+    loadPreferences();
   })();
 </script>
 </body>

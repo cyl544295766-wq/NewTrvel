@@ -1,4 +1,4 @@
-// Verify account: profile from /me / export JSON download / disabled-prefs honesty / danger gating / logout
+// Verify account: profile from /me / export JSON download / change password / preferences load+save+persist / danger gating / logout
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
@@ -60,21 +60,105 @@ async function main() {
   if (navLinks !== 5) bail('subnav expected 5 links, got ' + navLinks);
   console.log('subnav OK: 5 links');
 
-  // security: logout present, change-password disabled + badge
+  // security: logout present, change-password enabled with inline form
   if (!(await page.locator('#btnLogout').count())) bail('logout button missing');
-  const cpBtn = page.locator('#sec-security .row-item', { hasText: '修改密码' }).locator('button');
-  if (!(await cpBtn.isDisabled())) bail('change-password button should be disabled (no backend)');
+  const cpBtn = page.locator('#btnChangePwd');
+  if (await cpBtn.isDisabled()) bail('change-password button should be enabled now');
   const soonBadges = await page.locator('.pill-soon').count();
-  if (soonBadges < 3) bail('expected >=3 待接入 badges, got ' + soonBadges);
-  console.log('security OK: logout available, change-password disabled +', soonBadges, 'badges');
+  if (soonBadges !== 1) bail('expected exactly 1 待接入 badge (导入), got ' + soonBadges);
+  console.log('security OK: change-password enabled, 导入 badge remains');
 
-  // prefs: all selects disabled + notice
-  const disabledSelects = await page.locator('#sec-pref select:disabled').count();
-  if (disabledSelects !== 6) bail('prefs expected 6 disabled selects, got ' + disabledSelects);
-  if (!(await page.locator('#sec-pref .notice').count())) bail('prefs notice missing');
-  const lockedSw = await page.locator('#sec-pref .sw.locked').count();
-  if (lockedSw !== 1) bail('locked notification switch missing');
-  console.log('prefs OK: 6 disabled selects + notice + locked switch');
+  // ---- change password flow (real API, restores admin123 at the end) ----
+  console.log('--- change password ---');
+  await cpBtn.click();
+  if (!(await page.locator('#pwdForm').isVisible())) bail('password form did not open');
+  await page.fill('#pfOld', 'admin123');
+  await page.fill('#pfNew', 'weak');
+  await page.fill('#pfNew2', 'weak');
+  if (!(await page.locator('#pfSave').isDisabled())) bail('weak new password should keep save disabled');
+  const hintWeak = (await page.locator('#pfHint').textContent()).trim();
+  if (!/至少 8 位/.test(hintWeak)) bail('weak-password hint wrong: ' + hintWeak);
+  await page.fill('#pfNew', 'admin123');
+  await page.fill('#pfNew2', 'admin123');
+  const hintSame = (await page.locator('#pfHint').textContent()).trim();
+  if (!/不能与当前密码相同/.test(hintSame)) bail('same-password hint wrong: ' + hintSame);
+  await page.fill('#pfNew', 'NewPass999');
+  await page.fill('#pfNew2', 'NewPass999');
+  if (await page.locator('#pfSave').isDisabled()) bail('valid form should enable save');
+  await page.click('#pfSave');
+  await page.waitForFunction(() => document.getElementById('pwdForm').hidden === true, { timeout: 8000 })
+    .catch(() => bail('password form did not collapse after save'));
+  // verify via API: old password rejected, new accepted, then change back
+  const badLogin = await fetch(ORIGIN + '/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin123' })
+  });
+  if (badLogin.status !== 400) bail('old password should be rejected after change, got ' + badLogin.status);
+  const newLogin = await fetch(ORIGIN + '/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'NewPass999' })
+  });
+  if (newLogin.status !== 200) bail('login with new password failed: ' + newLogin.status);
+  const newTok = (await newLogin.json()).token;
+  const back = await fetch(ORIGIN + '/api/auth/password', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + newTok, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oldPassword: 'NewPass999', newPassword: 'admin123' })
+  });
+  if (back.status !== 200) bail('restore admin123 failed: ' + back.status);
+  console.log('change password OK (weak/same hints, real change, restored admin123)');
+
+  // ---- preferences: enabled selects populated from API, save + persist + restore ----
+  console.log('--- preferences ---');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('hpName').textContent !== '…', { timeout: 8000 });
+  await page.waitForTimeout(600);
+  const enabledSelects = await page.locator('#sec-pref select:enabled').count();
+  if (enabledSelects !== 6) bail('prefs expected 6 enabled selects, got ' + enabledSelects);
+  if (await page.locator('#sec-pref .notice').count()) bail('prefs notice should be gone');
+  const nfSw = await page.locator('#sec-pref .sw[data-ns]').count();
+  if (nfSw !== 4) bail('expected 4 notification switches, got ' + nfSw);
+  if (!(await page.locator('#btnSavePref').isDisabled())) bail('save button should start disabled');
+  const prefsApi = await (await fetch(ORIGIN + '/api/auth/preferences', {
+    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  const p0 = prefsApi.preferences;
+  const themeVal = await page.locator('#prTheme').inputValue();
+  if (themeVal !== p0.theme) bail('theme select not populated from API: ' + themeVal + ' vs ' + p0.theme);
+  const swOn = await page.locator('#sec-pref .sw[data-ns="notifyTrip"].on').count();
+  if (p0.notifyTrip && swOn !== 1) bail('notifyTrip switch should be on');
+  console.log('prefs load OK:', p0.theme, p0.currency, '| switches 4');
+  // edit: theme→dark, unit→mi, summary on
+  await page.selectOption('#prTheme', 'dark');
+  await page.selectOption('#prUnit', 'mi');
+  await page.locator('.sw[data-ns="notifySummary"]').click();
+  if (await page.locator('#btnSavePref').isDisabled()) bail('save should enable after edits');
+  await page.click('#btnSavePref');
+  await page.waitForTimeout(700);
+  const saved = await (await fetch(ORIGIN + '/api/auth/preferences', {
+    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  if (saved.preferences.theme !== 'dark' || saved.preferences.distanceUnit !== 'mi' || saved.preferences.notifySummary !== true) {
+    bail('saved prefs wrong: ' + JSON.stringify(saved.preferences));
+  }
+  // reload → persisted in UI
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('hpName').textContent !== '…', { timeout: 8000 });
+  await page.waitForTimeout(600);
+  if ((await page.locator('#prTheme').inputValue()) !== 'dark') bail('theme not persisted in UI after reload');
+  if ((await page.locator('.sw[data-ns="notifySummary"]').getAttribute('class')).includes('on') !== true) {
+    bail('notifySummary not persisted in UI');
+  }
+  // restore defaults
+  await page.selectOption('#prTheme', p0.theme === 'dark' ? 'system' : p0.theme);
+  await page.selectOption('#prUnit', p0.distanceUnit === 'mi' ? 'km' : p0.distanceUnit);
+  await page.locator('.sw[data-ns="notifySummary"]').click();
+  await page.click('#btnSavePref');
+  await page.waitForTimeout(700);
+  const restored = await (await fetch(ORIGIN + '/api/auth/preferences', {
+    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  if (restored.preferences.theme === 'dark' || restored.preferences.distanceUnit === 'mi' || restored.preferences.notifySummary === true) {
+    bail('restore failed: ' + JSON.stringify(restored.preferences));
+  }
+  console.log('prefs OK: load/edit/save/persist/restore, now =', restored.preferences.theme, restored.preferences.distanceUnit);
+  await page.screenshot({ path: path.join(SHOTS, 'prefs.png'), fullPage: true });
 
   await page.screenshot({ path: path.join(SHOTS, 'account.png'), fullPage: true });
 

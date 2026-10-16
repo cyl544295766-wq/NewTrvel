@@ -120,6 +120,31 @@ public class AuthService {
         Map.of("username", user.getUsername()));
   }
 
+  /**
+   * 修改密码：验证当前密码 → 校验新密码规则 → 拒绝与当前相同 → BCrypt 保存。
+   * 已签发的 JWT 在有效期内仍然可用（无状态令牌），其他设备不会被强制下线。
+   */
+  @Transactional
+  public void changePassword(UserContext currentUser, String oldPassword, String newPassword) {
+    User user = userService.findById(currentUser.id());
+    if (user == null) {
+      throw ApiException.unauthorized("Unauthorized");
+    }
+    if (!passwordEncoder.matches(oldPassword == null ? "" : oldPassword, user.getPasswordHash())) {
+      throw ApiException.badRequest("当前密码不正确");
+    }
+    if (!isPasswordValid(newPassword)) {
+      throw ApiException.badRequest("新密码至少 8 位，且须同时包含字母和数字");
+    }
+    if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+      throw ApiException.badRequest("新密码不能与当前密码相同");
+    }
+    user.setPasswordHash(passwordEncoder.encode(newPassword));
+    userService.updateUser(user);
+    auditService.record(user.getId(), null, "password_changed", "user", user.getId(),
+        Map.of("username", user.getUsername()));
+  }
+
   public Map<String, Object> getMe(UserContext currentUser) {
     User user = userService.findById(currentUser.id());
     if (user == null) {
