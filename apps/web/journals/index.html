@@ -202,6 +202,13 @@
     font-family: var(--slab); font-weight: 700; font-size: 10.5px; letter-spacing: .12em;
     color: #8A9BA5; border: 2px solid #8A9BA5; border-radius: 7px; padding: 2px 7px; flex: none;
   }
+
+  .vis-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: var(--grot); font-size: 10.5px; font-weight: 600;
+    color: #3D6A6C; background: #EDF6F5; border: 1px solid #C9E8E6;
+    border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+  }
   .jc-ex {
     font-size: 13px; color: var(--ink-2); line-height: 1.75;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -263,6 +270,31 @@
     padding: 8px 15px; cursor: pointer; transition: all .14s;
   }
   .mood-pick button[aria-pressed="true"] { color: var(--mc); background: var(--mb); border-color: var(--mc); font-weight: 600; }
+
+  /* 可见性四选一 */
+  .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .vis-pick button {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--grot); font-size: 12.5px; color: var(--ink-2);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 7px 13px; cursor: pointer; transition: all .14s;
+  }
+  .vis-pick button[aria-pressed="true"] { color: var(--brand); background: #E5F5F1; border-color: var(--brand); font-weight: 600; }
+  .vis-friend-tip { font-size: 11.5px; color: var(--mute); margin: 8px 0 6px; }
+  .vis-friend-list { display: flex; gap: 8px; flex-wrap: wrap; max-height: 130px; overflow: auto; }
+  .vis-friend-list button {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--grot); font-size: 12px; color: var(--ink-2);
+    background: var(--cloud); border: 1.5px solid var(--line); border-radius: 999px;
+    padding: 6px 12px; cursor: pointer; transition: all .14s;
+  }
+  .vis-friend-list button.on { color: var(--brand); background: #E5F5F1; border-color: var(--brand); font-weight: 600; }
+
+  .feed-head { margin-top: 34px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .feed-head .fh-t { font-family: var(--slab); font-weight: 600; font-size: 19px; color: var(--brand); }
+  .feed-head .fh-d { font-size: 12px; color: var(--mute); }
+  #feedGrid .j-card { cursor: pointer; }
+  #feedGrid .jc-un { font-size: 11px; color: var(--mute); font-family: var(--grot); }
 
   .photo-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-height: 210px; overflow: auto; }
   .pp {
@@ -411,6 +443,15 @@
     <section class="j-grid" id="jGrid" aria-label="游记列表">
       <p style="grid-column:1/-1;padding:44px 0;text-align:center;color:var(--mute);" id="loading">正在加载游记…</p>
     </section>
+
+    <!-- 好友与公开攻略（跨行程，按对方设置的可见性分享给你的部分） -->
+    <section id="feedSec" hidden aria-label="好友与公开攻略">
+      <div class="feed-head">
+        <span class="fh-t">👥 好友与公开的攻略</span>
+        <span class="fh-d">来自其他行程、按对方设置的可见性分享给你的攻略</span>
+      </div>
+      <div class="j-grid" id="feedGrid"></div>
+    </section>
   </main>
 </div>
 
@@ -429,6 +470,19 @@
     <div>
       <label>心情</label>
       <div class="mood-pick" id="drMoods"></div>
+    </div>
+    <div>
+      <label>谁可以看</label>
+      <div class="vis-pick" id="drVis" role="group" aria-label="可见性">
+        <button type="button" data-v="public" aria-pressed="false">🌐 公开</button>
+        <button type="button" data-v="friends" aria-pressed="false">👥 好友可见</button>
+        <button type="button" data-v="specified" aria-pressed="false">👤 指定好友</button>
+        <button type="button" data-v="private" aria-pressed="true">🔒 私有</button>
+      </div>
+      <div id="drVisFriends" hidden>
+        <div class="vis-friend-tip">勾选可以查看这篇攻略的好友（互为好友）：</div>
+        <div class="vis-friend-list" id="drVisFriends"></div>
+      </div>
     </div>
     <div>
       <label for="drContent">正文</label>
@@ -512,7 +566,8 @@
       return null;
     }
     var $ = function (id) { return document.getElementById(id); };
-    var state = { trip: null, journals: [], photos: [], stateFilter: 'all', moodFilter: null, editing: null, picked: [] };
+    var state = { trip: null, journals: [], photos: [], stateFilter: 'all', moodFilter: null, editing: null, picked: [],
+      vis: 'private', visFriends: [], myFriends: [] };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -629,6 +684,7 @@
         +       '<span>✎ <b>' + wordCount(j.content).toLocaleString('zh-CN') + '</b> 字</span>'
         +       '<span>🖼 <b>' + photos.length + '</b> 张照片</span>'
         +       (j.isDraft ? '<span style="color:#B8830F;font-weight:600;">草稿</span>' : '')
+        +       visBadge(j)
         +     '</div>'
         +     (photos.length ? '<div class="hero-photos">' + photosHtml(photos, 4) + '</div>' : '')
         +   '</div>'
@@ -661,6 +717,7 @@
         +     '<span class="mood-dot">' + m.ic + '</span>'
         +     '<span class="jc-title">' + escapeHtml(j.title || '无题') + '</span>'
         +     (j.isDraft ? '<span class="draft-badge">DRAFT</span>' : '')
+        +     visBadge(j)
         +   '</div>'
         +   '<p class="jc-ex">' + escapeHtml((j.content || '').slice(0, 140)) + '</p>'
         +   (photos.length ? '<div class="jc-photos">' + photosHtml(photos, 3) + '</div>' : '')
@@ -719,6 +776,17 @@
       $('drMoods').querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
       if (!already) b.setAttribute('aria-pressed', 'true');
     });
+    var VIS_META = {
+      public:    { label: '公开',     icon: '🌐' },
+      friends:   { label: '好友可见', icon: '👥' },
+      specified: { label: '指定好友', icon: '👤' },
+      private:   { label: '私有',     icon: '🔒' }
+    };
+    function visBadge(j) {
+      var v = VIS_META[j.visibility || 'private'] || VIS_META.private;
+      return '<span class="vis-badge" title="可见性：' + v.label + '">' + v.icon + ' ' + v.label + '</span>';
+    }
+
     function curMood() {
       var on = $('drMoods').querySelector('button[aria-pressed="true"]');
       return on ? on.getAttribute('data-mood') : null;
@@ -764,6 +832,10 @@
       $('drDraftToggle').classList.toggle('on', draft);
       syncDraftLab();
       renderPhotoPick();
+      state.vis = journal ? (journal.visibility || 'private') : 'private';
+      state.visFriends = (journal && journal.visibleFriendIds) ? journal.visibleFriendIds.slice() : [];
+      loadMyFriends().then(renderVisPick);
+      renderVisPick();
       DRM.hidden = false;
       DR.hidden = false;
     }
@@ -775,6 +847,77 @@
       $('drDraftLab').textContent = on ? '先存为草稿' : '直接发布';
     }
     function closeDrawer() { DR.hidden = true; DRM.hidden = true; state.editing = null; }
+
+    /* ===== 好友与公开攻略流 ===== */
+    async function loadFeed() {
+      try {
+        var d = await apiGet('/journals/feed');
+        var me = (getCurrentUser() || {}).id;
+        var items = (d.journals || []).filter(function (j) {
+          return j.authorId && j.authorId !== me;   // 自己的攻略已在上方行程列表中
+        });
+        $('feedSec').hidden = items.length === 0;
+        $('feedGrid').innerHTML = items.map(function (j) {
+          var m = moodOf(j.mood) || { c: '#0D6E6E', bg: '#DCF2F0', ic: '📖', label: '记录' };
+          return ''
+            + '<article class="j-card" data-fjid="' + escapeHtml(j.id) + '" style="--mc:' + m.c + ';--mb:' + m.bg + ';" '
+            + 'title="来自「' + escapeHtml(j.tripTitle || '其他行程') + '」的分享">'
+            +   '<div class="jc-head">'
+            +     '<span class="mood-dot">' + m.ic + '</span>'
+            +     '<span class="jc-title">' + escapeHtml(j.title || '无题') + '</span>'
+            +     visBadge(j)
+            +   '</div>'
+            +   '<p class="jc-ex">' + escapeHtml((j.content || '').slice(0, 140)) + '</p>'
+            +   '<div class="jc-foot"><span class="jc-un">✈ ' + escapeHtml(j.tripTitle || '其他行程')
+            +     ' · ' + fmtDate(j.createdAt) + '</span></div>'
+            + '</article>';
+        }).join('');
+      } catch (e) { /* feed 失败不打断主列表 */ }
+    }
+
+    $('feedGrid').addEventListener('click', function (e) {
+      var card = e.target.closest('[data-fjid]');
+      if (card) location.href = '/journal-detail/?id=' + encodeURIComponent(card.getAttribute('data-fjid'));
+    });
+
+    /* ===== 可见性：public/friends/private/specified + 指定好友选择 ===== */
+    function renderVisPick() {
+      $('drVis').querySelectorAll('button[data-v]').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute('data-v') === state.vis ? 'true' : 'false');
+      });
+      var box = $('drVisFriends');
+      box.hidden = state.vis !== 'specified';
+      if (state.vis !== 'specified') return;
+      if (!state.myFriends.length) {
+        box.innerHTML = '<div class="vis-friend-tip">还没有互为好友 —— 去「好友」页面添加后，就能指定好友查看了</div>';
+        return;
+      }
+      box.innerHTML = state.myFriends.map(function (u) {
+        var on = state.visFriends.indexOf(u.id) >= 0;
+        return '<button type="button" class="' + (on ? 'on' : '') + '" data-vf="' + escapeHtml(u.id) + '">'
+          + (on ? '✓ ' : '') + escapeHtml(u.displayName || u.username) + '</button>';
+      }).join('');
+    }
+    $('drVis').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-v]');
+      if (!b) return;
+      state.vis = b.getAttribute('data-v');
+      renderVisPick();
+    });
+    $('drVisFriends').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-vf]');
+      if (!b) return;
+      var id = b.getAttribute('data-vf');
+      var idx = state.visFriends.indexOf(id);
+      if (idx >= 0) state.visFriends.splice(idx, 1); else state.visFriends.push(id);
+      renderVisPick();
+    });
+    async function loadMyFriends() {
+      try {
+        var d = await apiGet('/friends');
+        state.myFriends = (d.friends || []).filter(function (u) { return u.relation === 'mutual'; });
+      } catch (e) { state.myFriends = []; }
+    }
 
     $('drDraftSw').addEventListener('click', function () {
       $('drDraftToggle').classList.toggle('on');
@@ -795,7 +938,12 @@
       if (!title) { $('drName').focus(); showToast('请先写个标题'); return; }
       if (!content) { $('drContent').focus(); showToast('正文还是空的'); return; }
       var isDraft = $('drDraftToggle').classList.contains('on');
-      var body = { title: title, content: content, mood: curMood(), isDraft: isDraft, photoIds: state.picked };
+      if (state.vis === 'specified' && !state.visFriends.length) {
+        showToast('指定好友可见时，请至少勾选一位好友'); return;
+      }
+      var body = { title: title, content: content, mood: curMood(), isDraft: isDraft,
+        photoIds: state.picked, visibility: state.vis };
+      if (state.vis === 'specified') body.visibleFriendIds = state.visFriends;
       var b = $('drSave');
       b.disabled = true;
       try {
@@ -840,7 +988,8 @@
       location.href = '/journal-detail/?id=' + encodeURIComponent(id) + '&trip=' + encodeURIComponent(tripId);
     });
 
-    /* ===== 启动 ===== */
+    /* ===== 启动 ===== */    /* ===== 启动 ===== */loadFeed();
+
     load();
   })();
 </script>

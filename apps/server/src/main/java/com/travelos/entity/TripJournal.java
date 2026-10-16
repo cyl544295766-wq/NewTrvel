@@ -30,6 +30,9 @@ public class TripJournal {
   @TableField("is_draft")
   private Boolean isDraft;
 
+  /** 可见性：public 公开 / friends 好友可见 / private 私有 / specified 指定好友可见 */
+  private String visibility;
+
   private String mood;
 
   /** 作者（数据隔离行级属主） */
@@ -54,6 +57,9 @@ public class TripJournal {
   public void setTitle(String title) { this.title = title; }
   public String getContent() { return content; }
   public void setContent(String content) { this.content = content; }
+  public String getVisibility() { return visibility; }
+  public void setVisibility(String visibility) { this.visibility = visibility; }
+
   public Boolean getIsDraft() { return isDraft; }
   public void setIsDraft(Boolean isDraft) { this.isDraft = isDraft; }
   public String getMood() { return mood; }

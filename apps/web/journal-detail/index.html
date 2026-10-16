@@ -439,39 +439,31 @@
     /* ===== 加载 ===== */
     async function load() {
       try {
-        var listUrl = tripId ? ('/trips/' + tripId + '/journals') : null;
-        var results = await Promise.allSettled([
-          listUrl ? apiGet(listUrl) : Promise.resolve(null),
-          tripId ? apiGet('/trips/' + tripId) : Promise.resolve(null)
-        ]);
-        var journals = (results[0].status === 'fulfilled' && results[0].value) ? (results[0].value.journals || []) : [];
-        var trip = (results[1].status === 'fulfilled' && results[1].value) ? results[1].value.trip : null;
-
-        /* 列表里没有 tripId 时，反查一次：先取全量 trips 找含此篇的行程 */
-        if (!tripId) {
-          var all = await apiGet('/trips');
-          var trips = (all && all.trips) || [];
-          for (var i = 0; i < trips.length; i++) {
-            try {
-              var ls = await apiGet('/trips/' + trips[i].id + '/journals');
-              var found = (ls.journals || []).some(function (j) { return j.id === journalId; });
-              if (found) { tripId = trips[i].id; journals = ls.journals || []; trip = trips[i]; break; }
-            } catch (e) { /* 继续找 */ }
-          }
-        }
-
-        /* 单篇详情（含照片） */
-        var detail = await apiGet('/trips/' + tripId + '/journals/' + journalId);
+        /* 全局详情端点：按可见性规则校验（作者/公开/好友/指定好友均可获取），
+           非成员读者也能看到被授权分享的攻略；同时带回行程概要用于面包屑 */
+        var detail = await apiGet('/journals/' + encodeURIComponent(journalId));
         var j = detail && detail.journal;
         if (!j) throw new Error('not found');
+        var trip = detail.trip || null;
+
+        /* 同行程的其他攻略（用于上/下篇翻页；无成员身份时为空，仅隐藏翻页） */
+        var journals = [];
+        try {
+          var ls = await apiGet('/trips/' + j.tripId + '/journals');
+          journals = (ls && ls.journals) || [];
+        } catch (e) { /* 非成员读者没有行程列表权限，跳过翻页 */ }
 
         render(j, trip, journals);
       } catch (err) {
+        var isForbidden = /权限/.test(String(err && err.message));
         $('pageBody').innerHTML = ''
           + '<div class="state-box">'
           +   '<div class="ic">🚫</div>'
-          +   '<div class="t">找不到这篇游记</div>'
-          +   '<div class="d">它可能已被删除，或你没有访问权限 · <a href="/trips/">回到我的旅行</a></div>'
+          +   '<div class="t">' + (isForbidden ? '没有权限查看这篇攻略' : '找不到这篇游记') + '</div>'
+          +   '<div class="d">' + (isForbidden
+              ? '这篇攻略可能是私有的，或仅作者的好友可见'
+              : '它可能已被删除，或你没有访问权限')
+          + ' · <a href="/trips/">回到我的旅行</a> · <a href="/friends/">去添加好友</a></div>'
           + '</div>';
       }
     }

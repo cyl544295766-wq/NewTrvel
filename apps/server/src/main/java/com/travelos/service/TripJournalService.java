@@ -3,15 +3,20 @@ package com.travelos.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.ApiException;
+import com.travelos.common.TripScopeContext;
 import com.travelos.entity.Photo;
+import com.travelos.entity.Trip;
 import com.travelos.entity.TripDay;
 import com.travelos.entity.TripJournal;
+import com.travelos.entity.TripJournalAudience;
 import com.travelos.entity.TripJournalPhoto;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.PhotoMapper;
 import com.travelos.mapper.TripDayMapper;
+import com.travelos.mapper.TripJournalAudienceMapper;
 import com.travelos.mapper.TripJournalMapper;
 import com.travelos.mapper.TripJournalPhotoMapper;
+import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,30 +28,39 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 @Service
 public class TripJournalService {
 
   private static final Set<String> MOODS = Set.of("happy", "excited", "tired", "sad", "relaxed");
+  private static final Set<String> VISIBILITIES = Set.of("public", "friends", "private", "specified");
 
   private final TripJournalMapper journalMapper;
   private final TripJournalPhotoMapper journalPhotoMapper;
+  private final TripJournalAudienceMapper audienceMapper;
   private final PhotoMapper photoMapper;
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
+  private final TripMapper tripMapper;
   private final TripMemberService tripMemberService;
+  private final FriendService friendService;
   private final AuditService auditService;
 
   public TripJournalService(TripJournalMapper journalMapper,
-      TripJournalPhotoMapper journalPhotoMapper, PhotoMapper photoMapper,
-      TripDayMapper tripDayMapper, TripPlaceMapper tripPlaceMapper,
-      TripMemberService tripMemberService, AuditService auditService) {
+      TripJournalPhotoMapper journalPhotoMapper, TripJournalAudienceMapper audienceMapper,
+      PhotoMapper photoMapper, TripDayMapper tripDayMapper, TripPlaceMapper tripPlaceMapper,
+      TripMapper tripMapper, TripMemberService tripMemberService, FriendService friendService,
+      AuditService auditService) {
     this.journalMapper = journalMapper;
     this.journalPhotoMapper = journalPhotoMapper;
+    this.audienceMapper = audienceMapper;
     this.photoMapper = photoMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
+    this.tripMapper = tripMapper;
     this.tripMemberService = tripMemberService;
+    this.friendService = friendService;
     this.auditService = auditService;
   }
 
@@ -55,14 +69,137 @@ public class TripJournalService {
     List<TripJournal> journals = journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
         .eq(TripJournal::getTripId, tripId)
         .orderByDesc(TripJournal::getCreatedAt));
+    // 可见性过滤：私有仅作者、好友仅互为好友、指定仅名单内；草稿仅作者可见
     return Map.of("journals", journals.stream()
+        .filter(journal -> canView(journal, userId))
         .map(journal -> toJournalResponse(journal, true))
         .toList());
   }
 
   public Map<String, Object> findOne(String tripId, String journalId, String userId) {
-    requireTripMember(tripId, userId);
-    return Map.of("journal", toJournalResponse(requireJournal(tripId, journalId), true));
+    TripJournal journal = requireJournal(tripId, journalId);
+    if (!canView(journal, userId)) {
+      throw ApiException.forbidden("没有权限查看这篇攻略");
+    }
+    return Map.of("journal", toJournalResponse(journal, true));
+  }
+
+  /**
+   * 全局可见攻略流：跨行程返回当前用户按可见性规则能看到的所有攻略，
+   * 用于好友/公开攻略的发现（作者自己的草稿也会出现在这里）。
+   */
+  public Map<String, Object> feed(String userId) {
+    return bypassed(() -> {
+      List<TripJournal> all = journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
+          .orderByDesc(TripJournal::getCreatedAt));
+      List<Map<String, Object>> items = new ArrayList<>();
+      for (TripJournal journal : all) {
+        if (!canView(journal, userId)) {
+          continue;
+        }
+        Map<String, Object> item = toJournalResponse(journal, false);
+        Trip trip = tripMapper.selectById(journal.getTripId());
+        if (trip == null || trip.getDeletedAt() != null) {
+          continue; // 行程已删除的攻略不出现在攻略流
+        }
+        item.put("tripTitle", trip.getTitle());
+        item.put("tripDestination", trip.getDestination());
+        items.add(item);
+      }
+      return Map.of("journals", items);
+    });
+  }
+
+  /** 全局单篇详情（不要求行程成员身份），按可见性规则校验。 */
+  public Map<String, Object> findGlobally(String journalId, String userId) {
+    TripJournal journal = bypassed(() -> journalMapper.selectById(journalId));
+    if (journal == null) {
+      throw ApiException.notFound("攻略不存在");
+    }
+    if (!canView(journal, userId)) {
+      throw ApiException.forbidden("没有权限查看这篇攻略");
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("journal", toJournalResponse(journal, true));
+    Trip trip = bypassed(() -> tripMapper.selectById(journal.getTripId()));
+    if (trip != null) {
+      Map<String, Object> tripMap = new LinkedHashMap<>();
+      tripMap.put("id", trip.getId());
+      tripMap.put("title", trip.getTitle());
+      tripMap.put("destination", trip.getDestination());
+      body.put("trip", tripMap);
+    }
+    return body;
+  }
+
+  // ==================== 可见性 ====================
+
+  /** 可见性判定（data-permission 过滤会干扰跨行程读取，统一在 bypass 中执行查询）。 */
+  public boolean canView(TripJournal journal, String viewerId) {
+    if (journal.getAuthorId() != null && journal.getAuthorId().equals(viewerId)) {
+      return true; // 作者本人
+    }
+    if (Boolean.TRUE.equals(journal.getIsDraft())) {
+      return false; // 草稿仅作者可见
+    }
+    String visibility = journal.getVisibility() == null ? "private" : journal.getVisibility();
+    return bypassed(() -> switch (visibility) {
+      case "public" -> true; // 公开：所有人可见
+      case "friends" -> friendService.isMutualFriend(journal.getAuthorId(), viewerId); // 好友可见
+      case "specified" -> audienceIds(journal.getId()).contains(viewerId); // 指定好友可见
+      default -> false; // 私有：仅自己
+    });
+  }
+
+  private String normalizeVisibility(Object raw) {
+    String value = raw == null ? "private" : raw.toString().trim();
+    if (!VISIBILITIES.contains(value)) {
+      throw ApiException.badRequest("不支持的可见性设置");
+    }
+    return value;
+  }
+
+  /** 指定好友名单：只保留与作者是互为好友的用户（防越权指定）。 */
+  private List<String> normalizeAudience(String authorId, List<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      throw ApiException.badRequest("指定好友可见时，请至少选择一位好友");
+    }
+    List<String> valid = userIds.stream().distinct()
+        .filter(id -> friendService.isMutualFriend(authorId, id))
+        .toList();
+    if (valid.isEmpty()) {
+      throw ApiException.badRequest("所选用户均不是你的好友，请先添加好友");
+    }
+    return valid;
+  }
+
+  private void saveAudience(String journalId, List<String> userIds) {
+    audienceMapper.delete(new LambdaQueryWrapper<TripJournalAudience>()
+        .eq(TripJournalAudience::getJournalId, journalId));
+    for (String userId : userIds) {
+      TripJournalAudience row = new TripJournalAudience();
+      row.setJournalId(journalId);
+      row.setUserId(userId);
+      row.setCreatedAt(new Date());
+      audienceMapper.insert(row);
+    }
+  }
+
+  private List<String> audienceIds(String journalId) {
+    return audienceMapper.selectList(new LambdaQueryWrapper<TripJournalAudience>()
+            .eq(TripJournalAudience::getJournalId, journalId))
+        .stream().map(TripJournalAudience::getUserId).toList();
+  }
+
+  /** 绕过行程数据范围过滤执行查询（好友/公开可见的读者不是行程成员）。 */
+  private <T> T bypassed(Supplier<T> action) {
+    boolean prev = TripScopeContext.isBypassed();
+    TripScopeContext.setBypassed(true);
+    try {
+      return action.get();
+    } finally {
+      TripScopeContext.setBypassed(prev);
+    }
   }
 
   @Transactional
@@ -82,10 +219,15 @@ public class TripJournalService {
     journal.setIsDraft(dto.get("isDraft") == null || Boolean.parseBoolean(dto.get("isDraft").toString()));
     // 作者以当前登录用户为准，禁止信任前端传入的 authorId 等字段
     journal.setAuthorId(userId);
+    String visibility = normalizeVisibility(dto.get("visibility"));
+    journal.setVisibility(visibility);
     journal.setCreatedAt(new Date());
     journal.setUpdatedAt(new Date());
     journalMapper.insert(journal);
     saveJournalPhotos(journal.getId(), photoIds);
+    if ("specified".equals(visibility)) {
+      saveAudience(journal.getId(), normalizeAudience(userId, stringList(dto.get("visibleFriendIds"))));
+    }
     return Map.of("journal", toJournalResponse(journal, true));
   }
 
@@ -121,12 +263,24 @@ public class TripJournalService {
     if (dto.containsKey("isDraft") && dto.get("isDraft") != null) {
       journal.setIsDraft(Boolean.parseBoolean(dto.get("isDraft").toString()));
     }
+    if (dto.containsKey("visibility") && dto.get("visibility") != null) {
+      journal.setVisibility(normalizeVisibility(dto.get("visibility")));
+    }
     journal.setUpdatedAt(new Date());
     journalMapper.updateById(journal);
 
     if (dto.containsKey("photoIds")) {
       List<String> photoIds = validatePhotos(tripId, stringList(dto.get("photoIds")));
       saveJournalPhotos(journalId, photoIds);
+    }
+    if (dto.containsKey("visibility") || dto.containsKey("visibleFriendIds")) {
+      String visibility = journal.getVisibility() == null ? "private" : journal.getVisibility();
+      if ("specified".equals(visibility)) {
+        // 名单以作者的好友关系为基准（owner/admin 代改时同样只能指定作者的好友）
+        saveAudience(journalId, normalizeAudience(journal.getAuthorId(), stringList(dto.get("visibleFriendIds"))));
+      } else {
+        saveAudience(journalId, List.of()); // 非指定模式清空名单
+      }
     }
     return Map.of("journal", toJournalResponse(journal, true));
   }
@@ -138,6 +292,8 @@ public class TripJournalService {
     tripMemberService.requireOwnerOrManager(tripId, journal.getAuthorId(), userId, "作者");
     journalPhotoMapper.delete(new LambdaQueryWrapper<TripJournalPhoto>()
         .eq(TripJournalPhoto::getJournalId, journalId));
+    audienceMapper.delete(new LambdaQueryWrapper<TripJournalAudience>()
+        .eq(TripJournalAudience::getJournalId, journalId));
     journalMapper.deleteById(journalId);
     auditService.record(userId, tripId, "journal_deleted", "trip_journal", journalId,
         Map.of("title", journal.getTitle()));
@@ -264,6 +420,12 @@ public class TripJournalService {
   }
 
   public Map<String, Object> toJournalResponse(TripJournal journal, boolean includePhotos) {
+    // 辅助信息（行程天/地点/照片）在 bypass 中读取：好友等非成员读者也需要完整内容，
+    // 访问权限已由 canView 统一判定
+    return bypassed(() -> toJournalResponseInner(journal, includePhotos));
+  }
+
+  private Map<String, Object> toJournalResponseInner(TripJournal journal, boolean includePhotos) {
     Map<String, Object> map = new LinkedHashMap<>();
     map.put("id", journal.getId());
     map.put("tripId", journal.getTripId());
@@ -273,6 +435,11 @@ public class TripJournalService {
     map.put("content", journal.getContent());
     map.put("isDraft", journal.getIsDraft());
     map.put("mood", journal.getMood());
+    map.put("visibility", journal.getVisibility() == null ? "private" : journal.getVisibility());
+    map.put("authorId", journal.getAuthorId());
+    if ("specified".equals(journal.getVisibility())) {
+      map.put("visibleFriendIds", audienceIds(journal.getId()));
+    }
     map.put("createdAt", journal.getCreatedAt());
     map.put("updatedAt", journal.getUpdatedAt());
     if (journal.getTripDayId() != null) {

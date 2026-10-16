@@ -71,8 +71,9 @@ async function apiFetch(path, { method = 'GET', body, headers = {} } = {}) {
     err.kind = 'http';
     err.status = res.status;
     err.data = data;
-    // 401/403 一律清登录态，让下一次请求能正确跳登录页
-    if (res.status === 401 || res.status === 403) {
+    // 仅 401（未认证/凭证失效）清登录态；403 表示已登录但无权限（如攻略可见性、
+    // 账本好友规则），清凭证反而会把用户踢回登录页
+    if (res.status === 401) {
       clearAuth();
     }
     throw err;
