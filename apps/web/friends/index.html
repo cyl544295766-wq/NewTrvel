@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 好友</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
+<style>
+  /* ===== 骨架（与全站一致的折叠侧栏） ===== */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 232px) 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
+  }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    position: sticky; top: 0; height: 100vh; /* 吸附视口：内容再长，用户信息/退出也不随页面滚走 */
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .side .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  .side .nav::-webkit-scrollbar { width: 5px; }
+  .side .nav::-webkit-scrollbar-thumb { background: #C9E8E6; border-radius: 3px; }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,0.7); color: var(--brand); font-size: 15px;
+    cursor: pointer; flex: none; transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px;
+    white-space: nowrap; transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .side-foot .side-exit {
+    margin-left: auto; width: 26px; height: 26px; border: none; border-radius: 8px; flex: none;
+    background: rgba(255,255,255,0.7); color: var(--mute); font-size: 13px; line-height: 1;
+    cursor: pointer; transition: background .16s, color .16s;
+  }
+  .side-foot .side-exit:hover { background: #fff; color: #C4643B; }
+  .shell[data-collapsed="true"] .side-foot .side-exit { margin-left: 0; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+  .side-foot .who { overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 60px; max-width: 1280px; width: 100%; margin: 0 auto; }
+  .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 好友卡片 ===== */
+  .card {
+    background: #fff; border-radius: 14px; margin-top: 24px;
+    box-shadow: var(--card-shadow, 0 8px 24px rgba(13,110,110,.10), 0 1px 2px rgba(13,110,110,.06));
+    padding: 22px 24px;
+  }
+  .card .ct { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--ink); }
+  .card .ct small { font-family: var(--grot); font-weight: 500; font-size: 11.5px; color: var(--mute); }
+  .friend-search { display: flex; gap: 9px; margin: 16px 0 10px; }
+  .friend-search input {
+    flex: 1; min-width: 0; font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: #fff; border: 1.5px solid #E4F1F1; border-radius: 10px;
+    padding: 11px 13px; outline: none; transition: border-color .16s, box-shadow .16s;
+  }
+  .friend-search input:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .btn-primary-sm {
+    font-family: var(--grot); font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--brand); border: none; border-radius: 9px; padding: 9px 18px;
+    cursor: pointer; transition: opacity .16s, transform .16s; flex: none;
+  }
+  .btn-primary-sm:hover { opacity: .92; transform: translateY(-1px); }
+  .btn-primary-sm:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .btn-plain {
+    font-family: var(--grot); font-size: 12.5px; color: #3D6A6C; background: var(--mist, #F2FAF9);
+    border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; transition: background .16s, color .16s;
+  }
+  .btn-plain:hover { background: #CDEBE9; color: var(--brand); }
+  .friend-hint { font-size: 12.5px; min-height: 18px; margin-bottom: 6px; }
+  .friend-hint.err { color: #C4643B; }
+  .friend-hint.ok { color: #3E8F63; }
+  .friend-group { margin-top: 16px; }
+  .friend-group .fg-t { font-size: 12.5px; font-weight: 600; color: #3D6A6C; margin-bottom: 7px; }
+  .friend-group .fg-t small { font-weight: 500; color: var(--mute); }
+  .fr-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 10px; transition: background .14s;
+  }
+  .fr-item + .fr-item { border-top: 1px dashed #E4F1F1; }
+  .fr-item:hover { background: #F6FBFA; }
+  .fr-item .fr-av {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    background: var(--brand-soft); color: #fff; display: grid; place-items: center;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .fr-item .fr-main { flex: 1; min-width: 0; }
+  .fr-item .fr-nm { font-size: 14px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fr-item .fr-un { font-size: 11.5px; color: var(--mute); font-family: var(--grot); margin-top: 2px; }
+  .fr-tag { font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; flex: none; }
+  .fr-tag.mutual { color: #0D6E6E; background: #E5F5F1; }
+  .fr-tag.added { color: #B8830F; background: #FDF5E2; }
+  .fr-tag.none { color: var(--mute); background: #F0F5F4; }
+  .fr-item .btn-plain, .fr-item .btn-primary-sm { flex: none; }
+  .fr-empty { padding: 8px 2px; font-size: 12.5px; color: var(--mute); }
+  .rule-note {
+    margin-top: 20px; padding: 12px 16px; border-radius: 11px;
+    background: var(--mist, #F2FAF9); border: 1.5px dashed #B9DEDC;
+    font-size: 12.5px; color: #3D6A6C; line-height: 1.7;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(12px);
+    background: var(--ink, #123A3C); color: #fff; font-size: 13px; font-family: var(--grot);
+    padding: 11px 20px; border-radius: 10px; z-index: 99;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr; }
+    .side {
+      position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center;
+      padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6;
+    }
+    .side .nav { flex: none; overflow: visible; }
+    .rail-toggle { display: none; }
+    .brand { font-size: 19px; padding: 0 2px; }
+    .brand small, .brand-mark { display: none; }
+    .nav-label { display: none; }
+    .nav { display: flex; gap: 3px; flex-wrap: wrap; }
+    .nav a { padding: 7px 9px; font-size: 13px; }
+    .nav a .txt { display: inline; }
+    .side-foot { margin-top: 0; margin-left: auto; border-top: none; padding: 0; }
+    main { padding: 22px 16px 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <a href="/friends/" aria-current="page"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span><span class="dot"></span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+      <button type="button" class="side-exit" id="sideLogout" title="退出登录" aria-label="退出登录">&#9211;</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>好友<span class="en">Friends</span></h1>
+      </div>
+    </div>
+    <p class="meta">添加好友后，<b>互为好友</b>才能邀请 TA 加入账本（行程）一起记账。</p>
+
+    <section class="card">
+      <div class="ct">添加好友 <small>· 支持昵称 / 用户名 / 用户 ID 三种方式</small></div>
+      <div class="friend-search">
+        <input type="text" id="friendKw" maxlength="40" placeholder="输入昵称 / 用户名 / 用户 ID 搜索">
+        <button type="button" class="btn-primary-sm" id="btnFriendSearch">搜索</button>
+      </div>
+      <div class="friend-hint" id="friendHint"></div>
+      <div id="friendResults"></div>
+    </section>
+
+    <section class="card" id="friendIncomingBox" hidden>
+      <div class="ct">待回加 <small>· 对方已添加你，回加后互为好友</small></div>
+      <div id="friendIncoming" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="card">
+      <div class="ct">我的好友 <small id="friendCount"></small></div>
+      <div id="friendList" style="margin-top:10px;"></div>
+    </section>
+
+    <div class="rule-note">
+      💡 规则说明：添加好友为单向行为；只有<b>你们互相添加了对方</b>（互为好友），
+      才能在行程详情页把 TA 邀请进账本共同记账。移除好友后，TA 将无法被邀请进你的新账本。
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script>
+<script src="../assets/js/pet.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    /* 折叠侧栏 */
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    var $ = function (id) { return document.getElementById(id); };
+    var toastTimer = null;
+    function showToast(msg) {
+      var toast = $('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /* ===== 好友系统：搜索（昵称/用户名/用户 ID）+ 添加 + 列表 + 移除 ===== */
+    var RELATION_TAG = { mutual: '互为好友', added: '待对方回加', incoming: '对方已添加你', none: '陌生人' };
+
+    function friendHint(text, cls) {
+      var el = $('friendHint');
+      el.textContent = text || '';
+      el.className = 'friend-hint' + (cls ? ' ' + cls : '');
+    }
+
+    function friendRow(u, actionHtml) {
+      var av = (u.displayName || u.username || '?').slice(0, 1).toUpperCase();
+      return '<div class="fr-item">'
+        + '<span class="fr-av" aria-hidden="true">' + escapeHtml(av) + '</span>'
+        + '<div class="fr-main">'
+        +   '<div class="fr-nm">' + escapeHtml(u.displayName || u.username)
+        +     '<span class="fr-tag ' + u.relation + '">' + (RELATION_TAG[u.relation] || '') + '</span></div>'
+        +   '<div class="fr-un">@' + escapeHtml(u.username) + ' · ID ' + escapeHtml(u.id) + '</div>'
+        + '</div>'
+        + (actionHtml || '')
+        + '</div>';
+    }
+
+    async function loadFriends() {
+      try {
+        var d = await apiGet('/friends');
+        var friends = d.friends || [];
+        $('friendCount').textContent = friends.length ? '· 共 ' + friends.length + ' 人（' +
+          friends.filter(function (u) { return u.relation === 'mutual'; }).length + ' 位互为好友）' : '';
+        $('friendList').innerHTML = friends.map(function (u) {
+          var act = '<div class="ri-act" style="display:flex;gap:7px;">'
+            + (u.relation === 'mutual' ? '' : '<button type="button" class="btn-plain" data-friend-add="' + u.id + '">回加</button>')
+            + '<button type="button" class="btn-plain" data-friend-del="' + u.id + '">移除</button></div>';
+          return friendRow(u, act);
+        }).join('') || '<div class="fr-empty">还没有好友，用上方搜索添加吧（支持昵称 / 用户名 / 用户 ID）</div>';
+        var incoming = d.incoming || [];
+        $('friendIncomingBox').hidden = incoming.length === 0;
+        $('friendIncoming').innerHTML = incoming.map(function (u) {
+          var act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">回加</button></div>';
+          return friendRow(u, act);
+        }).join('');
+      } catch (err) {
+        $('friendList').innerHTML = '';
+        friendHint('好友列表加载失败：' + humanError(err), 'err');
+      }
+    }
+
+    async function searchFriends() {
+      var kw = $('friendKw').value.trim();
+      if (!kw) { friendHint('请输入昵称、用户名或用户 ID', 'err'); return; }
+      friendHint('搜索中…');
+      try {
+        var d = await apiGet('/friends/search?keyword=' + encodeURIComponent(kw));
+        var users = d.users || [];
+        if (!users.length) {
+          $('friendResults').innerHTML = '';
+          friendHint('未找到该用户，请检查昵称 / 用户名 / 用户 ID 是否正确', 'err');
+          return;
+        }
+        friendHint('找到 ' + users.length + ' 个用户');
+        $('friendResults').innerHTML = users.map(function (u) {
+          var act;
+          if (u.relation === 'mutual') {
+            act = '<div style="flex:none;"><span class="fr-tag mutual">已是好友</span></div>';
+          } else if (u.relation === 'added') {
+            act = '<div style="flex:none;"><span class="fr-tag added">已添加</span></div>';
+          } else {
+            var label = u.relation === 'incoming' ? '回加' : '添加';
+            act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">' + label + '</button></div>';
+          }
+          return friendRow(u, act);
+        }).join('');
+      } catch (err) {
+        $('friendResults').innerHTML = '';
+        friendHint(humanError(err), 'err');
+      }
+    }
+
+    async function addFriend(userId) {
+      try {
+        var d = await apiPost('/friends', { userId: userId });
+        friendHint(d.message || '已添加', 'ok');
+        showToast(d.message || '已添加');
+        await Promise.all([loadFriends(), searchFriends()]);
+      } catch (err) {
+        friendHint(humanError(err), 'err');
+        showToast(humanError(err));
+      }
+    }
+
+    async function removeFriend(userId) {
+      if (!confirm('移除该好友？移除后 TA 将无法被邀请进你的账本。')) return;
+      try {
+        var d = await apiDelete('/friends/' + encodeURIComponent(userId));
+        showToast(d.message || '已移除');
+        await Promise.all([loadFriends(), searchFriends()]);
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    $('btnFriendSearch').addEventListener('click', searchFriends);
+    $('friendKw').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); searchFriends(); }
+    });
+    document.querySelector('main').addEventListener('click', function (e) {
+      var add = e.target.closest('[data-friend-add]');
+      if (add) { addFriend(add.getAttribute('data-friend-add')); return; }
+      var del = e.target.closest('[data-friend-del]');
+      if (del) { removeFriend(del.getAttribute('data-friend-del')); }
+    });
+
+    loadFriends();
+  })();
+</script>
+</body>
+</html>
