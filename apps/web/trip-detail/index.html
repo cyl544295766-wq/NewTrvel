@@ -1339,7 +1339,7 @@
       if (sel.value !== convId) sel.value = convId;
       aiEl('aiMsgs').innerHTML = '<div class="ai-empty"><p>正在载入对话…</p></div>';
       try {
-        var r = await apiGet('/ai/conversations/' + encodeURIComponent(convId) + '/messages?page=1&pageSize=100');
+        var r = await apiGet('/ai/conversations/' + encodeURIComponent(convId) + '/messages?page=1&pageSize=100&latest=true&latest=true');
         aiState.messages = (r && r.messages) || [];
       } catch (err) {
         aiEl('aiMsgs').innerHTML = '<div class="ai-empty"><div class="ic">⚠</div><strong>读不到消息</strong><p>'

@@ -263,6 +263,41 @@
     .hp-name { font-size: 20px; }
     .row-item { flex-wrap: wrap; }
   }
+
+  /* ===== 我的好友 ===== */
+  .friend-search { display: flex; gap: 9px; margin-bottom: 10px; }
+  .friend-search input {
+    flex: 1; min-width: 0; font-family: var(--grot); font-size: 13.5px; color: var(--ink);
+    background: #fff; border: 1.5px solid #E4F1F1; border-radius: 10px;
+    padding: 10px 13px; outline: none; transition: border-color .16s, box-shadow .16s;
+  }
+  .friend-search input:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .friend-hint { font-size: 12.5px; min-height: 18px; margin-bottom: 6px; }
+  .friend-hint.err { color: #C4643B; }
+  .friend-hint.ok { color: #3E8F63; }
+  .friend-group { margin-top: 14px; }
+  .friend-group .fg-t { font-size: 12px; color: var(--mute); margin-bottom: 7px; }
+  .fr-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 11px; border-radius: 10px; transition: background .14s;
+  }
+  .fr-item + .fr-item { border-top: 1px dashed #E4F1F1; }
+  .fr-item:hover { background: #F6FBFA; }
+  .fr-item .fr-av {
+    width: 32px; height: 32px; border-radius: 50%; flex: none;
+    background: var(--brand-soft); color: #fff; display: grid; place-items: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .fr-item .fr-main { flex: 1; min-width: 0; }
+  .fr-item .fr-nm { font-size: 13.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .fr-item .fr-un { font-size: 11.5px; color: var(--mute); font-family: var(--grot); }
+  .fr-tag {
+    font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; flex: none;
+  }
+  .fr-tag.mutual { color: #0D6E6E; background: #E5F5F1; }
+  .fr-tag.added { color: #B8830F; background: #FDF5E2; }
+  .fr-tag.none { color: var(--mute); background: #F0F5F4; }
+  .fr-item .btn-plain { flex: none; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -298,6 +333,7 @@
       <nav class="subnav" id="subnav" aria-label="设置分组">
         <div class="st">设置</div>
         <a href="#sec-profile">账户资料</a>
+        <a href="#sec-friends">我的好友</a>
         <a href="#sec-security">安全与登录</a>
         <a href="#sec-data">数据管理</a>
         <a href="#sec-pref">偏好与显示</a>
@@ -326,6 +362,26 @@
             <div class="inf"><div class="k">注册时间</div><div class="v" id="iCreated">…</div></div>
             <div class="inf"><div class="k">用户 ID</div><div class="v mono" id="iId">…</div></div>
             <div class="inf"><div class="k">头像</div><div class="v" id="iAvatar">…</div><div class="hint">当前用显示名首字母占位</div></div>
+          </div>
+        </section>
+
+        <!-- 我的好友 -->
+        <section class="card" id="sec-friends">
+          <div class="ct">我的好友 <small>· 互为好友后才能邀请 TA 加入账本一起记账</small></div>
+          <div class="friend-search">
+            <input type="text" id="friendKw" maxlength="40" placeholder="输入昵称 / 用户名 / 用户 ID 搜索">
+            <button type="button" class="btn-primary-sm" id="btnFriendSearch">搜索</button>
+          </div>
+          <div class="friend-hint" id="friendHint"></div>
+          <div id="friendResults"></div>
+
+          <div class="friend-group" id="friendIncomingBox" hidden>
+            <div class="fg-t">对方已添加你 <small>· 回加后互为好友</small></div>
+            <div id="friendIncoming"></div>
+          </div>
+          <div class="friend-group">
+            <div class="fg-t">我的好友</div>
+            <div id="friendList"></div>
           </div>
         </section>
 
@@ -797,6 +853,117 @@
 
     loadMe();
     loadPreferences();
+    loadFriends();
+
+    /* ===== 好友系统：搜索（昵称/用户名/用户 ID）+ 添加 + 列表 + 移除 ===== */
+    var RELATION_TAG = { mutual: '互为好友', added: '待对方回加', incoming: '对方已添加你', none: '陌生人' };
+
+    function friendHint(text, cls) {
+      var el = $('friendHint');
+      el.textContent = text || '';
+      el.className = 'friend-hint' + (cls ? ' ' + cls : '');
+    }
+
+    function friendRow(u, actionHtml) {
+      var av = (u.displayName || u.username || '?').slice(0, 1).toUpperCase();
+      return '<div class="fr-item">'
+        + '<span class="fr-av" aria-hidden="true">' + escapeHtml(av) + '</span>'
+        + '<div class="fr-main">'
+        +   '<div class="fr-nm">' + escapeHtml(u.displayName || u.username)
+        +     '<span class="fr-tag ' + u.relation + '">' + (RELATION_TAG[u.relation] || '') + '</span></div>'
+        +   '<div class="fr-un">@' + escapeHtml(u.username) + ' · ID ' + escapeHtml(u.id) + '</div>'
+        + '</div>'
+        + (actionHtml || '')
+        + '</div>';
+    }
+
+    async function loadFriends() {
+      try {
+        var d = await apiGet('/friends');
+        var friendsHtml = (d.friends || []).map(function (u) {
+          var act = '<div class="ri-act">'
+            + (u.relation === 'mutual' ? '' : '<button type="button" class="btn-plain" data-friend-add="' + u.id + '">回加</button>')
+            + '<button type="button" class="btn-plain" data-friend-del="' + u.id + '">移除</button></div>';
+          return friendRow(u, act);
+        }).join('');
+        $('friendList').innerHTML = friendsHtml
+          || '<div class="fr-item"><div class="fr-main"><div class="fr-un">还没有好友，用上方搜索添加吧（支持昵称 / 用户名 / 用户 ID）</div></div></div>';
+        var incoming = d.incoming || [];
+        $('friendIncomingBox').hidden = incoming.length === 0;
+        $('friendIncoming').innerHTML = incoming.map(function (u) {
+          var act = '<div class="ri-act"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">回加</button></div>';
+          return friendRow(u, act);
+        }).join('');
+      } catch (err) {
+        $('friendList').innerHTML = '';
+        friendHint('好友列表加载失败：' + humanError(err), 'err');
+      }
+    }
+
+    async function searchFriends() {
+      var kw = $('friendKw').value.trim();
+      if (!kw) { friendHint('请输入昵称、用户名或用户 ID', 'err'); return; }
+      friendHint('搜索中…');
+      try {
+        var d = await apiGet('/friends/search?keyword=' + encodeURIComponent(kw));
+        var users = d.users || [];
+        if (!users.length) {
+          $('friendResults').innerHTML = '';
+          friendHint('未找到该用户，请检查昵称 / 用户名 / 用户 ID 是否正确', 'err');
+          return;
+        }
+        friendHint('找到 ' + users.length + ' 个用户');
+        $('friendResults').innerHTML = users.map(function (u) {
+          var act;
+          if (u.relation === 'mutual') {
+            act = '<div class="ri-act"><span class="fr-tag mutual">已是好友</span></div>';
+          } else if (u.relation === 'added') {
+            act = '<div class="ri-act"><span class="fr-tag added">已添加</span></div>';
+          } else {
+            var label = u.relation === 'incoming' ? '回加' : '添加';
+            act = '<div class="ri-act"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">' + label + '</button></div>';
+          }
+          return friendRow(u, act);
+        }).join('');
+      } catch (err) {
+        $('friendResults').innerHTML = '';
+        friendHint(humanError(err), 'err');
+      }
+    }
+
+    async function addFriend(userId) {
+      try {
+        var d = await apiPost('/friends', { userId: userId });
+        friendHint(d.message || '已添加', 'ok');
+        showToast(d.message || '已添加');
+        await Promise.all([loadFriends(), searchFriends()]);
+      } catch (err) {
+        friendHint(humanError(err), 'err');
+        showToast(humanError(err));
+      }
+    }
+
+    async function removeFriend(userId) {
+      if (!confirm('移除该好友？移除后 TA 将无法被邀请进你的账本。')) return;
+      try {
+        var d = await apiDelete('/friends/' + encodeURIComponent(userId));
+        showToast(d.message || '已移除');
+        await Promise.all([loadFriends(), searchFriends()]);
+      } catch (err) {
+        showToast(humanError(err));
+      }
+    }
+
+    $('btnFriendSearch').addEventListener('click', searchFriends);
+    $('friendKw').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); searchFriends(); }
+    });
+    document.getElementById('sec-friends').addEventListener('click', function (e) {
+      var add = e.target.closest('[data-friend-add]');
+      if (add) { addFriend(add.getAttribute('data-friend-add')); return; }
+      var del = e.target.closest('[data-friend-del]');
+      if (del) { removeFriend(del.getAttribute('data-friend-del')); }
+    });
   })();
 </script>
 </body>

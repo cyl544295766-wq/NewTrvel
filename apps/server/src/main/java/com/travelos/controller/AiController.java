@@ -41,8 +41,9 @@ public class AiController {
   public Map<String, Object> messages(@PathVariable String conversationId,
       @RequestParam(value = "page", required = false) String page,
       @RequestParam(value = "pageSize", required = false) String pageSize,
+      @RequestParam(value = "latest", required = false) String latest,
       @CurrentUser UserContext user) {
-    return aiChatService.listMessages(conversationId, user.id(), page, pageSize);
+    return aiChatService.listMessages(conversationId, user.id(), page, pageSize, latest);
   }
 
   @PostMapping("/{conversationId}/messages")

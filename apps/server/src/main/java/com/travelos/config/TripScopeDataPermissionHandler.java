@@ -60,6 +60,8 @@ public class TripScopeDataPermissionHandler implements MultiDataPermissionHandle
     if (tableName.equals("user_preferences")) {
       return parse("user_id = '" + userId + "'");
     }
+    // user_friends 不在此登记：好友查询需要保留方向语义（user_id/friend_id 各有含义），
+    // 且 FriendService 的所有读写都显式按当前用户过滤，此处注入条件会破坏方向判断。
     if (NESTED_PACKING_ITEM.contains(tableName)) {
       return parse("packing_list_id IN (SELECT id FROM packing_lists WHERE trip_id IN "
           + memberSubquery + ")");

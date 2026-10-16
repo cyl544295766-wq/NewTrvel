@@ -143,24 +143,39 @@ public class AiChatService {
   }
 
   public Map<String, Object> listMessages(String conversationId, String userId, String pageValue,
-      String pageSizeValue) {
+      String pageSizeValue, String latestValue) {
     AiConversation conversation = requireOwnedConversation(conversationId, userId);
     int page = parsePositive(pageValue, 1);
     int pageSize = Math.min(parsePositive(pageSizeValue, 50), 100);
     long total = messageMapper.selectCount(new LambdaQueryWrapper<AiMessage>()
         .eq(AiMessage::getConversationId, conversationId));
+    // latest=true：取「最新 pageSize 条」并按时间升序返回（对话超长时仍能看到最新消息）。
+    // 普通分页按页码取（升序），保持旧行为兼容。
+    boolean latest = "true".equalsIgnoreCase(latestValue);
+    int effectivePage = page;
     List<Map<String, Object>> rows = new ArrayList<>();
-    for (AiMessage message : messageMapper.selectList(new LambdaQueryWrapper<AiMessage>()
-        .eq(AiMessage::getConversationId, conversationId)
-        .orderByAsc(AiMessage::getCreatedAt)
-        .last("LIMIT " + pageSize + " OFFSET " + (page - 1) * pageSize))) {
-      rows.add(toMessageResponse(message));
+    if (latest) {
+      long offset = Math.max(0, total - pageSize);
+      for (AiMessage message : messageMapper.selectList(new LambdaQueryWrapper<AiMessage>()
+          .eq(AiMessage::getConversationId, conversationId)
+          .orderByAsc(AiMessage::getCreatedAt)
+          .last("LIMIT " + pageSize + " OFFSET " + offset))) {
+        rows.add(toMessageResponse(message));
+      }
+      effectivePage = (int) (offset / pageSize) + 1;
+    } else {
+      for (AiMessage message : messageMapper.selectList(new LambdaQueryWrapper<AiMessage>()
+          .eq(AiMessage::getConversationId, conversationId)
+          .orderByAsc(AiMessage::getCreatedAt)
+          .last("LIMIT " + pageSize + " OFFSET " + (page - 1) * pageSize))) {
+        rows.add(toMessageResponse(message));
+      }
     }
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("conversation", toConversationResponse(conversation));
     body.put("messages", rows);
     body.put("total", total);
-    body.put("page", page);
+    body.put("page", effectivePage);
     body.put("pageSize", pageSize);
     return body;
   }

@@ -307,8 +307,8 @@
     try { S.convId = localStorage.getItem(CONV_KEY) || null; } catch (e) { /* ignore */ }
     if (!S.convId) { renderEmpty(); return; }
     try {
-      var d = await apiGet('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages?page=1&pageSize=30');
-      var items = (d.messages || []).slice().reverse();
+      var d = await apiGet('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages?page=1&pageSize=30&latest=true&latest=true');
+      var items = (d.messages || []).slice();   // latest=true 已按时间升序（最新在最后）
       if (!items.length) { renderEmpty(); return; }
       renderMessages(items);
     } catch (err) {
@@ -341,8 +341,8 @@
       await ensureConversation(text);
       await apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages', { content: text });
       /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配） */
-      var d = await apiGet('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages?page=1&pageSize=30');
-      var items = (d.messages || []).slice().reverse();
+      var d = await apiGet('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages?page=1&pageSize=30&latest=true&latest=true');
+      var items = (d.messages || []).slice();   // latest=true 已按时间升序（最新在最后）
       removeTyping();
       renderMessages(items);
       /* AI 指引了页面跳转（open_page）：稍作停留让用户看到提示，再自动前往 */

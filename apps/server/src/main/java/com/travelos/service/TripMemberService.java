@@ -24,14 +24,17 @@ public class TripMemberService {
   private final UserMapper userMapper;
   private final NotificationService notificationService;
   private final AuditService auditService;
+  private final FriendService friendService;
 
   public TripMemberService(TripMemberMapper tripMemberMapper, TripMapper tripMapper,
-      UserMapper userMapper, NotificationService notificationService, AuditService auditService) {
+      UserMapper userMapper, NotificationService notificationService, AuditService auditService,
+      FriendService friendService) {
     this.tripMemberMapper = tripMemberMapper;
     this.tripMapper = tripMapper;
     this.userMapper = userMapper;
     this.notificationService = notificationService;
     this.auditService = auditService;
+    this.friendService = friendService;
   }
 
   public TripMember createOwner(String tripId, String userId) {
@@ -78,6 +81,10 @@ public class TripMemberService {
         .eq(User::getUsername, username.trim()));
     if (user == null || !"active".equals(user.getStatus())) {
       throw ApiException.notFound("用户不存在");
+    }
+    // 账本好友规则：只有互为好友的用户才能被邀请加入账本（行程）
+    if (!inviterUserId.equals(user.getId())) {
+      friendService.requireMutualFriend(inviterUserId, user.getId());
     }
     TripMember existing = tripMemberMapper.selectOne(new LambdaQueryWrapper<TripMember>()
         .eq(TripMember::getTripId, tripId)
