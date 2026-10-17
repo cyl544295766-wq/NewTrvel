@@ -25,9 +25,10 @@ public class PlacesService {
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(6);
   private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
 
-  /** 高德 POI typecode：餐饮服务 / 风景名胜|科教文化（含博物馆）。 */
+  /** 高德 POI typecode：餐饮服务 / 风景名胜|科教文化（含博物馆）/ 住宿服务（酒店、民宿、旅馆）。 */
   private static final String RESTAURANT_TYPES = "050000";
   private static final String ATTRACTION_TYPES = "110000|140000";
+  private static final String HOTEL_TYPES = "100000";
 
   private final String webServiceKey;
   private final HttpClient httpClient = HttpClient.newBuilder()
@@ -91,7 +92,7 @@ public class PlacesService {
    * 相比 inputtips 联想，额外返回评分(rating)、人均消费(avgCost)、营业时间(openTime)、电话(tel)，
    * 供 AI 做餐厅推荐、景点营业时间查询与时间规划。
    *
-   * @param category "restaurant" / "attraction" / 其它（不限类型）
+   * @param category "restaurant" / "attraction" / "hotel" / 其它（不限类型）
    */
   public Map<String, Object> searchPois(String keyword, String city, String category, Integer limit) {
     String normalizedKeyword = keyword == null ? "" : keyword.trim();
@@ -124,6 +125,8 @@ public class PlacesService {
         url.append("&types=").append(URLEncoder.encode(RESTAURANT_TYPES, StandardCharsets.UTF_8));
       } else if ("attraction".equals(normalizedCategory)) {
         url.append("&types=").append(URLEncoder.encode(ATTRACTION_TYPES, StandardCharsets.UTF_8));
+      } else if ("hotel".equals(normalizedCategory)) {
+        url.append("&types=").append(URLEncoder.encode(HOTEL_TYPES, StandardCharsets.UTF_8));
       }
       HttpResponse<String> response = httpClient.send(HttpRequest.newBuilder()
           .uri(URI.create(url.toString()))

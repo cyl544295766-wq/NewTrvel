@@ -489,7 +489,7 @@
       +   '<div class="e1">嗨，我是 ' + escapeHtml(S.opt.name) + ' 🐾'
       +     (tripMode ? '　·　本行程模式' : '') + '</div>'
       +   '<div class="e2">' + (tripMode
-              ? '规划、餐厅、记账…都可以让我来安排'
+              ? '规划、餐厅、酒店、记账…都可以让我来安排'
               : '旅行计划、打包、记账…点什么都可以问我') + '</div>'
       + '</div>'
       + '<div class="pet-chips">'

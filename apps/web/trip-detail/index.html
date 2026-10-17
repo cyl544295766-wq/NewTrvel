@@ -480,7 +480,6 @@
         <button class="act" id="btnPdf">&#8689; 导出 PDF</button>
         <button class="act" id="btnArchive">&#9636; 归档</button>
         <button class="act" id="btnEdit">&#9998; 编辑</button>
-        <button class="act primary" id="btnAi">&#10022; AI 助手</button>
       </div>
     </div>
 
@@ -919,11 +918,6 @@
 
       document.getElementById('btnEdit').onclick = function () {
         location.href = '/trip-form/?id=' + encodeURIComponent(tripId);
-      };
-
-      document.getElementById('btnAi').onclick = function () {
-        /* 统一 AI 助手：打开气泡并展开为抽屉（移动端为底部 sheet） */
-        if (window.TravelOSAi) { window.TravelOSAi.open(); window.TravelOSAi.expand(); }
       };
     }
 

@@ -72,6 +72,10 @@ public class AiChatService {
       Map.entry("notifications", new String[]{"/notifications/", "消息通知"}),
       Map.entry("account", new String[]{"/account/", "账户设置"}));
 
+  /** 需要行程参数（?trip=）才能直达的行程子页；缺参会被前端跳回「我的行程」列表。 */
+  private static final Set<String> TRIP_SCOPED_PAGES = Set.of(
+      "itinerary", "expenses", "packing", "documents", "photos", "journals", "bookings", "vouchers");
+
   /** 每用户同时最多 1 个进行中的对话请求（并发限流）。 */
   private final Set<String> inFlightUsers = ConcurrentHashMap.newKeySet();
 
@@ -614,11 +618,13 @@ public class AiChatService {
             requireArg(args, "keyword"), resolveCity(args, conversation), "restaurant", 6));
         case "search_attractions" -> JsonUtil.write(placesService.searchPois(
             requireArg(args, "keyword"), resolveCity(args, conversation), "attraction", 6));
+        case "search_hotels" -> JsonUtil.write(placesService.searchPois(
+            requireArg(args, "keyword"), resolveCity(args, conversation), "hotel", 6));
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "propose_itinerary_change" -> createItineraryDraft(args, conversation, userId);
-        case "open_page" -> openPage(args, conversation);
+        case "open_page" -> openPage(args, conversation, userId);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
       };
     } catch (ApiException ex) {
@@ -751,30 +757,54 @@ public class AiChatService {
   /**
    * open_page 工具：识别用户「打开/查看某页面」的意图，解析出前端路由。
    * 跳转动作本身由前端完成 —— 导航信息挂在最终助手消息的 navigation 字段上随响应下发。
+   * 行程子页（预定管理/行程规划/记账等）必须携带 ?trip=，否则页面缺参会被跳回「我的行程」列表
+   * （历史问题：用户说「打开预定管理」最终只落到我的旅行列表）。行程参数解析顺序：
+   * 工具显式传参 > 会话绑定行程 > 全局对话的最近已规划行程。
    */
-  private String openPage(Map<String, Object> args, AiConversation conversation) {
+  private String openPage(Map<String, Object> args, AiConversation conversation, String userId) {
     String page = String.valueOf(args.get("page")).trim().toLowerCase();
     String[] meta = NAV_PAGES.get(page);
     if (meta == null) {
       return "{\"error\":\"未知页面，page 必须是以下之一：" + String.join(" / ", NAV_PAGES.keySet()) + "\"}";
     }
+    String pageKey = page;
+    String label = meta[1];
     String url = meta[0];
+    String hint = "页面跳转已随回复下发给前端，请在回复中用一句话自然告知用户即将打开的页面。";
+
+    String tripId = args.get("tripId") == null ? "" : args.get("tripId").toString().trim();
+    if (tripId.isBlank() && conversation.getTripId() != null) {
+      tripId = conversation.getTripId();
+    }
+    if (tripId.isBlank()) {
+      tripId = resolveDefaultTripId(userId);
+    }
+    if (tripId == null) {
+      tripId = "";
+    }
+
     if ("trip-detail".equals(page)) {
-      String tripId = args.get("tripId") == null ? "" : args.get("tripId").toString().trim();
-      if (tripId.isBlank() && conversation.getTripId() != null) {
-        tripId = conversation.getTripId();
-      }
       if (tripId.isBlank()) {
         return "{\"error\":\"打开行程详情需要行程 ID，请改用 trips（我的行程列表）页面\"}";
       }
       url = url + "?id=" + tripId;
+    } else if (TRIP_SCOPED_PAGES.contains(page)) {
+      if (tripId.isBlank()) {
+        // 用户还没有任何行程：退化为行程列表页，避免目标页缺参被跳回列表、看起来「没反应」
+        pageKey = "trips";
+        label = NAV_PAGES.get("trips")[1];
+        url = NAV_PAGES.get("trips")[0];
+        hint = "用户还没有行程，已改为打开行程列表；请提示用户先创建或进入一个行程后再查看该页面。";
+      } else {
+        url = url + "?trip=" + tripId;
+      }
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("opened", true);
-    result.put("page", page);
-    result.put("label", meta[1]);
+    result.put("page", pageKey);
+    result.put("label", label);
     result.put("url", url);
-    result.put("hint", "页面跳转已随回复下发给前端，请在回复中用一句话自然告知用户即将打开的页面。");
+    result.put("hint", hint);
     return JsonUtil.write(result);
   }
 
@@ -869,14 +899,16 @@ public class AiChatService {
         .append("与旅游无关的问题（写代码、写作业、时事、闲聊、医疗/法律/投资建议等）一律不要回答，")
         .append("直接委婉引导回旅游话题，例如：「很抱歉，我专注于为您提供旅游服务，请问有什么旅游方面可以帮到您的吗？」")
         .append("可以顺势介绍你能帮忙的事，但语气保持自然友好、不生硬。\n");
-    prompt.append("6. 页面导航：当用户明确想查看或打开系统中的某个页面（如「打开行程规划」「看看我的花费」「去记账」「帮我看下预订」），")
-        .append("调用 open_page 工具选择最匹配的页面，并在回复中用一句话自然告知即将打开的页面（如「好的，这就带你去行程规划～」）。")
+    prompt.append("6. 页面导航：当用户明确想查看或打开系统中的某个页面（如「打开行程规划」「打开预定管理」「看看我的花费」「去记账」），")
+        .append("调用 open_page 工具选择最匹配的页面（预定/预订相关选 bookings，不要选 trips），并在回复中用一句话自然告知即将打开的页面（如「好的，这就带你去行程规划～」）。")
         .append("普通旅行咨询（攻略、建议、问答）不要调用 open_page，避免误跳转。\n");
     prompt.append("7. 餐厅推荐：用户想找吃的/餐厅时，调用 search_restaurants，结合行程地点、口味与预算推荐 2-4 家，"
         + "并给出菜系、评分、人均消费、营业时间与地址；营业时间以工具返回为准。\n");
     prompt.append("8. 景点信息：查询景点营业时间/评分/地址时调用 search_attractions。"
         + "营业时间必须采用工具返回值；仅当工具未返回时才可凭常识给出，并注明「以景区公告为准」。\n");
-    prompt.append("9. 时间规划（重要）：用户要求规划某一天的行程时，用 propose_itinerary_change 生成草稿（不要直接写行程）。要求："
+    prompt.append("9. 酒店推荐：用户想找住的地方/酒店/民宿时，调用 search_hotels，结合行程地点与预算推荐 2-4 家，"
+        + "并给出评分、参考价格、地址与电话；若用户想把住宿安排进行程，可再用 propose_itinerary_change 生成草稿（type=hotel）。\n");
+    prompt.append("10. 时间规划（重要）：用户要求规划某一天的行程时，用 propose_itinerary_change 生成草稿（不要直接写行程）。要求："
         + "(a) 为每个景点给出合理停留时长——小型景点 1~1.5 小时、中型 2~3 小时、大型景区/博物馆 3~4 小时，"
         + "并用 24 小时制 startTime/endTime 标出；"
         + "(b) 相邻地点之间预留 20~40 分钟交通时间，并按地理远近合理安排顺序；"
@@ -884,9 +916,9 @@ public class AiChatService {
         + "(d) 严格遵守景点营业时间，避开展馆闭馆日/闭馆时段（如博物馆多周一闭馆）；"
         + "(e) 每个景点在 change 项给出 estimatedCost（门票，人民币数字，免费填 0），并将营业时间放入 openTime；"
         + "(f) 一天不宜排得过满，一般不超过 6 个点；回复中给出该天的整体时间轴概览。\n");
-    prompt.append("10. 票价：购物车/高德不返回门票价格，estimatedCost 由你按常识给出参考值，"
+    prompt.append("11. 票价：购物车/高德不返回门票价格，estimatedCost 由你按常识给出参考值，"
         + "并在回复中说明「票价与营业时间仅供参考，以景区/餐厅公示为准」。金额一律人民币。\n");
-    prompt.append("11. 相对天数与默认行程（重要）：用户说「第二天」「第 N 天」时，一律指行程内的第 N 天（dayIndex=N，从 1 开始），"
+    prompt.append("12. 相对天数与默认行程（重要）：用户说「第二天」「第 N 天」时，一律指行程内的第 N 天（dayIndex=N，从 1 开始），"
         + "结合行程日期与现有安排换算成真实日期后据此规划，绝不理解为自然日历上的「明天」；"
         + "用户未指明行程时：对话已关联行程则用当前行程，全局对话则用下方「最近行程」上下文，"
         + "并在回复开头用一句话明示默认假设（须包含「默认」或「假设」字样，例如「默认按最近行程《赤峰之旅》（07-10~07-12），第二天即 07-11 为你规划」），"
@@ -1029,6 +1061,11 @@ public class AiChatService {
             + "地址、坐标。营业时间必须采用返回结果",
         Map.of("keyword", stringProp("关键词，如「故宫」「博物馆」"),
             "city", stringProp("城市名，可空（默认用行程目的地）"))));
+    tools.add(function("search_hotels",
+        "搜索酒店/住宿（高德 POI）。用于「酒店推荐」「帮找住的地方」：返回评分(rating)、参考价格(avgCost)、"
+            + "地址、电话、坐标。结合行程地点与预算给出 2-4 家建议；用户想把住宿安排进行程时，再配合 propose_itinerary_change 生成草稿",
+        Map.of("keyword", stringProp("关键词，如「酒店」「民宿」「青旅」「近地铁」"),
+            "city", stringProp("城市名，可空（默认用行程目的地）"))));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
     tools.add(function("add_expense",
@@ -1062,13 +1099,14 @@ public class AiChatService {
                         Map.entry("openTime", stringProp("营业时间文本（来自 search_attractions/search_restaurants，将写入备注）")),
                         Map.entry("notes", stringProp("备注，可空"))))))));
     tools.add(function("open_page",
-        "打开系统页面：用户想查看/前往某个页面时调用。page 可选值："
-            + "home 首页总览、trips 我的行程、trip-form 新建行程、trip-detail 行程详情（需行程ID）、"
+        "打开系统页面：用户想查看/前往某个页面时调用（如「打开预定管理」→ bookings、「打开行程规划」→ itinerary、「去记账」→ expenses）。page 可选值："
+            + "home 首页总览、trips 我的行程、trip-form 新建行程、trip-detail 行程详情、"
             + "itinerary 行程规划、map 行程地图、packing 打包清单、expenses 记账与花费、"
-            + "bookings 预订管理、documents 旅行证件、vouchers 票券凭证、photos 旅行相册、"
-            + "journals 旅行游记、stats 数据统计、notifications 消息通知、account 账户设置",
+            + "bookings 预订管理（预定/预订机票、酒店、火车、门票）、documents 旅行证件、vouchers 票券凭证、photos 旅行相册、"
+            + "journals 旅行游记、stats 数据统计、notifications 消息通知、account 账户设置。"
+            + "行程相关页面会自动关联当前/最近行程，无需传 tripId",
         Map.of("page", stringProp("页面标识（见描述中的可选值）"),
-            "tripId", stringProp("行程 ID，仅 page=trip-detail 时需要"))));
+            "tripId", stringProp("行程 ID（一般不用传）：仅当用户明确指定了另一个行程 ID 时才传"))));
     return tools;
   }
 
