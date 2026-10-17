@@ -241,6 +241,7 @@ public class AiChatService {
 
       AiMessage finalReply = null;
       String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
+      Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         Map<String, Object> message = llm.chat(llmMessages, toolDefinitions());
         List<Map<String, Object>> toolCalls = llm.extractToolCalls(message);
@@ -248,8 +249,9 @@ public class AiChatService {
             : message.get("content").toString();
 
         if (toolCalls.isEmpty()) {
-          finalReply = insertMessage(conversationId, userId, "assistant",
-              messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent, navigation, null);
+          String finalContent = messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent;
+          finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
+          finalReply = insertMessage(conversationId, userId, "assistant", finalContent, navigation, null);
           break;
         }
 
@@ -668,7 +670,11 @@ public class AiChatService {
     String tripId = conversation.getTripId() != null ? conversation.getTripId()
         : (args.get("tripId") == null ? null : args.get("tripId").toString());
     if (tripId == null || tripId.isBlank()) {
-      return "{\"error\":\"当前对话未关联行程，请先在行程中打开 AI 助手\"}";
+      // 全局对话：默认落到最近行程（与系统提示词中「最近行程」上下文一致）
+      tripId = resolveDefaultTripId(userId);
+    }
+    if (tripId == null || tripId.isBlank()) {
+      return "{\"error\":\"当前对话未关联行程，也没有可用的最近行程，请先创建行程或在具体行程中打开 AI 助手\"}";
     }
     tripMemberService.requireTripMember(tripId, userId);
     String amount = String.valueOf(args.get("amount"));
@@ -710,7 +716,11 @@ public class AiChatService {
     String tripId = conversation.getTripId() != null ? conversation.getTripId()
         : (args.get("tripId") == null ? null : args.get("tripId").toString());
     if (tripId == null || tripId.isBlank()) {
-      return "{\"error\":\"当前对话未关联行程，请先在行程中打开 AI 助手\"}";
+      // 全局对话：默认落到最近行程（与系统提示词中「最近行程」上下文一致）
+      tripId = resolveDefaultTripId(userId);
+    }
+    if (tripId == null || tripId.isBlank()) {
+      return "{\"error\":\"当前对话未关联行程，也没有可用的最近行程，请先创建行程或在具体行程中打开 AI 助手\"}";
     }
     tripMemberService.requireTripMember(tripId, userId);
     if (!(args.get("changes") instanceof List<?> changes) || changes.isEmpty()) {
@@ -788,6 +798,64 @@ public class AiChatService {
 
   // ==================== 系统提示词与工具定义 ====================
 
+  /**
+   * 全局对话中草稿默认落到「最近行程」时，回复必须以一句话明示默认假设。
+   * 模型偶有遗漏，这里兜底：仅在模型未自行提及行程名时加前缀（避免重复）。
+   */
+  private String appendDefaultTripNote(String content, AiConversation conversation,
+      String userId, Date since) {
+    if (conversation.getTripId() != null) {
+      return content;
+    }
+    try {
+      String defaultTripId = resolveDefaultTripId(userId);
+      if (defaultTripId == null) {
+        return content;
+      }
+      boolean usedDefault = false;
+      List<AiMessage> drafts = messageMapper.selectList(new LambdaQueryWrapper<AiMessage>()
+          .eq(AiMessage::getConversationId, conversation.getId())
+          .eq(AiMessage::getDraftStatus, "pending")
+          .ge(AiMessage::getCreatedAt, since));
+      for (AiMessage draft : drafts) {
+        if (draft.getToolCalls() == null) {
+          continue;
+        }
+        Map<String, Object> data = JsonUtil.readObject(draft.getToolCalls());
+        if (data.get("tripId") != null && defaultTripId.equals(data.get("tripId").toString())) {
+          usedDefault = true;
+          break;
+        }
+      }
+      if (!usedDefault) {
+        return content;
+      }
+      Map<String, Object> tripRes = tripService.findOne(defaultTripId, userId);
+      @SuppressWarnings("unchecked")
+      Map<String, Object> tripMap = (Map<String, Object>) tripRes.get("trip");
+      if (tripMap == null || tripMap.get("title") == null) {
+        return content;
+      }
+      String title = tripMap.get("title").toString();
+      if (content.contains(title)) {
+        return content;
+      }
+      StringBuilder note = new StringBuilder("默认按最近行程《").append(title).append("》");
+      Object start = tripMap.get("startDate");
+      Object end = tripMap.get("endDate");
+      if (start instanceof Date startDate && end instanceof Date endDate) {
+        SimpleDateFormat format = new SimpleDateFormat("MM-dd");
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        note.append("（").append(format.format(startDate)).append("~")
+            .append(format.format(endDate)).append("）");
+      }
+      note.append("处理，如需更换行程或天数请直接告诉我。");
+      return note.append("\n\n").append(content).toString();
+    } catch (Exception ignore) {
+      return content;
+    }
+  }
+
   private String buildSystemPrompt(AiConversation conversation) {
     StringBuilder prompt = new StringBuilder();
     prompt.append("你是 Travel OS 的 AI 旅行助手，帮助用户规划行程、查询信息、记录开销。");
@@ -818,54 +886,127 @@ public class AiChatService {
         + "(f) 一天不宜排得过满，一般不超过 6 个点；回复中给出该天的整体时间轴概览。\n");
     prompt.append("10. 票价：购物车/高德不返回门票价格，estimatedCost 由你按常识给出参考值，"
         + "并在回复中说明「票价与营业时间仅供参考，以景区/餐厅公示为准」。金额一律人民币。\n");
+    prompt.append("11. 相对天数与默认行程（重要）：用户说「第二天」「第 N 天」时，一律指行程内的第 N 天（dayIndex=N，从 1 开始），"
+        + "结合行程日期与现有安排换算成真实日期后据此规划，绝不理解为自然日历上的「明天」；"
+        + "用户未指明行程时：对话已关联行程则用当前行程，全局对话则用下方「最近行程」上下文，"
+        + "并在回复开头用一句话明示默认假设（须包含「默认」或「假设」字样，例如「默认按最近行程《赤峰之旅》（07-10~07-12），第二天即 07-11 为你规划」），"
+        + "同时提示用户如需调整（换行程或换天数）可以随时说；"
+        + "若该行程不存在第 N 天、或用户所指的行程不明确，先与用户确认，不要臆造日期。"
+        + "全局对话中的记账等写入操作同样默认作用于最近行程，并在回复中说明这一点。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
           .append("（调用工具时直接使用此 ID，无需向用户询问）。当前用户是本行程成员，可直接操作。\n");
-      try {
-        Map<String, Object> trip = tripService.findOne(conversation.getTripId(),
-            conversation.getUserId());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> tripMap = (Map<String, Object>) trip.get("trip");
-        if (tripMap != null) {
-          prompt.append("行程：").append(tripMap.get("title"))
-              .append("，目的地：").append(tripMap.get("destination"))
-              .append("，日期：").append(tripMap.get("startDate")).append(" ~ ")
-              .append(tripMap.get("endDate")).append("，总预算：")
-              .append(tripMap.get("budget") == null ? "未设" : tripMap.get("budget")).append("。\n");
-        }
-        Map<String, Object> days = tripDayService.findAll(conversation.getTripId(),
-            conversation.getUserId());
-        if (days.get("days") instanceof List<?> dayList) {
-          prompt.append("现有行程安排：\n");
-          SimpleDateFormat format = new SimpleDateFormat("MM-dd");
-          format.setTimeZone(TimeZone.getTimeZone("UTC"));
-          for (Object item : dayList) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> day = (Map<String, Object>) item;
-            prompt.append("第 ").append(day.get("dayIndex")).append(" 天（")
-                .append(format.format(day.get("date"))).append("）：");
-            if (day.get("places") instanceof List<?> places && !places.isEmpty()) {
-              List<String> names = new ArrayList<>();
-              for (Object placeItem : places) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> place = (Map<String, Object>) placeItem;
-                names.add(String.valueOf(place.get("name")));
-              }
-              prompt.append(String.join("、", names));
-            } else {
-              prompt.append("（暂无行程点）");
-            }
-            prompt.append("\n");
-          }
-        }
-      } catch (Exception ex) {
-        prompt.append("（行程上下文读取失败，可请用户重新打开助手）\n");
-      }
+      appendTripContext(prompt, conversation.getTripId(), conversation.getUserId());
     } else {
-      prompt.append("\n当前对话未关联行程，涉及行程操作时请引导用户在具体行程中打开 AI 助手。\n");
+      prompt.append("\n当前对话未关联具体行程（在全局页面打开）。\n");
+      String defaultTripId = resolveDefaultTripId(conversation.getUserId());
+      if (defaultTripId != null) {
+        prompt.append("最近行程 ID：").append(defaultTripId)
+            .append("（默认引用对象；用户未指明行程时，行程变更/记账等操作一律以该行程为准，无需向用户询问 ID）。\n");
+        appendTripContext(prompt, defaultTripId, conversation.getUserId());
+        prompt.append("用户说「第二天」等相对天数时，指本行程的第 N 天（按上方各天日期换算），不是自然日历上的明天。\n");
+        prompt.append("（全局对话规则）用户未指明行程时，回复开头第一句必须写明默认假设（包含「默认」或「假设」字样），")
+            .append("格式如：「默认按最近行程《行程名》（开始~结束），第二天即 M月D日 为你规划，如需更换行程或天数可以告诉我」，再给出规划内容。\n");
+      } else {
+        prompt.append("该用户还没有行程，涉及行程操作时先引导其创建行程（可用 open_page 打开 trips 或 trip-form 页面）。\n");
+      }
     }
     return prompt.toString();
+  }
+
+  /** 行程基础信息 + 逐天现有安排，供系统提示词复用。 */
+  private void appendTripContext(StringBuilder prompt, String tripId, String userId) {
+    try {
+      Map<String, Object> trip = tripService.findOne(tripId, userId);
+      @SuppressWarnings("unchecked")
+      Map<String, Object> tripMap = (Map<String, Object>) trip.get("trip");
+      if (tripMap != null) {
+        prompt.append("行程：").append(tripMap.get("title"))
+            .append("，目的地：").append(tripMap.get("destination"))
+            .append("，日期：").append(tripMap.get("startDate")).append(" ~ ")
+            .append(tripMap.get("endDate")).append("，总预算：")
+            .append(tripMap.get("budget") == null ? "未设" : tripMap.get("budget")).append("。\n");
+      }
+      Map<String, Object> days = tripDayService.findAll(tripId, userId);
+      if (days.get("days") instanceof List<?> dayList) {
+        prompt.append("现有行程安排：\n");
+        SimpleDateFormat format = new SimpleDateFormat("MM-dd");
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        for (Object item : dayList) {
+          @SuppressWarnings("unchecked")
+          Map<String, Object> day = (Map<String, Object>) item;
+          prompt.append("第 ").append(day.get("dayIndex")).append(" 天（")
+              .append(format.format(day.get("date"))).append("）：");
+          if (day.get("places") instanceof List<?> places && !places.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (Object placeItem : places) {
+              @SuppressWarnings("unchecked")
+              Map<String, Object> place = (Map<String, Object>) placeItem;
+              names.add(String.valueOf(place.get("name")));
+            }
+            prompt.append(String.join("、", names));
+          } else {
+            prompt.append("（暂无行程点）");
+          }
+          prompt.append("\n");
+        }
+      }
+    } catch (Exception ex) {
+      prompt.append("（行程上下文读取失败，可请用户重新打开助手）\n");
+    }
+  }
+
+  /**
+   * 全局对话的默认行程：按「我的行程」排序（updatedAt 倒序）取最近一次**已规划**
+   * （某天已有行程点）的行程；其次是最近有天的行程；再次则回退为最新行程。
+   */
+  private String resolveDefaultTripId(String userId) {
+    try {
+      Map<String, Object> res = tripService.findAll(userId);
+      if (!(res.get("trips") instanceof List<?> trips) || trips.isEmpty()) {
+        return null;
+      }
+      String firstId = null;
+      String firstWithDays = null;
+      int examined = 0;
+      for (Object item : trips) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tripMap = (Map<String, Object>) item;
+        Object idObj = tripMap.get("id");
+        if (idObj == null) {
+          continue;
+        }
+        String id = idObj.toString();
+        if (firstId == null) {
+          firstId = id;
+        }
+        if (++examined > 10) {
+          break;
+        }
+        try {
+          Map<String, Object> daysRes = tripDayService.findAll(id, userId);
+          if (!(daysRes.get("days") instanceof List<?> days) || days.isEmpty()) {
+            continue;
+          }
+          if (firstWithDays == null) {
+            firstWithDays = id;
+          }
+          for (Object dayObj : days) {
+            if (dayObj instanceof Map<?, ?> day
+                && day.get("places") instanceof List<?> places && !places.isEmpty()) {
+              return id;
+            }
+          }
+        } catch (Exception ignore) {
+          // 单条读取失败则继续尝试下一条
+        }
+      }
+      return firstWithDays != null ? firstWithDays : firstId;
+    } catch (Exception ignore) {
+      // 读取失败视为没有默认行程
+    }
+    return null;
   }
 
   private List<Map<String, Object>> toolDefinitions() {
@@ -891,12 +1032,16 @@ public class AiChatService {
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
     tools.add(function("add_expense",
-        "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入",
+        "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入。"
+            + "对话未关联行程时（全局对话），默认记入最近行程，并在回复中说明",
         Map.of("amount", stringProp("金额（元，数字字符串）"),
             "category", stringProp("类别：transport/hotel/food/ticket/shopping/other 之一"),
             "title", stringProp("标题，可空"), "notes", stringProp("备注，可空"))));
     tools.add(function("propose_itinerary_change",
-        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。规划某天行程时，请为每个点给出合理的 startTime/endTime（含游玩时长与交通衔接）、estimatedCost（票价）与 openTime（营业时间，来自 search_attractions），并携带 latitude/longitude（来自搜索结果）以便地图定位",
+        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。"
+            + "「第二天」「第 N 天」一律按行程的第 N 天理解（结合上下文中的各天日期），不要按日历的明天理解；"
+            + "对话未关联行程时（全局对话），草稿默认作用于最近行程（见系统提示词中的「最近行程」）。"
+            + "规划某天行程时，请为每个点给出合理的 startTime/endTime（含游玩时长与交通衔接）、estimatedCost（票价）与 openTime（营业时间，来自 search_attractions），并携带 latitude/longitude（来自搜索结果）以便地图定位",
         Map.of("summary", stringProp("变更摘要，如「第二天：故宫→午餐→天安门」"),
             "changes", Map.of(
                 "type", "array",

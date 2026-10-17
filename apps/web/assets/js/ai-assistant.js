@@ -404,8 +404,8 @@
   function placeBubble() {
     if (!S.bubble || !S.bubbleOpen) return;
     if (S.expanded || S.mobile) return;   /* 抽屉 / sheet 走 CSS 定位 */
-    var bw = S.bubble.offsetWidth || 400;
-    var bh = S.bubble.offsetHeight || 360;
+    var bw = S.bubble.offsetWidth || 480;
+    var bh = S.bubble.offsetHeight || 420;
     var left = Math.min(Math.max(S.x + 23 - bw / 2, 10), window.innerWidth - bw - 10);
     S.bubble.style.left = Math.round(left) + 'px';
     var top = S.y - bh - 16;

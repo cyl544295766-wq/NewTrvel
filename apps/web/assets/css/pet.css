@@ -172,8 +172,9 @@
 .pet-bubble {
   position: fixed;
   z-index: 57;
-  width: 400px;
+  width: 480px;
   max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   background: #fff;
   border: 1px solid rgba(13, 110, 110, 0.10);
   border-radius: 14px;
@@ -230,8 +231,8 @@
 .pet-bubble .pb-head .x:hover { background: rgba(255, 255, 255, 0.28); }
 
 .pet-bubble .pb-msgs {
-  max-height: 440px;
-  min-height: 140px;
+  max-height: min(560px, calc(100vh - 190px));
+  min-height: 180px;
   overflow-y: auto;
   padding: 14px 14px 10px;
   display: flex;
@@ -240,7 +241,7 @@
   background: var(--mist, #F2FAF9);
   scrollbar-width: thin;
 }
-.pet-msg { max-width: 86%; font-size: 13px; line-height: 1.65; }
+.pet-msg { max-width: 86%; font-size: 13.5px; line-height: 1.7; }
 .pet-msg .txt {
   padding: 9px 13px;
   border-radius: 12px;
@@ -482,7 +483,8 @@
 /* 桌面展开：右侧全高抽屉 */
 .pet-bubble.expanded {
   left: auto; right: 0; top: 0; bottom: 0;
-  width: 520px; max-width: 100%;
+  width: clamp(560px, 46vw, 760px); max-width: calc(100vw - 40px);
+  max-height: none;
   border: none; border-left: 1px solid rgba(13, 110, 110, 0.10);
   border-radius: 0;
   box-shadow: -18px 0 48px rgba(13, 110, 110, 0.20);
@@ -492,7 +494,9 @@
 .pet-bubble.expanded.open { transform: none; }
 .pet-bubble.expanded::after { display: none; }
 .pet-bubble.expanded .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.pet-bubble.expanded .pb-msgs { flex: 1; max-height: none; }
+.pet-bubble.expanded .pb-msgs { flex: 1; max-height: none; padding: 18px 20px 12px; }
+/* 抽屉更宽，限制气泡行宽，避免长句横跨整屏影响阅读 */
+.pet-bubble.expanded .pet-msg { max-width: 78%; }
 
 /* ===== 无障碍 / 弱动效 ===== */
 @media (prefers-reduced-motion: reduce) {
@@ -511,7 +515,7 @@
   .pet-bubble {
     left: 0; right: 0; bottom: 0; top: auto;
     width: 100%; max-width: 100%;
-    max-height: 84vh;
+    max-height: 92vh;
     border-radius: 16px 16px 0 0;
     display: flex; flex-direction: column;
     transform: translateY(100%);
