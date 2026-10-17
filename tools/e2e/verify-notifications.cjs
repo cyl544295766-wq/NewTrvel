@@ -6,7 +6,6 @@ const path = require('path');
 
 const ORIGIN = 'http://127.0.0.1:3001';
 const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
-const ADMIN = 'cmrdbm84p0001fmbcs21zkqb2';
 const SHOTS = 'D:/tmp/notifications-shots';
 const SEED_IDS = ['verify-notif-1', 'verify-notif-2'];
 
@@ -17,6 +16,7 @@ function psql(sql) {
 
 async function main() {
   const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  const ADMIN = user.id;
   fs.mkdirSync(SHOTS, { recursive: true });
 
   // ---- seed 2 notifications (1 unread+high, 1 read+normal) ----
@@ -24,10 +24,10 @@ async function main() {
   psql("DELETE FROM notifications WHERE id IN ('verify-notif-1','verify-notif-2');");
   psql("INSERT INTO notifications (id, user_id, type, title, content, link, metadata, is_read, priority, created_at) VALUES "
     + "('verify-notif-1', '" + ADMIN + "', 'trip_upcoming', '验证通知·行程临近', '再过 3 天就要出发了，记得检查打包清单和证件。', "
-    + "'/trips/" + TRIP + "/packing', '{\"kind\":\"booking_reminder\",\"tripId\":\"" + TRIP + "\"}'::jsonb, false, 'high', now());");
+    + "'/trips/" + TRIP + "/packing', '{\"kind\":\"booking_reminder\",\"tripId\":\"" + TRIP + "\"}'::jsonb, false, 'high', (now() AT TIME ZONE 'Asia/Shanghai'));");
   psql("INSERT INTO notifications (id, user_id, type, title, content, link, metadata, is_read, priority, created_at) VALUES "
     + "('verify-notif-2', '" + ADMIN + "', 'system', '验证通知·系统消息', '这是一条已读的普通系统通知。', "
-    + "'/trips/" + TRIP + "/expenses', '{\"kind\":\"settlement_confirmed\",\"tripId\":\"" + TRIP + "\"}'::jsonb, true, 'normal', now() - interval '1 day');");
+    + "'/trips/" + TRIP + "/expenses', '{\"kind\":\"settlement_confirmed\",\"tripId\":\"" + TRIP + "\"}'::jsonb, true, 'normal', (now() AT TIME ZONE 'Asia/Shanghai') - interval '1 day');");
   const total = psql("SELECT count(*) FROM notifications WHERE user_id = '" + ADMIN + "';");
   console.log('seeded 2 | DB total =', total);
   /* API 会过滤已过期通知，用 API 的 total 作为期望值 */

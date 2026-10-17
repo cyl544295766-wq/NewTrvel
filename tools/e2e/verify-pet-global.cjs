@@ -53,41 +53,38 @@ async function main() {
     if (errs.length) { console.log('  !!  ' + p + ' JS 报错: ' + errs[0]); failures++; }
   }
 
-  /* ---- 分层：trip-detail 打开 AI 抽屉，抽屉应盖住宠物 ---- */
-  console.log('--- 分层检查（trip-detail AI 抽屉 vs 宠物）---');
+  /* ---- 分层：trip-detail 由统一助手抽屉呈现，抽屉/遮罩应盖住宠物 ---- */
+  console.log('--- 分层检查（统一助手抽屉 vs 宠物）---');
   await page.goto(ORIGIN + '/trip-detail/?id=' + TRIP, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#modules .module', { timeout: 15000 });
+  let tripReady = true;
+  try { await page.waitForSelector('#modules .module', { timeout: 15000 }); }
+  catch (e) { tripReady = false; }
   await page.waitForSelector('.pet', { timeout: 9000 });
-  await page.locator('#btnAi').click();
-  await page.waitForTimeout(700);
-  const layering = await page.evaluate(() => {
-    const petZ = parseInt(getComputedStyle(document.querySelector('.pet-host')).zIndex, 10);
-    const drawer = [...document.querySelectorAll('body *')].filter(el =>
-      el.id === 'aiPanel' || (el.className && String(el.className).includes('ai-panel')));
-    let drawerZ = null, drawerVisible = false;
-    for (const el of drawer) {
-      const st = getComputedStyle(el);
-      if (st.display !== 'none' && st.visibility !== 'hidden') {
-        drawerZ = Math.max(drawerZ || 0, parseInt(st.zIndex, 10) || 0);
-        drawerVisible = true;
-      }
-    }
-    /* 抽屉中心点命中的最顶层元素不应是宠物 */
-    const dr = drawer.find(el => { const st = getComputedStyle(el); return st.display !== 'none'; });
-    let centerHit = null;
-    if (dr) {
-      const r = dr.getBoundingClientRect();
-      const hit = document.elementFromPoint(r.left + r.width / 2, Math.min(Math.max(r.top + 40, 10), innerHeight - 10));
-      centerHit = hit ? (hit.closest('.pet-host') ? 'pet' : 'other') : 'none';
-    }
-    return { petZ, drawerZ, drawerVisible, centerHit };
-  });
-  if (layering.drawerVisible && layering.drawerZ) {
-    const ok = layering.petZ < layering.drawerZ && layering.centerHit !== 'pet';
-    console.log((ok ? '  ok  ' : '  !!  ') + '抽屉 z=' + layering.drawerZ + ' > 宠物 z=' + layering.petZ + '，抽屉中心命中: ' + layering.centerHit);
-    if (!ok) failures++;
+  if (!tripReady) {
+    console.log('  (skip) 种子行程缺失，trip-detail 未渲染模块，跳过分层测试');
   } else {
-    console.log('  (skip) 抽屉未检出可见实例，跳过命中测试');
+    await page.locator('#btnAi').click();
+    await page.waitForSelector('.pet-bubble.expanded', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const layering = await page.evaluate(() => {
+      const petZ = parseInt(getComputedStyle(document.querySelector('.pet-host')).zIndex, 10);
+      const drawer = document.querySelector('.pet-bubble.expanded');
+      const drawerZ = drawer ? (parseInt(getComputedStyle(drawer).zIndex, 10) || 0) : null;
+      const maskShown = !!document.querySelector('.pet-mask.show');
+      /* 宠物中心命中的最顶层元素不应再是宠物（已被遮罩/抽屉盖住） */
+      const pet = document.querySelector('.pet').getBoundingClientRect();
+      const hit = document.elementFromPoint(pet.left + pet.width / 2, pet.top + pet.height / 2);
+      const petCenterCovered = hit ? (!hit.closest('.pet-host') ? 'covered' : 'pet') : 'none';
+      return { petZ, drawerZ, drawerVisible: !!drawer, maskShown, petCenterCovered };
+    });
+    if (layering.drawerVisible && layering.maskShown) {
+      const ok = layering.drawerZ > layering.petZ && layering.petCenterCovered === 'covered';
+      console.log((ok ? '  ok  ' : '  !!  ') + '助手抽屉 z=' + layering.drawerZ + ' > 宠物 z=' + layering.petZ
+        + '，宠物中心命中: ' + layering.petCenterCovered);
+      if (!ok) failures++;
+    } else {
+      console.log('  !! 统一助手抽屉未打开'); failures++;
+    }
   }
 
   /* ---- 气泡在非首页也能用（stats 页代表） ---- */

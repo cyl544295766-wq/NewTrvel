@@ -51,14 +51,14 @@ public class TripPlaceService {
     place.setName(name.trim());
     place.setType(optionalString(dto.get("type")) == null ? "custom" : dto.get("type").toString());
     place.setAddress(toNullable(dto.get("address")));
-    place.setLatitude(toDecimal(dto.get("latitude")));
-    place.setLongitude(toDecimal(dto.get("longitude")));
+    place.setLatitude(toDecimal(dto.get("latitude"), "纬度"));
+    place.setLongitude(toDecimal(dto.get("longitude"), "经度"));
     place.setStartTime(toDateOrNull(dto.get("startTime")));
     place.setEndTime(toDateOrNull(dto.get("endTime")));
     place.setNotes(toNullable(dto.get("notes")));
     place.setSortOrder(sortOrder);
     place.setIsCompleted(dto.get("isCompleted") != null && Boolean.parseBoolean(dto.get("isCompleted").toString()));
-    place.setEstimatedCost(toDecimal(dto.get("estimatedCost")));
+    place.setEstimatedCost(toDecimal(dto.get("estimatedCost"), "预估费用"));
     place.setCreatedAt(new Date());
     place.setUpdatedAt(new Date());
     tripPlaceMapper.insert(place);
@@ -90,16 +90,16 @@ public class TripPlaceService {
       place.setAddress(toNullable(dto.get("address")));
     }
     if (dto.containsKey("latitude")) {
-      place.setLatitude(toDecimal(dto.get("latitude")));
+      place.setLatitude(toDecimal(dto.get("latitude"), "纬度"));
     }
     if (dto.containsKey("longitude")) {
-      place.setLongitude(toDecimal(dto.get("longitude")));
+      place.setLongitude(toDecimal(dto.get("longitude"), "经度"));
     }
     if (dto.containsKey("startTime")) {
       place.setStartTime(toDateOrNull(dto.get("startTime")));
     }
     if (dto.containsKey("estimatedCost")) {
-      place.setEstimatedCost(toDecimal(dto.get("estimatedCost")));
+      place.setEstimatedCost(toDecimal(dto.get("estimatedCost"), "预估费用"));
     }
     if (dto.containsKey("endTime")) {
       place.setEndTime(toDateOrNull(dto.get("endTime")));
@@ -197,7 +197,7 @@ public class TripPlaceService {
     return trimmed.isEmpty() ? null : trimmed;
   }
 
-  private java.math.BigDecimal toDecimal(Object value) {
+  private java.math.BigDecimal toDecimal(Object value, String label) {
     if (value == null) {
       return null;
     }
@@ -208,7 +208,7 @@ public class TripPlaceService {
     try {
       return new java.math.BigDecimal(text);
     } catch (NumberFormatException ex) {
-      throw ApiException.badRequest("坐标格式不正确");
+      throw ApiException.badRequest(label + "格式不正确");
     }
   }
 

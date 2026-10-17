@@ -34,6 +34,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * AI 旅行助手（第一期，设计文档 3.5）。
@@ -110,12 +112,16 @@ public class AiChatService {
 
   // ==================== 会话管理 ====================
 
-  public Map<String, Object> listConversations(String userId, String tripId) {
+  public Map<String, Object> listConversations(String userId, String tripId, String scope) {
     LambdaQueryWrapper<AiConversation> query = new LambdaQueryWrapper<AiConversation>()
         .eq(AiConversation::getUserId, userId)
         .orderByDesc(AiConversation::getUpdatedAt);
     if (tripId != null && !tripId.isBlank()) {
+      /* 指定行程：仅该行程的会话 */
       query.eq(AiConversation::getTripId, tripId);
+    } else if ("global".equalsIgnoreCase(scope)) {
+      /* 全局范围：仅不含行程的会话（全站助手无行程上下文时使用） */
+      query.and(w -> w.isNull(AiConversation::getTripId).or().eq(AiConversation::getTripId, ""));
     }
     List<Map<String, Object>> rows = new ArrayList<>();
     for (AiConversation conversation : conversationMapper.selectList(query)) {
@@ -424,7 +430,7 @@ public class AiChatService {
             payload.put("address", change.get("address"));
           }
           // 时间规划：确定目标日期后落 startTime/endTime
-          Date dayDate = resolveDayDate(tripId, change);
+          Date dayDate = resolveDayDate(change);
           putTime(payload, "startTime", dayDate, change.get("startTime"));
           putTime(payload, "endTime", dayDate, change.get("endTime"));
           putCost(payload, change.get("estimatedCost"));
@@ -445,12 +451,13 @@ public class AiChatService {
     return count;
   }
 
-  /** 确定变更目标日期：优先 dayIndex，其次该地点当前所属行程天。 */
-  private Date resolveDayDate(String tripId, Map<String, Object> change) {
+  /**
+   * 变更目标日期：update 只信该地点当前所属行程天。
+   * dayIndex 仅对 add 有意义——update 不携带 tripDayId，无法挪天，
+   * 若这里改用 dayIndex 的日期拼 startTime，会出现「地点在第 N 天却带第 M 天时间戳」的错乱。
+   */
+  private Date resolveDayDate(Map<String, Object> change) {
     try {
-      if (change.get("dayIndex") != null) {
-        return findDayByIndex(tripId, toInt(change.get("dayIndex"))).getDate();
-      }
       Object placeId = change.get("placeId");
       if (placeId != null) {
         TripPlace existing = tripPlaceMapper.selectById(String.valueOf(placeId));
@@ -485,13 +492,26 @@ public class AiChatService {
     payload.put(key, format.format(dayDate) + " " + hm + ":00");
   }
 
-  /** 票价（数字字符串）写入 estimatedCost，空值忽略。 */
+  /**
+   * 票价写入 estimatedCost。LLM 常输出「免费 / 约100元 / ￥120.5」等非纯数字文本
+   * （提示词要求纯数字但模型不总守约）：这里清洗出金额，「免费/免票」记 0，
+   * 解析不出金额则丢弃该字段——而不是把脏字符串直传给下游抛错，避免整批变更应用失败。
+   */
   private void putCost(Map<String, Object> payload, Object cost) {
-    String value = stringValue(cost);
-    if (value == null || value.isBlank()) {
+    String text = stringValue(cost);
+    if (text == null || text.isBlank()) {
       return;
     }
-    payload.put("estimatedCost", value.trim());
+    text = text.trim();
+    if (text.contains("免费") || text.contains("免票")) {
+      payload.put("estimatedCost", "0");
+      return;
+    }
+    String normalized = text.replaceAll("(?<=\\d)[,，](?=\\d)", "");
+    Matcher matcher = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(normalized);
+    if (matcher.find()) {
+      payload.put("estimatedCost", matcher.group());
+    }
   }
 
   /** 营业时间并入备注；没有营业时间时保留原备注。 */

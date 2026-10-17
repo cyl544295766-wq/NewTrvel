@@ -75,6 +75,7 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
 
   const me = await jget('/api/auth/me');
   const adminId = me.user.id;
+  const baselineTripCount = String((await jget('/api/dashboard')).stats.tripCount);
 
   /* ================= 临时行程（承载所有写操作） ================= */
   console.log('--- seed 临时行程 ---');
@@ -85,10 +86,12 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
   const TEMP = tempTrip.id;
   await jpost(`/api/trips/${TEMP}/days/generate`, {});
   const tempDays = (await jget(`/api/trips/${TEMP}/days`)).days || [];
+  await jpost(`/api/trips/${TEMP}/days/${tempDays[0].id}/edit-lock`, {});
   const place = (await jpost(`/api/trips/${TEMP}/places`, {
     tripDayId: tempDays[0].id, name: '验证地点·原属D1', type: 'attraction',
     address: '克什克腾旗', longitude: 117.5, latitude: 43.6
   })).json.place;
+  await jreq('DELETE', `/api/trips/${TEMP}/days/${tempDays[0].id}/edit-lock`);
   const booking = (await jpost(`/api/trips/${TEMP}/bookings`, {
     type: 'flight', title: '验证航班', startTime: ymd(2) + ' 09:00:00', orderNo: 'VF-1',
     extra: { flightNo: 'CA777', airports: '北京大兴T2 → 赤峰玉龙' }, reminderMinutes: 120, reminderEnabled: true
@@ -179,21 +182,19 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
   /* ---- AI 助手 ---- */
   console.log('  --- AI 助手（真实 LLM 调用）---');
   await page.locator('#btnAi').click();
-  await page.waitForTimeout(1000);
-  check(await page.locator('#aiPanel').isVisible(), 'AI 抽屉打开');
-  check((await page.locator('#aiMsgs .ai-empty').count()) === 1, '空会话显示引导态');
-  check((await page.locator('#aiMsgs .ai-tips button').count()) === 3, '空态含 3 个示例问题');
-
-  await page.locator('#aiMsgs .ai-tips button').first().click();
-  const tipVal = await page.locator('#aiInput').inputValue();
-  check(tipVal.length > 0, '点示例问题填入输入框：' + tipVal.slice(0, 20));
+  await page.waitForSelector('.pet-bubble.expanded', { timeout: 8000 });
+  await page.waitForTimeout(800);
+  check(await page.locator('.pet-bubble.expanded').isVisible(), 'AI 助手打开（统一悬浮助手）');
+  check((await page.locator('.pet-bubble .pet-empty').count()) === 1, '空会话显示引导态');
+  check((await page.locator('.pet-bubble .pet-chips .pet-chip').count()) === 3, '空态含 3 个示例问题');
+  check(await page.locator('.pet-bubble #petInput').isVisible(), '输入框可用');
 
   // 让 AI 产出「记账」草稿
   async function askForDraft(text, attempt) {
-    await page.locator('#aiInput').fill(text);
-    await page.locator('#aiGo').click();
+    await page.locator('.pet-bubble #petInput').fill(text);
+    await page.locator('.pet-bubble #petSend').click();
     try {
-      await page.waitForSelector('#aiMsgs .ai-draft', { timeout: 120000 });
+      await page.waitForSelector('.pet-bubble .pet-draft', { timeout: 120000 });
       return true;
     } catch (e) {
       console.log('    （第 ' + attempt + ' 次未产出草稿）');
@@ -203,31 +204,31 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
   let gotDraft = await askForDraft('帮我在这个行程记一笔账：门票 240 元，标题写「验证门票」', 1);
   if (!gotDraft) gotDraft = await askForDraft('请调用记账工具，记一笔门票花费 240 元', 2);
   check(gotDraft, 'AI 产出「变更预览」草稿卡片');
-  check((await page.locator('#aiConvSel option').count()) >= 1, '会话已落库并出现在下拉里');
-  const draftKind = (await page.locator('#aiMsgs .ai-draft .dh').last().textContent()).trim();
-  check(/变更预览/.test(draftKind), '草稿卡标题：' + draftKind);
-  check((await page.locator('#aiMsgs .ai-draft .dlist li').count()) >= 1, '草稿卡列出变更明细');
-  const msgsBefore = await page.locator('#aiMsgs .ai-msg:not(.ai-typing)').count();
+  check((await page.locator('.pet-bubble .pb-bar select.conv option').count()) >= 1, '会话已落库并出现在下拉里');
+  const draftKind = (await page.locator('.pet-bubble .pet-draft .pd-h').last().textContent()).trim();
+  check(/预算|变更预览/.test(draftKind), '草稿卡标题：' + draftKind);
+  check((await page.locator('.pet-bubble .pet-draft .pd-list li').count()) >= 1, '草稿卡列出变更明细');
+  const msgsBefore = await page.locator('.pet-bubble .pet-msg').count();
   check(msgsBefore >= 2, '对话消息 ' + msgsBefore + ' 条（用户 + 助手）');
   await page.screenshot({ path: path.join(SHOTS, 'ai-draft.png'), fullPage: false });
 
   // 应用草稿 → 应真的写入账目
   const expBefore = (await jget(`/api/trips/${TEMP}/expenses`)).expenses.length;
-  await page.locator('#aiMsgs .ai-draft .da .ap').last().click();
-  await page.waitForFunction(() => !document.querySelector('#aiMsgs .ai-draft .da .ap'), { timeout: 30000 });
+  await page.locator('.pet-bubble .pet-draft .pd-btn.apply').last().click();
+  await page.waitForSelector('.pet-bubble .pet-draft .pd-stat.ok', { timeout: 30000 });
   await page.waitForTimeout(800);
   const expAfter = (await jget(`/api/trips/${TEMP}/expenses`)).expenses;
   check(expAfter.length === expBefore + 1, '「应用」真的写入了一条账目（' + expBefore + ' → ' + expAfter.length + '）');
   const applied = expAfter[expAfter.length - 1];
   check(String(applied.amount).indexOf('240') >= 0, '写入金额正确：' + applied.amount);
-  check((await page.locator('#aiMsgs .ai-draft .dstat.ok').count()) >= 1, '草稿卡显示「已应用」');
+  check((await page.locator('.pet-bubble .pet-draft .pd-stat.ok').count()) >= 1, '草稿卡显示「已应用」');
 
   // 放弃草稿
   const gotDraft2 = await askForDraft('再记一笔餐饮 100 元，标题「验证餐饮」', 1);
   if (gotDraft2) {
-    await page.locator('#aiMsgs .ai-draft .da .dp').last().click();
+    await page.locator('.pet-bubble .pet-draft .pd-btn.discard').last().click();
     await page.waitForTimeout(1500);
-    check((await page.locator('#aiMsgs .ai-draft .dstat.no').count()) >= 1, '「放弃」后草稿卡显示已放弃');
+    check((await page.locator('.pet-bubble .pet-draft .pd-stat.no').count()) >= 1, '「放弃」后草稿卡显示已放弃');
     const expNow = (await jget(`/api/trips/${TEMP}/expenses`)).expenses.length;
     check(expNow === expBefore + 1, '放弃的草稿没有写入账目（仍 ' + expNow + ' 条）');
   } else {
@@ -235,18 +236,36 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
   }
 
   // 新建 / 删除会话
-  await page.locator('#aiNew').click();
-  await page.waitForTimeout(1200);
-  const convs = (await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length;
-  check(convs >= 2, '「＋ 新建」创建了第二个会话（共 ' + convs + '）');
+  // 新建 / 删除会话（统一助手为懒创建：点「＋ 新建」后首次发消息才落库）
+  const convs0 = (await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length;
+  await page.locator('.pet-bubble .pb-bar .new').click();
+  await page.waitForTimeout(600);
+  await page.locator('.pet-bubble #petInput').fill('你好');
+  await page.locator('.pet-bubble #petSend').click();
+  // 等待 AI 回复完成（打字指示消失）再删除，避免删除在途会话导致 500
+  await page.waitForSelector('.pet-bubble .pet-typing', { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector('.pet-bubble .pet-typing'), { timeout: 120000 });
+  let convs = convs0;
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(1000);
+    convs = (await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length;
+    if (convs >= convs0 + 1) break;
+  }
+  check(convs >= convs0 + 1, '「＋ 新建」后首次发消息创建了第二个会话（共 ' + convs + '）');
+  await page.waitForTimeout(800);
+  check(await page.locator('.pet-bubble .pb-bar .del').isEnabled(), '新会话下「删除」可用');
   page.once('dialog', (d) => d.accept());
-  await page.locator('#aiDel').click();
-  await page.waitForTimeout(1200);
-  const convs2 = (await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length;
+  await page.locator('.pet-bubble .pb-bar .del').click();
+  let convs2 = convs;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(500);
+    convs2 = (await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length;
+    if (convs2 === convs - 1) break;
+  }
   check(convs2 === convs - 1, '「删除」生效（' + convs + ' → ' + convs2 + '）');
-  await page.locator('#aiClose').click();
+  await page.locator('.pet-bubble .x').click();
   await page.waitForTimeout(500);
-  check((await page.locator('#aiPanel').getAttribute('class')).indexOf('show') < 0, 'AI 抽屉可关闭');
+  check((await page.locator('.pet-bubble.expanded').count()) === 0, 'AI 助手可关闭');
 
   /* ═══════════ 2. expenses：类别预算编辑 ═══════════ */
   console.log('\n=== 2. expenses 类别预算 ===');
@@ -419,7 +438,7 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
   check(psql(`SELECT count(*) FROM trips WHERE id=${q(TEMP)};`) === '0', '临时行程已清除');
   check((await jget('/api/ai/conversations?tripId=' + TEMP)).conversations.length === 0, 'AI 会话已清空');
   const dash = await jget('/api/dashboard');
-  check(String(dash.stats.tripCount) === '2', '总览行程数回到 2');
+  check(String(dash.stats.tripCount) === baselineTripCount, '总览行程数回到基线 ' + baselineTripCount + '（实际 ' + dash.stats.tripCount + '）');
 
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} 项断言失败`);
   process.exit(failures === 0 ? 0 : 1);

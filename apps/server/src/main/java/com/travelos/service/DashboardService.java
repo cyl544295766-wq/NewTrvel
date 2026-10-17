@@ -95,7 +95,7 @@ public class DashboardService {
         .eq(TripMember::getUserId, userId)
         .inSql(TripMember::getTripId,
             "SELECT id FROM trips WHERE deleted_at IS NULL AND status <> 'archived' AND archived_at IS NULL AND start_date >= '"
-                + Fmt.dateKey(today) + "'"));
+                + localDateKey(today) + "'"));
     List<Map<String, Object>> upcomingTrips = upcoming.stream()
         .map(member -> tripMapper.selectById(member.getTripId()))
         .filter(trip -> trip != null && trip.getStartDate() != null)
@@ -278,6 +278,14 @@ public class DashboardService {
     calendar.set(Calendar.SECOND, 0);
     calendar.set(Calendar.MILLISECOND, 0);
     return calendar.getTime();
+  }
+
+  /**
+   * 本地时区下的 yyyy-MM-dd。行程 start_date 按 UTC 零点存储（DateUtil.parse 的约定），
+   * 而“今天”的边界必须取本地日历日期，否则 UTC+8 用户在凌晨会得到前一天，导致“下一段旅程”多算一天。
+   */
+  private static String localDateKey(Date date) {
+    return date.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString();
   }
 
   private Date endOfReminderWindow(Date today) {

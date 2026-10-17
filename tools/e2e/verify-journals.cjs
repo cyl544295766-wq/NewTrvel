@@ -1,4 +1,4 @@
-// Verify journals page: write (publish/draft) / mood filter / state filter / hero card / edit + cleanup
+﻿// Verify journals page: write (publish/draft) / mood filter / state filter / hero card / edit + cleanup
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
@@ -67,14 +67,14 @@ async function main() {
   const lab2 = (await page.locator('#drSave').textContent()).trim();
   if (lab2 !== '保存并发布') bail('after untoggle expect 保存并发布, got ' + lab2);
   await page.click('#drSave');
-  await page.waitForSelector('.hero-card', { timeout: 10000 });
+  await page.waitForSelector('#jGrid .hero-card', { timeout: 10000 });
   await page.waitForTimeout(600);
 
-  const heroTitle = (await page.locator('.hero-card h2').textContent()).trim();
+  const heroTitle = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
   if (heroTitle !== '验证游记一') bail('hero title wrong: ' + heroTitle);
-  const moodChip = (await page.locator('.hero-card .mood-chip').textContent()).trim();
+  const moodChip = (await page.locator('#jGrid .hero-card .mood-chip').textContent()).trim();
   if (!moodChip.includes('开心')) bail('mood chip expected 开心, got ' + moodChip);
-  const heroPhotos = await page.locator('.hero-card .hero-photos img').count();
+  const heroPhotos = await page.locator('#jGrid .hero-card .hero-photos img').count();
   if (heroPhotos !== 2) bail('hero photos expected 2, got ' + heroPhotos);
   const ovCount = (await page.locator('#ovCount').textContent()).trim();
   const ovWords = (await page.locator('#ovWords').textContent()).replace(/,/g, '');
@@ -99,7 +99,7 @@ async function main() {
   await page.click('#drSave');
   await page.waitForTimeout(1500);
 
-  const cards = await page.locator('.j-card').count();
+  const cards = await page.locator('#jGrid .j-card').count();
   if (cards !== 1) bail('expected 1 normal card, got ' + cards);
   const draftBadges = await page.locator('.draft-badge').count();
   if (draftBadges !== 1) bail('expected 1 DRAFT badge, got ' + draftBadges);
@@ -111,9 +111,9 @@ async function main() {
   console.log('--- filters ---');
   await page.click('#stateSeg button[data-s="draft"]');
   await page.waitForTimeout(400);
-  const draftView = await page.locator('.hero-card, .j-card').count();
+  const draftView = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
   if (draftView !== 1) bail('draft filter expected 1, got ' + draftView);
-  const isDraftHero = await page.locator('.hero-card.draft, .j-card.draft').count();
+  const isDraftHero = await page.locator('#jGrid .hero-card.draft, #jGrid .j-card.draft').count();
   if (!isDraftHero) bail('filtered result should be the draft');
   await page.click('#stateSeg button[data-s="all"]');
   await page.waitForTimeout(400);
@@ -121,9 +121,9 @@ async function main() {
   // ---- mood filter: happy ----
   await page.click('#moodFilter button[data-m="happy"]');
   await page.waitForTimeout(400);
-  const happyView = await page.locator('.hero-card, .j-card').count();
+  const happyView = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
   if (happyView !== 1) bail('happy filter expected 1, got ' + happyView);
-  const happyHero = (await page.locator('.hero-card h2').textContent()).trim();
+  const happyHero = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
   if (happyHero !== '验证游记一') bail('happy filter should show 游记一, got ' + happyHero);
   await page.click('#moodFilter button[data-m=""]');
   await page.waitForTimeout(400);
@@ -131,7 +131,7 @@ async function main() {
 
   // ---- edit hero journal via UI (hover -> pencil) ----
   console.log('--- edit (UI path) ---');
-  const hero = page.locator('.hero-card').first();
+  const hero = page.locator('#jGrid .hero-card').first();
   await hero.hover();
   await hero.locator('.hero-ops .ed').click();
   await page.waitForSelector('#drawer:not([hidden])', { timeout: 3000 });
@@ -148,7 +148,7 @@ async function main() {
   await page.fill('#drName', '验证游记一（改）');
   await page.click('#drSave');
   await page.waitForTimeout(1500);
-  const heroTitle2 = (await page.locator('.hero-card h2').textContent()).trim();
+  const heroTitle2 = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
   if (heroTitle2 !== '验证游记一（改）') bail('edited title not reflected: ' + heroTitle2);
   console.log('edit OK (prefill title/content/mood/2 photos + rename)');
 
@@ -162,18 +162,18 @@ async function main() {
 
   // ---- delete normal card via UI + delete hero via UI ----
   console.log('--- delete via UI ---');
-  const norm = page.locator('.j-card').first();
+  const norm = page.locator('#jGrid .j-card').first();
   await norm.hover();
   page.once('dialog', d => d.accept());
   await norm.locator('.card-ops .del').click();
   await page.waitForTimeout(1200);
-  const afterDel = await page.locator('.hero-card, .j-card').count();
+  const afterDel = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
   if (afterDel !== 1) bail('expected 1 left after deleting normal card, got ' + afterDel);
   page.once('dialog', d => d.accept());
-  await page.locator('.hero-card').first().hover();
-  await page.locator('.hero-card').first().locator('.hero-ops .del').click();
+  await page.locator('#jGrid .hero-card').first().hover();
+  await page.locator('#jGrid .hero-card').first().locator('.hero-ops .del').click();
   await page.waitForTimeout(1200);
-  const afterDel2 = await page.locator('.hero-card, .j-card').count();
+  const afterDel2 = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
   if (afterDel2 !== 0) bail('expected 0 after deleting hero, got ' + afterDel2);
   const backToEmpty = await page.locator('.empty-state').count();
   if (!backToEmpty) bail('empty state should return after deleting all');

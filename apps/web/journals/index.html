@@ -862,7 +862,7 @@
     async function acquireLock(journalId) {
       try {
         var r = await apiPost('/journals/' + encodeURIComponent(journalId) + '/edit-lock', {});
-        if (r.status === 200) {
+        if (r && !r.error) {
           lockState.journalId = journalId;
           startHeartbeat();
           return true;

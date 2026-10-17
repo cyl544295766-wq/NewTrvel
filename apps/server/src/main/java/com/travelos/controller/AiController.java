@@ -27,8 +27,9 @@ public class AiController {
 
   @GetMapping
   public Map<String, Object> list(@RequestParam(value = "tripId", required = false) String tripId,
+      @RequestParam(value = "scope", required = false) String scope,
       @CurrentUser UserContext user) {
-    return aiChatService.listConversations(user.id(), tripId);
+    return aiChatService.listConversations(user.id(), tripId, scope);
   }
 
   @PostMapping

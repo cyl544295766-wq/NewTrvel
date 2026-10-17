@@ -186,8 +186,8 @@ async function main() {
   } catch (e) { bail('手动发送后未等到回复: ' + e.message); }
   const lastAi = (await page.locator('#petMsgs .pet-msg.ai .txt').last().textContent()).replace(/\s+/g, ' ').trim();
   check(lastAi.length > 4 && !lastAi.includes('[object'), 'AI 真实回复: ' + lastAi.slice(0, 80));
-  /* 会话 id 已持久化 */
-  const convId = await page.evaluate(() => localStorage.getItem('travelos.pet.convId'));
+  /* 会话 id 已持久化（统一组件使用 travelos.ai.convId；旧键 travelos.pet.convId 会自动迁移） */
+  const convId = await page.evaluate(() => localStorage.getItem('travelos.ai.convId'));
   check(!!convId, '会话 id 已存 localStorage（跨页延续）');
   await page.screenshot({ path: path.join(SHOTS, 'bubble.png'), fullPage: false, timeout: 60000 }).catch((e) => console.log('  (skip) bubble 截图失败：' + e.message.split('\n')[0]));
 

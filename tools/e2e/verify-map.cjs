@@ -191,6 +191,7 @@ function ok(msg) { console.log('  OK  ' + msg); }
   await page.setViewportSize({ width: 1512, height: 900 });
   await page.goto(ORIGIN + '/map/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#veilPick:not([hidden])', { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelectorAll('#tripSelect option').length > 0, { timeout: 10000 });
   const optCount = await page.locator('#tripSelect option').count();
   if (optCount === 0) bail('行程选择器没有选项');
   const firstOpt = (await page.locator('#tripSelect option').first().textContent()).trim();

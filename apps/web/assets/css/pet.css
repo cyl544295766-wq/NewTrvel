@@ -171,7 +171,7 @@
 /* ===== 对话气泡 ===== */
 .pet-bubble {
   position: fixed;
-  z-index: 56;
+  z-index: 57;
   width: 400px;
   max-width: calc(100vw - 24px);
   background: #fff;
@@ -362,11 +362,144 @@
   50% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* ===== 草稿卡片（气泡内联确认） ===== */
+.pet-msg.msg-draft { max-width: 100%; width: 100%; }
+.pet-draft {
+  border: 1px solid #F0DFB9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #FFFDF7;
+  box-shadow: 0 4px 12px rgba(184, 131, 15, 0.08);
+}
+.pet-draft.done { opacity: .82; }
+.pet-draft .pd-h {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8A5A16;
+  background: #FDF5E2;
+  padding: 6px 11px;
+  letter-spacing: .02em;
+}
+.pet-draft .pd-b { padding: 9px 11px; }
+.pet-draft .pd-s { font-size: 12.5px; color: var(--ink, #17272B); line-height: 1.6; }
+.pet-draft .pd-list { list-style: none; margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+.pet-draft .pd-list li {
+  font-size: 12px;
+  color: var(--ink-2, #3D6A6C);
+  background: #fff;
+  border: 1px solid #F3E6D6;
+  border-radius: 8px;
+  padding: 5px 9px;
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+.pet-draft .pd-list li .op {
+  flex: none; font-size: 10.5px; font-weight: 600; color: #B8830F;
+  background: #FFF4E3; border-radius: 5px; padding: 1px 6px;
+}
+.pet-draft .pd-list li .dmeta {
+  margin-left: auto; flex: none; font-size: 11px; color: var(--ink-3, #8A7A66);
+  white-space: nowrap;
+}
+.pet-draft .pd-acts { display: flex; gap: 8px; padding: 0 11px 11px; }
+.pet-draft .pd-btn {
+  font: inherit; font-weight: 600; font-size: 12px;
+  padding: 6px 16px; border-radius: 9px; cursor: pointer; border: none;
+}
+.pet-draft .pd-btn.apply { background: var(--stamp, #FF8A4C); color: #fff; }
+.pet-draft .pd-btn.apply:hover { transform: translateY(-1px); }
+.pet-draft .pd-btn.discard { background: #fff; color: var(--ink-2, #3C545A); border: 1.5px solid #E9DCC9; }
+.pet-draft .pd-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.pet-draft .pd-stat { padding: 0 11px 10px; font-size: 11.5px; font-weight: 600; }
+.pet-draft .pd-stat.ok { color: #2A8055; }
+.pet-draft .pd-stat.no { color: var(--mute, #7A9296); }
+
+/* 气泡内轻提示（草稿应用/放弃反馈） */
+.pet-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translate(-50%, 8px);
+  background: rgba(23, 39, 43, 0.92);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 2;
+}
+.pet-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ===== 展开抽屉 / 移动端底部 sheet ===== */
+.pet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 56;
+  background: rgba(18, 58, 60, 0.42);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .24s ease;
+}
+.pet-mask.show { opacity: 1; pointer-events: auto; }
+
+.pet-bubble .pb-head .who { flex: 1; min-width: 0; overflow: hidden; }
+.pet-bubble .pb-head .ex {
+  flex: none; width: 26px; height: 26px; margin-left: auto; line-height: 1;
+  border: none; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16); color: #fff;
+  cursor: pointer; font-size: 13px; transition: background .15s;
+}
+.pet-bubble .pb-head .ex:hover { background: rgba(255, 255, 255, 0.28); }
+.pet-bubble .pb-head .x { margin-left: 6px; }
+
+/* 会话切换条（仅抽屉/sheet 显示） */
+.pet-bubble .pb-bar {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: #fff;
+  border-bottom: 1px solid var(--line, #E4F1F1);
+}
+.pet-bubble .pb-bar[hidden] { display: none; }
+.pet-bubble .pb-bar .conv {
+  flex: 1; min-width: 0; font-family: var(--grot, inherit); font-size: 12.5px;
+  color: var(--ink, #17272B); background: var(--cloud, #F2FAF9);
+  border: 1.5px solid var(--line, #E4F1F1); border-radius: 9px;
+  padding: 7px 9px; outline: none; cursor: pointer;
+}
+.pet-bubble .pb-bar .conv:focus { border-color: var(--brand-soft, #5BC5C0); }
+.pet-bubble .pb-bar button {
+  flex: none; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--ink-2, #3D6A6C); background: #fff;
+  border: 1.5px solid var(--line, #E4F1F1); border-radius: 9px;
+  padding: 7px 11px; cursor: pointer; white-space: nowrap;
+  transition: border-color .16s, color .16s, background .16s;
+}
+.pet-bubble .pb-bar button:hover { border-color: var(--brand-soft, #5BC5C0); color: var(--brand, #0D6E6E); background: #F5FBFB; }
+.pet-bubble .pb-bar button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 桌面展开：右侧全高抽屉 */
+.pet-bubble.expanded {
+  left: auto; right: 0; top: 0; bottom: 0;
+  width: 520px; max-width: 100%;
+  border: none; border-left: 1px solid rgba(13, 110, 110, 0.10);
+  border-radius: 0;
+  box-shadow: -18px 0 48px rgba(13, 110, 110, 0.20);
+  display: flex; flex-direction: column;
+  transform: translateX(12px);
+}
+.pet-bubble.expanded.open { transform: none; }
+.pet-bubble.expanded::after { display: none; }
+.pet-bubble.expanded .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pet-bubble.expanded .pb-msgs { flex: 1; max-height: none; }
+
 /* ===== 无障碍 / 弱动效 ===== */
 @media (prefers-reduced-motion: reduce) {
   /* 移动由用户拖拽驱动，保留交互；仅停用装饰性动画与吸附过渡 */
   .pet .body-wrap, .pet .eye, .pet .shadow { animation: none !important; }
   .pet { transition: none !important; }
+  .pet-bubble, .pet-mask { transition: none !important; }
 }
 /* 打印时隐藏（凭证页等有打印场景） */
 @media print {
@@ -374,6 +507,18 @@
 }
 @media (max-width: 720px) {
   .pet { width: 40px; height: 48px; }
-  .pet-bubble { width: calc(100vw - 20px); }
-  .pet-bubble .pb-msgs { max-height: 46vh; }
+  /* 移动端：气泡即底部 sheet（模态） */
+  .pet-bubble {
+    left: 0; right: 0; bottom: 0; top: auto;
+    width: 100%; max-width: 100%;
+    max-height: 84vh;
+    border-radius: 16px 16px 0 0;
+    display: flex; flex-direction: column;
+    transform: translateY(100%);
+  }
+  .pet-bubble.open { transform: none; }
+  .pet-bubble::after { display: none; }
+  .pet-bubble .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .pet-bubble .pb-msgs { flex: 1; max-height: none; }
+  .pet-mask.show { background: rgba(18, 58, 60, 0.5); }
 }
