@@ -736,6 +736,21 @@
       return null;
     }
 
+    /* ===== 天级编辑锁：同一天行程同一时间只允许一人编辑 ===== */
+    async function grabDay(dayId) {
+      try {
+        await apiPost('/trips/' + tripId + '/days/' + encodeURIComponent(dayId) + '/edit-lock', {});
+        return true;
+      } catch (err) {
+        showToast(humanError(err)); // 409：「XX」正在编辑这一天的行程
+        return false;
+      }
+    }
+    async function freeDay(dayId) {
+      if (!dayId) return;
+      try { await apiDelete('/trips/' + tripId + '/days/' + encodeURIComponent(dayId) + '/edit-lock'); } catch (e) {}
+    }
+
     /* ===== 交互：地点行 ===== */
     $('dayList').addEventListener('click', async function (e) {
       var row = e.target.closest('.p-row');
@@ -746,7 +761,10 @@
       if (editBox) {
         var ePid = editBox.getAttribute('data-edit');
         var found = findPlace(ePid);
-        if (e.target.closest('.cc')) { state.editOpen = null; render(); }
+        if (e.target.closest('.cc')) {
+          freeDay(found && found.day ? found.day.id : null); // 关闭编辑面板 → 释放天锁
+          state.editOpen = null; render();
+        }
         if (e.target.closest('.sv') && found) {
           var get = function (f) { return editBox.querySelector('[data-f="' + f + '"]'); };
           var patch = {};
@@ -771,6 +789,7 @@
             /* 跨天移动：目标行程天与当前不同时调 move（同一地点换天） */
             if (targetDay && targetDay.id !== found.day.id) {
               await apiPatch('/trips/' + tripId + '/places/' + ePid + '/move', { tripDayId: targetDay.id });
+              freeDay(found.day.id); // 保存完成 → 释放源天编辑锁
               state.editOpen = null;
               showToast('已移动到 D' + targetDay.dayIndex);
               await load();
@@ -784,6 +803,7 @@
             found.place.estimatedCost = patch.estimatedCost;
             found.place.startTime = patch.startTime ? new Date(patch.startTime).toISOString() : null;
             found.place.endTime = patch.endTime ? new Date(patch.endTime).toISOString() : null;
+            freeDay(found.day.id); // 保存完成 → 释放天锁
             state.editOpen = null;
             render();
             showToast('已保存');
@@ -811,6 +831,7 @@
           startTime: (t1.value && dOnly2) ? dOnly2 + ' ' + t1.value + ':00' : null,
           endTime: (t2.value && dOnly2) ? dOnly2 + ' ' + t2.value + ':00' : null
         };
+        if (!(await grabDay(dId))) return; // 取天锁（他人持锁 → 409 提示）
         try {
           var created = await apiPost('/trips/' + tripId + '/places', body);
           if (created && created.place) (day.places = day.places || []).push(created.place);
@@ -819,6 +840,7 @@
           nameInput.value = ''; t1.value = ''; t2.value = '';
           showToast('已添加「' + name + '」');
         } catch (err) { showToast(humanError(err)); }
+        freeDay(dId); // 单次操作完成 → 释放
         return;
       }
 
@@ -829,12 +851,13 @@
 
       /* --- 勾选完成 --- */
       if (e.target.closest('.chk')) {
-        var next = !info.place.isCompleted;
+        if (!(await grabDay(info.day.id))) return;
         try {
-          await apiPatch('/trips/' + tripId + '/places/' + pid, { isCompleted: next });
+          await apiPatch('/trips/' + tripId + '/places/' + pid, { isCompleted: next = !info.place.isCompleted });
           info.place.isCompleted = next;
-          render();
         } catch (err) { showToast(humanError(err)); }
+        freeDay(info.day.id);
+        render();
         return;
       }
 
@@ -844,21 +867,29 @@
         var ps = info.day.places || [];
         var j = info.idx, k = j + dir;
         if (k < 0 || k >= ps.length) return;
+        if (!(await grabDay(info.day.id))) return;
         var tmp = ps[j]; ps[j] = ps[k]; ps[k] = tmp;
         try {
           await apiPatch('/trips/' + tripId + '/days/' + info.day.id + '/places/reorder',
             { placeIds: ps.map(function (x) { return x.id; }) });
-          render();
         } catch (err) {
           tmp = ps[j]; ps[j] = ps[k]; ps[k] = tmp; /* 回滚 */
           showToast(humanError(err));
         }
+        freeDay(info.day.id);
+        render();
         return;
       }
 
-      /* --- 打开编辑 --- */
+      /* --- 打开/关闭编辑（打开 = 取天锁；同天他人持锁 → 409 拒绝） --- */
       if (e.target.closest('.ed')) {
-        state.editOpen = (state.editOpen && state.editOpen.p === pid) ? null : { day: info.day.id, p: pid };
+        if (state.editOpen && state.editOpen.p === pid) {
+          freeDay(state.editOpen.day);
+          state.editOpen = null; render(); return;
+        }
+        if (state.editOpen) freeDay(state.editOpen.day); // 切换编辑对象 → 释放旧天锁
+        if (!(await grabDay(info.day.id))) return;
+        state.editOpen = { day: info.day.id, p: pid };
         render();
         return;
       }
@@ -866,12 +897,14 @@
       /* --- 删除 --- */
       if (e.target.closest('.del')) {
         if (!confirm('删除地点「' + (info.place.name || '') + '」？')) return;
+        if (!(await grabDay(info.day.id))) return;
         try {
           await apiDelete('/trips/' + tripId + '/places/' + pid);
           info.day.places.splice(info.idx, 1);
-          render();
           showToast('已删除');
         } catch (err) { showToast(humanError(err)); }
+        freeDay(info.day.id);
+        render();
       }
     });
 
@@ -888,15 +921,22 @@
       if (!day) return;
       var v = inp.value.trim();
       if ((day.title || '') === v) return;
+      if (!(await grabDay(day.id))) return;
       try {
         await apiPatch('/trips/' + tripId + '/days/' + day.id, { title: v || null });
         day.title = v || null;
         showToast('已更新当天标题');
       } catch (err) { showToast(humanError(err)); }
+      freeDay(day.id);
     });
     $('dayList').addEventListener('keydown', function (e) {
       var inp = e.target.closest('[data-daytitle]');
       if (inp && e.key === 'Enter') inp.blur();
+    });
+
+    /* 页面卸载兜底：释放仍持有的天锁（正常路径在各操作完成时释放） */
+    window.addEventListener('beforeunload', function () {
+      if (state.editOpen && state.editOpen.day) freeDay(state.editOpen.day);
     });
 
     /* ===== 生成行程天 ===== */

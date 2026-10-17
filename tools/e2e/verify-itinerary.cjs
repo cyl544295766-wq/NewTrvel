@@ -4,14 +4,54 @@ const fs = require('fs');
 const path = require('path');
 
 const ORIGIN = 'http://127.0.0.1:3001';
-const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
+let TRIP = null;              // 动态创建的验证行程
 const SHOTS = 'D:/tmp/itinerary-shots';
+const SEED_DAYS = 3, SEED_PLACES = [4, 3, 3];   // 3 天 / 10 地点
 
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
+
+async function api(method, p, body, token) {
+  const r = await fetch(ORIGIN + p, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+  return { status: r.status, json: await r.json().catch(() => null) };
+}
+function ymd(o) { const d = new Date(); d.setDate(d.getDate() + o); return d.toISOString().slice(0, 10); }
+
+/** 天锁规则下播种：取锁 → 建地点 → 释放 */
+async function seedPlaces(token, tripId, dayId, names) {
+  await api('POST', `/api/trips/${tripId}/days/${dayId}/edit-lock`, {}, token);
+  for (const name of names) {
+    const r = await api('POST', `/api/trips/${tripId}/places`, { tripDayId: dayId, name }, token);
+    if (r.status !== 200) bail('seed place failed: ' + name + ' -> ' + r.status);
+  }
+  await api('DELETE', `/api/trips/${tripId}/days/${dayId}/edit-lock`, null, token);
+}
 
 async function main() {
   const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
   fs.mkdirSync(SHOTS, { recursive: true });
+
+  /* --- 自建验证行程（不再依赖固定种子数据） --- */
+  console.log('--- seed trip ---');
+  const created = await api('POST', '/api/trips', {
+    title: '行程页验证（临时）', destination: '大理', startDate: ymd(1), endDate: ymd(SEED_DAYS)
+  }, token);
+  if (created.status !== 200) bail('create trip failed: ' + created.status);
+  TRIP = created.json.trip.id;
+  await api('POST', `/api/trips/${TRIP}/days/generate`, {}, token);
+  const days = (await api('GET', `/api/trips/${TRIP}/days`, null, token)).json.days;
+  if (days.length !== SEED_DAYS) bail('expected ' + SEED_DAYS + ' days, got ' + days.length);
+  const allNames = ['苍山索道', '洱海骑行', '大理古城', '崇圣寺三塔', '喜洲古镇', '双廊', '沙溪古镇', '石宝山', '诺邓古村', '云龙天池'];
+  let nameIdx = 0;
+  const tripStartDate = created.json.trip.startDate;
+  for (let i = 0; i < SEED_DAYS; i++) {
+    await seedPlaces(token, TRIP, days[i].id, allNames.slice(nameIdx, nameIdx + SEED_PLACES[i]));
+    nameIdx += SEED_PLACES[i];
+  }
+  const expectDate = (d => ('0' + (d.getMonth() + 1)).slice(-2) + ' / ' + ('0' + d.getDate()).slice(-2))(new Date(String(tripStartDate).slice(0, 10) + 'T00:00:00'));
 
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
@@ -39,7 +79,7 @@ async function main() {
   const dn1 = (await page.locator('.day-card .dn').first().textContent()).trim();
   if (dn1 !== 'D1') bail('stub D1 expected, got ' + dn1);
   const dd1 = (await page.locator('.day-card .dd').first().textContent()).trim();
-  if (dd1 !== '07 / 24') bail('stub date expected 07 / 24, got ' + dd1);
+  if (dd1 !== expectDate) bail('stub date expected ' + expectDate + ', got ' + dd1);
   const ring0 = (await page.locator('.day-card .ring .num').first().textContent()).trim();
   console.log('day1 ring =', ring0);
 
@@ -168,6 +208,10 @@ async function main() {
   console.log('shot -> mobile.png');
 
   await browser.close();
+
+  /* --- 清理：软删临时行程 --- */
+  const del = await api('DELETE', '/api/trips/' + TRIP, null, token);
+  console.log(del.status === 200 ? 'cleanup OK (trip soft-deleted)' : 'cleanup WARN: ' + del.status);
   console.log('OK');
 }
 

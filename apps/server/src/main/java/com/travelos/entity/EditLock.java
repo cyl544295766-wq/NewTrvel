@@ -6,12 +6,17 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.util.Date;
 
-/** 攻略编辑互斥锁：journal_id 主键，同一时间有且只有一人可编辑。 */
-@TableName("journal_edit_locks")
-public class JournalEditLock {
+/**
+ * 编辑互斥锁（天级作用域）：
+ *  - scope_id = 行程天 ID（攻略无天时为 "journal:{id}"）；
+ *  - 主键天然互斥：同一作用域同一时间只有一条持锁记录；
+ *  - TTL 过期可被他人抢占，编辑器异常由过期兜底。
+ */
+@TableName("edit_locks")
+public class EditLock {
 
-  @TableId("journal_id")
-  private String journalId;
+  @TableId("scope_id")
+  private String scopeId;
 
   @TableField("holder_id")
   private String holderId;
@@ -25,8 +30,8 @@ public class JournalEditLock {
   @TableField("expires_at")
   private Date expiresAt;
 
-  public String getJournalId() { return journalId; }
-  public void setJournalId(String journalId) { this.journalId = journalId; }
+  public String getScopeId() { return scopeId; }
+  public void setScopeId(String scopeId) { this.scopeId = scopeId; }
 
   public String getHolderId() { return holderId; }
   public void setHolderId(String holderId) { this.holderId = holderId; }
