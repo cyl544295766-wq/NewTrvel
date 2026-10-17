@@ -181,7 +181,9 @@ const dataUrl = (b) => 'data:image/png;base64,' + b.toString('base64');
 
   /* ---- AI 助手 ---- */
   console.log('  --- AI 助手（真实 LLM 调用）---');
-  await page.locator('#btnAi').click();
+  await page.locator('.pet').click();
+  await page.waitForSelector('.pet-bubble.open', { timeout: 8000 });
+  await page.locator('.pet-bubble .ex').click();
   await page.waitForSelector('.pet-bubble.expanded', { timeout: 8000 });
   await page.waitForTimeout(800);
   check(await page.locator('.pet-bubble.expanded').isVisible(), 'AI 助手打开（统一悬浮助手）');

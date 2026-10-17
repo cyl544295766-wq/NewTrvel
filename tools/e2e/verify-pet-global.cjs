@@ -63,7 +63,9 @@ async function main() {
   if (!tripReady) {
     console.log('  (skip) 种子行程缺失，trip-detail 未渲染模块，跳过分层测试');
   } else {
-    await page.locator('#btnAi').click();
+    await page.locator('.pet').click();
+    await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
+    await page.locator('.pet-bubble .ex').click();
     await page.waitForSelector('.pet-bubble.expanded', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     const layering = await page.evaluate(() => {

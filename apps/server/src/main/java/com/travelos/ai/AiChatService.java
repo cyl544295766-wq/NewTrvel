@@ -618,8 +618,7 @@ public class AiChatService {
             requireArg(args, "keyword"), resolveCity(args, conversation), "restaurant", 6));
         case "search_attractions" -> JsonUtil.write(placesService.searchPois(
             requireArg(args, "keyword"), resolveCity(args, conversation), "attraction", 6));
-        case "search_hotels" -> JsonUtil.write(placesService.searchPois(
-            requireArg(args, "keyword"), resolveCity(args, conversation), "hotel", 6));
+        case "search_hotels" -> searchHotels(args, conversation, userId);
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
@@ -630,6 +629,59 @@ public class AiChatService {
     } catch (ApiException ex) {
       return "{\"error\":\"" + ex.getMessage().replace("\"", "'") + "\"}";
     }
+  }
+
+  /**
+   * 酒店检索前置校验：行程的每一天都必须已有景点/行程安排，才允许检索推荐酒店。
+   * 未满足时返回 blocked 指引（不下发任何酒店数据），由模型转述为「先确定每天行程」的引导话术。
+   */
+  private String searchHotels(Map<String, Object> args, AiConversation conversation, String userId) {
+    String tripId = conversation.getTripId();
+    if (tripId == null) {
+      tripId = resolveDefaultTripId(userId);
+    }
+    if (tripId == null) {
+      return blockedHotelResult("no_trip", List.of(),
+          "用户还没有行程，不能推荐酒店。请先引导用户创建行程并确定每天要去的景点/行程，再推荐酒店；现在不要罗列或推荐任何酒店。");
+    }
+    Map<String, Object> daysRes = tripDayService.findAll(tripId, userId);
+    List<?> dayList = daysRes.get("days") instanceof List<?> list ? list : List.of();
+    if (dayList.isEmpty()) {
+      return blockedHotelResult("no_days", List.of(),
+          "该行程还没有任何天安排，不能推荐酒店。请先引导用户确定每天的景点/行程，再推荐酒店；现在不要罗列或推荐任何酒店。");
+    }
+    List<Integer> emptyDays = new ArrayList<>();
+    for (Object item : dayList) {
+      @SuppressWarnings("unchecked")
+      Map<String, Object> day = (Map<String, Object>) item;
+      if (!(day.get("places") instanceof List<?> places) || places.isEmpty()) {
+        emptyDays.add(day.get("dayIndex") instanceof Number number ? number.intValue() : 0);
+      }
+    }
+    if (!emptyDays.isEmpty()) {
+      List<String> labels = new ArrayList<>();
+      for (int dayNumber : emptyDays) {
+        if (dayNumber > 0) {
+          labels.add(String.valueOf(dayNumber));
+        }
+      }
+      return blockedHotelResult("empty_days", emptyDays,
+          "行程第 " + String.join("、", labels.isEmpty() ? List.of("几天") : labels)
+              + " 天还没有任何景点/行程安排。酒店需要结合每天的行程选位置，请先引导用户确定这些天的景点/行程（可主动提议帮忙规划），确认后再推荐酒店；现在不要罗列或推荐任何酒店。");
+    }
+    return JsonUtil.write(placesService.searchPois(
+        requireArg(args, "keyword"), resolveCity(args, conversation), "hotel", 6));
+  }
+
+  private String blockedHotelResult(String reason, List<Integer> emptyDays, String hint) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("blocked", true);
+    result.put("reason", reason);
+    if (!emptyDays.isEmpty()) {
+      result.put("emptyDays", emptyDays);
+    }
+    result.put("hint", hint);
+    return JsonUtil.write(result);
   }
 
   /** 城市提示：优先用工具参数 city，缺省回落到当前行程的目的地。 */
@@ -906,8 +958,11 @@ public class AiChatService {
         + "并给出菜系、评分、人均消费、营业时间与地址；营业时间以工具返回为准。\n");
     prompt.append("8. 景点信息：查询景点营业时间/评分/地址时调用 search_attractions。"
         + "营业时间必须采用工具返回值；仅当工具未返回时才可凭常识给出，并注明「以景区公告为准」。\n");
-    prompt.append("9. 酒店推荐：用户想找住的地方/酒店/民宿时，调用 search_hotels，结合行程地点与预算推荐 2-4 家，"
-        + "并给出评分、参考价格、地址与电话；若用户想把住宿安排进行程，可再用 propose_itinerary_change 生成草稿（type=hotel）。\n");
+    prompt.append("9. 酒店推荐（前置条件，重要）：用户想找住的地方/酒店/民宿时，必须先确认行程的每一天都已经有景点/行程安排，才可调用 search_hotels 推荐。"
+        + "工具返回 blocked 即表示条件未满足：此时绝对不要推荐或罗列任何酒店（包括凭常识推荐），"
+        + "应简洁引导用户先确定缺失天的景点/行程（指出是第几天），并可主动提议「要我先帮你规划第 X 天吗？」；确认后再推荐。"
+        + "满足条件后：结合行程地点与预算推荐 2-4 家，给出评分、参考价格、地址与电话；"
+        + "若用户想把住宿安排进行程，可再用 propose_itinerary_change 生成草稿（type=hotel）。\n");
     prompt.append("10. 时间规划（重要）：用户要求规划某一天的行程时，用 propose_itinerary_change 生成草稿（不要直接写行程）。要求："
         + "(a) 为每个景点给出合理停留时长——小型景点 1~1.5 小时、中型 2~3 小时、大型景区/博物馆 3~4 小时，"
         + "并用 24 小时制 startTime/endTime 标出；"
@@ -965,6 +1020,7 @@ public class AiChatService {
         prompt.append("现有行程安排：\n");
         SimpleDateFormat format = new SimpleDateFormat("MM-dd");
         format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        List<Integer> emptyDays = new ArrayList<>();
         for (Object item : dayList) {
           @SuppressWarnings("unchecked")
           Map<String, Object> day = (Map<String, Object>) item;
@@ -980,8 +1036,19 @@ public class AiChatService {
             prompt.append(String.join("、", names));
           } else {
             prompt.append("（暂无行程点）");
+            emptyDays.add(day.get("dayIndex") instanceof Number number ? number.intValue() : 0);
           }
           prompt.append("\n");
+        }
+        List<String> emptyLabels = new ArrayList<>();
+        for (int dayNumber : emptyDays) {
+          if (dayNumber > 0) {
+            emptyLabels.add(String.valueOf(dayNumber));
+          }
+        }
+        if (!emptyLabels.isEmpty()) {
+          prompt.append("注意：第 ").append(String.join("、", emptyLabels))
+              .append(" 天还没有任何行程点；在行程每天都有景点/安排之前，不要推荐酒店，先引导用户补齐这些天的行程。\n");
         }
       }
     } catch (Exception ex) {
@@ -1062,8 +1129,9 @@ public class AiChatService {
         Map.of("keyword", stringProp("关键词，如「故宫」「博物馆」"),
             "city", stringProp("城市名，可空（默认用行程目的地）"))));
     tools.add(function("search_hotels",
-        "搜索酒店/住宿（高德 POI）。用于「酒店推荐」「帮找住的地方」：返回评分(rating)、参考价格(avgCost)、"
-            + "地址、电话、坐标。结合行程地点与预算给出 2-4 家建议；用户想把住宿安排进行程时，再配合 propose_itinerary_change 生成草稿",
+        "搜索酒店/住宿（高德 POI）。前置条件（重要）：行程的每一天都必须已有景点/行程安排，才能推荐酒店；"
+            + "若返回 blocked（行程有空白天或还没有行程），不要推荐任何酒店，按 hint 引导用户先确定每天的行程景点。"
+            + "可用时返回评分(rating)、参考价格(avgCost)、地址、电话、坐标，结合行程地点与预算给出 2-4 家建议",
         Map.of("keyword", stringProp("关键词，如「酒店」「民宿」「青旅」「近地铁」"),
             "city", stringProp("城市名，可空（默认用行程目的地）"))));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
