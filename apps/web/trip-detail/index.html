@@ -495,6 +495,10 @@
     flex: none; font-size: 10.5px; font-weight: 600; color: #B8830F;
     background: #FFF4E3; border-radius: 5px; padding: 1px 6px;
   }
+  .ai-draft .dlist li .dmeta {
+    margin-left: auto; flex: none; font-size: 11.5px; color: var(--ink-3, #8A7A66);
+    white-space: nowrap;
+  }
   .ai-draft .da { display: flex; gap: 8px; padding: 0 13px 13px; }
   .ai-draft .da button {
     font-family: var(--grot); font-weight: 600; font-size: 12.5px;
@@ -1409,10 +1413,16 @@
       }
       if (d.type === 'itinerary_change' && Array.isArray(d.changes)) {
         html += '<ul class="dlist">' + d.changes.slice(0, 12).map(function (c) {
-          var op = c.action === 'update' ? '修改' : (c.action === 'delete' ? '删除' : '新增');
+          var op = c.action === 'update' ? '修改' : (c.action === 'remove' || c.action === 'delete' ? '删除' : '新增');
           var txt = (c.name || c.placeId || '');
           if (c.dayIndex != null) txt += ' · 第 ' + c.dayIndex + ' 天';
-          return '<li><span class="op">' + op + '</span>' + escapeHtml(txt) + '</li>';
+          var meta = [];
+          if (c.startTime && c.endTime) meta.push(escapeHtml(c.startTime + '–' + c.endTime));
+          else if (c.startTime) meta.push(escapeHtml(c.startTime));
+          if (c.estimatedCost != null && c.estimatedCost !== '') meta.push('¥' + escapeHtml(String(c.estimatedCost)));
+          if (c.openTime) meta.push('营业 ' + escapeHtml(c.openTime));
+          return '<li><span class="op">' + op + '</span>' + escapeHtml(txt)
+            + (meta.length ? '<span class="dmeta">' + meta.join(' · ') + '</span>' : '') + '</li>';
         }).join('') + '</ul>';
       }
       html += '</div>';

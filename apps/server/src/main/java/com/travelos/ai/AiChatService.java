@@ -389,12 +389,16 @@ public class AiChatService {
           if (change.get("type") != null) {
             payload.put("type", change.get("type"));
           }
-          if (change.get("notes") != null) {
-            payload.put("notes", change.get("notes"));
-          }
           if (change.get("address") != null) {
             payload.put("address", change.get("address"));
           }
+          // 时间规划：把草稿的 HH:mm 落到该天的具体日期（startTime/endTime）
+          putTime(payload, "startTime", day.getDate(), change.get("startTime"));
+          putTime(payload, "endTime", day.getDate(), change.get("endTime"));
+          // 票价：写入预估费用（estimatedCost）
+          putCost(payload, change.get("estimatedCost"));
+          // 营业时间并入备注（notes）
+          putNotes(payload, change.get("notes"), stringValue(change.get("openTime")));
           // 坐标：草稿携带则直接用，缺则按名称/地址地理编码补齐 —— 否则地图无法定位（历史 bug：AI 应用的地点全部无坐标）
           String[] coord = resolveCoordinates(change, cityHint);
           if (coord[0] != null) {
@@ -416,12 +420,15 @@ public class AiChatService {
           if (change.get("type") != null) {
             payload.put("type", change.get("type"));
           }
-          if (change.get("notes") != null) {
-            payload.put("notes", change.get("notes"));
-          }
           if (change.get("address") != null) {
             payload.put("address", change.get("address"));
           }
+          // 时间规划：确定目标日期后落 startTime/endTime
+          Date dayDate = resolveDayDate(tripId, change);
+          putTime(payload, "startTime", dayDate, change.get("startTime"));
+          putTime(payload, "endTime", dayDate, change.get("endTime"));
+          putCost(payload, change.get("estimatedCost"));
+          putNotes(payload, change.get("notes"), stringValue(change.get("openTime")));
           // 更新也允许显式携带坐标（containsKey 语义，仅在草稿提供时写入）
           if (change.get("latitude") != null && change.get("longitude") != null) {
             payload.put("latitude", change.get("latitude"));
@@ -436,6 +443,72 @@ public class AiChatService {
       }
     }
     return count;
+  }
+
+  /** 确定变更目标日期：优先 dayIndex，其次该地点当前所属行程天。 */
+  private Date resolveDayDate(String tripId, Map<String, Object> change) {
+    try {
+      if (change.get("dayIndex") != null) {
+        return findDayByIndex(tripId, toInt(change.get("dayIndex"))).getDate();
+      }
+      Object placeId = change.get("placeId");
+      if (placeId != null) {
+        TripPlace existing = tripPlaceMapper.selectById(String.valueOf(placeId));
+        if (existing != null && existing.getTripDayId() != null) {
+          TripDay day = tripDayMapper.selectById(existing.getTripDayId());
+          if (day != null) {
+            return day.getDate();
+          }
+        }
+      }
+    } catch (Exception ignore) {
+      // 无法确定日期时，时间字段将被忽略
+    }
+    return null;
+  }
+
+  /** 把 HH:mm 形式的时刻落到指定日期，写入 payload（日期为空或格式非法则忽略）。 */
+  private void putTime(Map<String, Object> payload, String key, Date dayDate, Object timeValue) {
+    String time = stringValue(timeValue);
+    if (dayDate == null || time == null || time.isBlank()) {
+      return;
+    }
+    String hm = time.trim();
+    if (hm.length() > 5) {
+      hm = hm.substring(0, 5);
+    }
+    if (!hm.matches("\\d{2}:\\d{2}")) {
+      return;
+    }
+    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+    format.setTimeZone(TimeZone.getTimeZone("UTC"));
+    payload.put(key, format.format(dayDate) + " " + hm + ":00");
+  }
+
+  /** 票价（数字字符串）写入 estimatedCost，空值忽略。 */
+  private void putCost(Map<String, Object> payload, Object cost) {
+    String value = stringValue(cost);
+    if (value == null || value.isBlank()) {
+      return;
+    }
+    payload.put("estimatedCost", value.trim());
+  }
+
+  /** 营业时间并入备注；没有营业时间时保留原备注。 */
+  private void putNotes(Map<String, Object> payload, Object notesObj, String openTime) {
+    String notes = stringValue(notesObj);
+    String notesText = notes == null ? "" : notes.trim();
+    if (openTime != null && !openTime.isBlank()) {
+      String merged = "营业时间：" + openTime.trim()
+          + (notesText.isEmpty() ? "" : "；" + notesText);
+      payload.put("notes", merged);
+    } else if (!notesText.isEmpty()) {
+      payload.put("notes", notesText);
+    }
+  }
+
+  private String stringValue(Object value) {
+    return value == null ? null : value.toString();
   }
 
   /**
@@ -515,6 +588,10 @@ public class AiChatService {
         case "search_places" -> JsonUtil.write(placesService.getSuggestions(
             requireArg(args, "keyword"),
             args.get("city") == null ? "" : args.get("city").toString(), 8));
+        case "search_restaurants" -> JsonUtil.write(placesService.searchPois(
+            requireArg(args, "keyword"), resolveCity(args, conversation), "restaurant", 6));
+        case "search_attractions" -> JsonUtil.write(placesService.searchPois(
+            requireArg(args, "keyword"), resolveCity(args, conversation), "attraction", 6));
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
@@ -525,6 +602,28 @@ public class AiChatService {
     } catch (ApiException ex) {
       return "{\"error\":\"" + ex.getMessage().replace("\"", "'") + "\"}";
     }
+  }
+
+  /** 城市提示：优先用工具参数 city，缺省回落到当前行程的目的地。 */
+  @SuppressWarnings("unchecked")
+  private String resolveCity(Map<String, Object> args, AiConversation conversation) {
+    Object city = args.get("city");
+    if (city != null && !city.toString().isBlank()) {
+      return city.toString().trim();
+    }
+    if (conversation.getTripId() != null) {
+      try {
+        Map<String, Object> res = tripService.findOne(conversation.getTripId(),
+            conversation.getUserId());
+        Map<String, Object> trip = (Map<String, Object>) res.get("trip");
+        if (trip != null && trip.get("destination") != null) {
+          return trip.get("destination").toString();
+        }
+      } catch (Exception ignore) {
+        // 读行程失败仅影响城市过滤，不影响搜索
+      }
+    }
+    return "";
   }
 
   private String listPlacesOfDay(Map<String, Object> args, String userId) {
@@ -685,6 +784,20 @@ public class AiChatService {
     prompt.append("6. 页面导航：当用户明确想查看或打开系统中的某个页面（如「打开行程规划」「看看我的花费」「去记账」「帮我看下预订」），")
         .append("调用 open_page 工具选择最匹配的页面，并在回复中用一句话自然告知即将打开的页面（如「好的，这就带你去行程规划～」）。")
         .append("普通旅行咨询（攻略、建议、问答）不要调用 open_page，避免误跳转。\n");
+    prompt.append("7. 餐厅推荐：用户想找吃的/餐厅时，调用 search_restaurants，结合行程地点、口味与预算推荐 2-4 家，"
+        + "并给出菜系、评分、人均消费、营业时间与地址；营业时间以工具返回为准。\n");
+    prompt.append("8. 景点信息：查询景点营业时间/评分/地址时调用 search_attractions。"
+        + "营业时间必须采用工具返回值；仅当工具未返回时才可凭常识给出，并注明「以景区公告为准」。\n");
+    prompt.append("9. 时间规划（重要）：用户要求规划某一天的行程时，用 propose_itinerary_change 生成草稿（不要直接写行程）。要求："
+        + "(a) 为每个景点给出合理停留时长——小型景点 1~1.5 小时、中型 2~3 小时、大型景区/博物馆 3~4 小时，"
+        + "并用 24 小时制 startTime/endTime 标出；"
+        + "(b) 相邻地点之间预留 20~40 分钟交通时间，并按地理远近合理安排顺序；"
+        + "(c) 用餐时段（午 11:30–13:00、晚 17:30–19:00）安排餐厅，避免与景点冲突；"
+        + "(d) 严格遵守景点营业时间，避开展馆闭馆日/闭馆时段（如博物馆多周一闭馆）；"
+        + "(e) 每个景点在 change 项给出 estimatedCost（门票，人民币数字，免费填 0），并将营业时间放入 openTime；"
+        + "(f) 一天不宜排得过满，一般不超过 6 个点；回复中给出该天的整体时间轴概览。\n");
+    prompt.append("10. 票价：购物车/高德不返回门票价格，estimatedCost 由你按常识给出参考值，"
+        + "并在回复中说明「票价与营业时间仅供参考，以景区/餐厅公示为准」。金额一律人民币。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -745,6 +858,16 @@ public class AiChatService {
         Map.of("tripDayId", stringProp("行程天 ID"))));
     tools.add(function("search_places", "按关键词搜索地点（高德 POI），返回名称与地址建议",
         Map.of("keyword", stringProp("搜索关键词"), "city", stringProp("城市名，可空"))));
+    tools.add(function("search_restaurants",
+        "搜索餐厅/美食（高德 POI）。用于「饭店推荐」：返回菜系(type)、评分(rating)、人均消费(avgCost)、"
+            + "营业时间(openTime)、地址、电话、坐标。结合行程地点、口味与预算给出 2-4 家建议",
+        Map.of("keyword", stringProp("关键词，如「烤鸭」「火锅」「本地菜」"),
+            "city", stringProp("城市名，可空（默认用行程目的地）"))));
+    tools.add(function("search_attractions",
+        "搜索景点（高德 POI）。用于查询「景点营业时间」与做时间规划：返回营业时间(openTime)、评分、"
+            + "地址、坐标。营业时间必须采用返回结果",
+        Map.of("keyword", stringProp("关键词，如「故宫」「博物馆」"),
+            "city", stringProp("城市名，可空（默认用行程目的地）"))));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
     tools.add(function("add_expense",
@@ -753,22 +876,26 @@ public class AiChatService {
             "category", stringProp("类别：transport/hotel/food/ticket/shopping/other 之一"),
             "title", stringProp("标题，可空"), "notes", stringProp("备注，可空"))));
     tools.add(function("propose_itinerary_change",
-        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。若已通过 search_places 查到地点坐标，务必在 change 项中携带 latitude 与 longitude，可让地图直接定位",
-        Map.of("summary", stringProp("变更摘要，如「为第二天新增 3 个景点」"),
+        "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。规划某天行程时，请为每个点给出合理的 startTime/endTime（含游玩时长与交通衔接）、estimatedCost（票价）与 openTime（营业时间，来自 search_attractions），并携带 latitude/longitude（来自搜索结果）以便地图定位",
+        Map.of("summary", stringProp("变更摘要，如「第二天：故宫→午餐→天安门」"),
             "changes", Map.of(
                 "type", "array",
                 "items", Map.of(
                     "type", "object",
-                    "properties", Map.of(
-                        "action", stringProp("add / remove / update"),
-                        "dayIndex", stringProp("第几天（add 必填，从 1 开始）"),
-                        "placeId", stringProp("行程点 ID（remove/update 必填）"),
-                        "name", stringProp("地点名称"),
-                        "type", stringProp("attraction/hotel/restaurant/transport/shopping/custom"),
-                        "notes", stringProp("备注"),
-                        "address", stringProp("地址"),
-                        "latitude", stringProp("纬度（来自 search_places 结果，可空字符串）"),
-                        "longitude", stringProp("经度（来自 search_places 结果，可空字符串）")))))));
+                    "properties", Map.ofEntries(
+                        Map.entry("action", stringProp("add / remove / update")),
+                        Map.entry("dayIndex", stringProp("第几天（add 必填，从 1 开始）")),
+                        Map.entry("placeId", stringProp("行程点 ID（remove/update 必填）")),
+                        Map.entry("name", stringProp("地点名称")),
+                        Map.entry("type", stringProp("attraction/hotel/restaurant/transport/shopping/custom")),
+                        Map.entry("address", stringProp("地址")),
+                        Map.entry("latitude", stringProp("纬度（来自搜索工具结果，可空）")),
+                        Map.entry("longitude", stringProp("经度（来自搜索工具结果，可空）")),
+                        Map.entry("startTime", stringProp("开始时刻 HH:mm（24 小时制，时间规划用）")),
+                        Map.entry("endTime", stringProp("结束时刻 HH:mm（24 小时制，时间规划用）")),
+                        Map.entry("estimatedCost", stringProp("票价/费用（人民币数字字符串，免费填 0，可空）")),
+                        Map.entry("openTime", stringProp("营业时间文本（来自 search_attractions/search_restaurants，将写入备注）")),
+                        Map.entry("notes", stringProp("备注，可空"))))))));
     tools.add(function("open_page",
         "打开系统页面：用户想查看/前往某个页面时调用。page 可选值："
             + "home 首页总览、trips 我的行程、trip-form 新建行程、trip-detail 行程详情（需行程ID）、"
