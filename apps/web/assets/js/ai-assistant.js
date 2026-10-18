@@ -109,12 +109,13 @@
    *   - 行程子页缺参：解析期把参数补进 URL，避免其自身跳回 /trips/。
    */
   var LAST_TRIP_KEY = 'travelos.ai.lastTripId';
-  /* 行程子页 → 该页读取的行程参数名（journal-detail 的 id 是日记 id；map 自带行程选择器降级，均不在此列） */
+  /* 行程子页 → 该页读取的行程参数名（journal-detail 的 id 是日记 id；map 自带行程选择器降级；
+   * trip-form 为新建页，注入 id 会被其当成编辑模式，均不在此列） */
   var TRIP_ROUTES = {
     '/itinerary/': 'trip', '/expenses/': 'trip', '/packing/': 'trip',
     '/documents/': 'trip', '/photos/': 'trip', '/journals/': 'trip',
     '/bookings/': 'trip', '/vouchers/': 'trip',
-    '/trip-detail/': 'id', '/trip-form/': 'id'
+    '/trip-detail/': 'id'
   };
 
   function currentPath() {
