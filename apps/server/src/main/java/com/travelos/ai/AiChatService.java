@@ -550,7 +550,14 @@ public class AiChatService {
     }
     String name = change.get("name") == null ? "" : change.get("name").toString().trim();
     String address = change.get("address") == null ? "" : change.get("address").toString().trim();
-    for (String keyword : new String[]{name, address}) {
+    /* 去括注名（如「日喀则（返程过夜点）」→「日喀则」）：高德联想对带括注的全名常搜不到，
+     * 而括注多为「过夜点/途经落脚」等人工标注，去掉后才能命中真实地点 */
+    String stripped = name.replaceAll("（[^）]*）", "").replaceAll("\\([^)]*\\)", "").trim();
+    java.util.LinkedHashSet<String> keywords = new java.util.LinkedHashSet<>();
+    if (!name.isBlank()) keywords.add(name);
+    if (!stripped.isBlank() && !stripped.equals(name)) keywords.add(stripped);
+    if (!address.isBlank()) keywords.add(address);
+    for (String keyword : keywords) {
       if (keyword.isBlank()) {
         continue;
       }
