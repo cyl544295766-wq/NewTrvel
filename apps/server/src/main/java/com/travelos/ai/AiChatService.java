@@ -88,6 +88,15 @@ public class AiChatService {
       "ticket", List.of("itemName", "session"),
       "other", List.of("pickup"));
 
+  /** 「预订某天行程」类请求的确定性兜底识别。 */
+  private static final Pattern BOOKING_INTENT_PATTERN = Pattern.compile("预定|预订|预约|订");
+  private static final Pattern DAY_PATTERN = Pattern.compile("第\\s*([0-9一二三四五六七八九十两]+)\\s*天");
+  private static final Pattern VAGUE_DAY_PATTERN = Pattern.compile("某天|哪天");
+  private static final Map<Character, Integer> CN_NUMERALS = Map.ofEntries(
+      Map.entry('一', 1), Map.entry('二', 2), Map.entry('两', 2), Map.entry('三', 3),
+      Map.entry('四', 4), Map.entry('五', 5), Map.entry('六', 6), Map.entry('七', 7),
+      Map.entry('八', 8), Map.entry('九', 9), Map.entry('十', 10));
+
   /** 每用户同时最多 1 个进行中的对话请求（并发限流）。 */
   private final Set<String> inFlightUsers = ConcurrentHashMap.newKeySet();
 
@@ -268,8 +277,9 @@ public class AiChatService {
         if (toolCalls.isEmpty()) {
           String finalContent = messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent;
           finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
+          String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
           finalReply = insertMessage(conversationId, userId, "assistant", finalContent,
-              buildReplyMeta(navigation, options), null);
+              buildReplyMeta(navigation, replyOptions), null);
           break;
         }
 
@@ -285,7 +295,11 @@ public class AiChatService {
           if ("open_page".equals(call.get("name"))) {
             navigation = extractNavigation(result);
           } else if ("ask_options".equals(call.get("name"))) {
-            options = extractOptions(result);
+            // 仅成功的解析结果才覆盖，避免后续失败调用把已捕获的按钮清空
+            String parsedOptions = extractOptions(result);
+            if (parsedOptions != null) {
+              options = parsedOptions;
+            }
           }
           Map<String, Object> toolMessage = new LinkedHashMap<>();
           toolMessage.put("role", "tool");
@@ -295,9 +309,11 @@ public class AiChatService {
         }
       }
       if (finalReply == null) {
+        String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
         finalReply = insertMessage(conversationId, userId, "assistant",
-            "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。",
-            buildReplyMeta(navigation, options), null);
+            replyOptions != null ? "想预订的话，直接点选下面的一项就可以～"
+                : "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。",
+            buildReplyMeta(navigation, replyOptions), null);
       }
       conversation.setUpdatedAt(new Date());
       conversationMapper.updateById(conversation);
@@ -1095,25 +1111,20 @@ public class AiChatService {
   /** ask_options 工具：校验选项并回传（随最终回复下发给前端渲染可点击按钮）。 */
   private String askOptions(Map<String, Object> args) {
     List<String> options = new ArrayList<>();
-    if (args.get("options") instanceof List<?> list) {
+    Object raw = args.get("options");
+    if (raw instanceof List<?> list) {
       for (Object item : list) {
-        if (item == null) {
-          continue;
-        }
-        String text = item.toString().trim();
-        if (text.length() > 30) {
-          text = text.substring(0, 30);
-        }
-        if (!text.isBlank() && !options.contains(text)) {
-          options.add(text);
-        }
-        if (options.size() >= 6) {
-          break;
-        }
+        addOption(options, item);
+      }
+    } else if (raw instanceof String text) {
+      // 模型偶尔把数组塞成字符串：按常见分隔符拆分
+      for (String part : text.split("[、，,|;；\\n]")) {
+        addOption(options, part);
       }
     }
     if (options.isEmpty()) {
-      return "{\"error\":\"options 不能为空，请提供 2-6 个简短选项\"}";
+      log.warn("ask_options 参数不可用: {}", args);
+      return "{\"error\":\"options 不能为空，请把选项作为 JSON 字符串数组传入（如 [\\\"选项A\\\",\\\"选项B\\\"]）\"}";
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("shown", true);
@@ -1121,8 +1132,158 @@ public class AiChatService {
       result.put("question", args.get("question").toString());
     }
     result.put("options", options);
-    result.put("hint", "选项按钮已随回复下发给用户，点击即等价于发送该选项文本；最终回复用一句话提问即可，不要重复罗列选项。");
+    result.put("hint", "选项按钮已随回复下发给用户，点击即等价于发送该选项文本；不要再重复调用本工具，"
+        + "直接给出一句最终提问即可，也不要再罗列选项文字。");
     return JsonUtil.write(result);
+  }
+
+  /** 单个选项归一化：兼容字符串与 {label/text/value/name} 对象，去重复、限长、限量。 */
+  private void addOption(List<String> options, Object item) {
+    if (item == null || options.size() >= 6) {
+      return;
+    }
+    String text;
+    if (item instanceof Map<?, ?> map) {
+      Object value = map.get("label");
+      if (value == null) {
+        value = map.get("text");
+      }
+      if (value == null) {
+        value = map.get("value");
+      }
+      if (value == null) {
+        value = map.get("name");
+      }
+      text = value == null ? "" : value.toString();
+    } else {
+      text = item.toString();
+    }
+    text = text.trim();
+    if (text.length() > 30) {
+      text = text.substring(0, 30);
+    }
+    if (!text.isBlank() && !options.contains(text)) {
+      options.add(text);
+    }
+  }
+
+  /**
+   * 最终回复的选项按钮：模型给出（ask_options）优先；否则对「预订某天行程」类请求做确定性兜底——
+   * 从该天真实行程点生成可点选按钮。模型偶发漏调/调错工具时，保证用户始终看到选项（历史 bug）。
+   */
+  private String resolveReplyOptions(String options, String userContent, AiConversation conversation,
+      String userId, Date turnStart) {
+    if (options != null || userContent == null || userContent.isBlank()
+        || !BOOKING_INTENT_PATTERN.matcher(userContent).find()) {
+      return options;
+    }
+    Integer dayIndex = extractDayIndex(userContent);
+    if (dayIndex == null && !VAGUE_DAY_PATTERN.matcher(userContent).find()) {
+      return null;
+    }
+    // 本轮已生成待确认草稿（含预订草稿）时不补按钮，避免与卡片重复
+    Long pending = messageMapper.selectCount(new LambdaQueryWrapper<AiMessage>()
+        .eq(AiMessage::getConversationId, conversation.getId())
+        .eq(AiMessage::getDraftStatus, "pending")
+        .ge(AiMessage::getCreatedAt, turnStart));
+    if (pending != null && pending > 0) {
+      return null;
+    }
+    String tripId = conversation.getTripId() != null ? conversation.getTripId()
+        : resolveDefaultTripId(userId);
+    if (tripId == null) {
+      return null;
+    }
+    try {
+      Map<String, Object> daysRes = tripDayService.findAll(tripId, userId);
+      if (!(daysRes.get("days") instanceof List<?> days) || days.isEmpty()) {
+        return null;
+      }
+      List<String> optionTexts = new ArrayList<>();
+      String question;
+      if (dayIndex != null) {
+        Map<String, Object> target = null;
+        for (Object item : days) {
+          if (item instanceof Map<?, ?> rawDay) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> day = (Map<String, Object>) rawDay;
+            if (day.get("dayIndex") instanceof Number num
+                && num.intValue() == dayIndex) {
+              target = day;
+              break;
+            }
+          }
+        }
+        if (target == null || !(target.get("places") instanceof List<?> places)
+            || places.isEmpty()) {
+          return null;
+        }
+        for (Object placeItem : places) {
+          if (placeItem instanceof Map<?, ?> rawPlace) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> place = (Map<String, Object>) rawPlace;
+            String name = String.valueOf(place.get("name"));
+            if (name.isBlank() || "null".equals(name)) {
+              continue;
+            }
+            if (name.length() > 22) {
+              name = name.substring(0, 22);
+            }
+            optionTexts.add(name + " 门票");
+            if (optionTexts.size() >= 5) {
+              break;
+            }
+          }
+        }
+        if (optionTexts.isEmpty()) {
+          return null;
+        }
+        optionTexts.add("当天住宿");
+        question = "想订第 " + dayIndex + " 天的哪一项？";
+      } else {
+        SimpleDateFormat format = new SimpleDateFormat("MM-dd");
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        for (Object item : days) {
+          if (item instanceof Map<?, ?> rawDay && optionTexts.size() < 6) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> day = (Map<String, Object>) rawDay;
+            Object dayNumber = day.get("dayIndex");
+            if (dayNumber instanceof Number num && day.get("date") instanceof Date date) {
+              optionTexts.add("第 " + num.intValue() + " 天（" + format.format(date) + "）");
+            }
+          }
+        }
+        if (optionTexts.size() < 2) {
+          return null;
+        }
+        question = "想订哪一天的行程？";
+      }
+      Map<String, Object> opt = new LinkedHashMap<>();
+      opt.put("type", "options");
+      opt.put("question", question);
+      opt.put("options", optionTexts);
+      return JsonUtil.write(opt);
+    } catch (Exception ex) {
+      log.warn("booking day options fallback failed", ex);
+      return null;
+    }
+  }
+
+  /** 从用户话术里解析「第 N 天」的天数（支持阿拉伯数字与常见的汉字数字）。 */
+  private Integer extractDayIndex(String content) {
+    Matcher matcher = DAY_PATTERN.matcher(content);
+    if (!matcher.find()) {
+      return null;
+    }
+    String raw = matcher.group(1).trim();
+    if (raw.matches("\\d+")) {
+      try {
+        return Integer.parseInt(raw);
+      } catch (NumberFormatException ex) {
+        return null;
+      }
+    }
+    return CN_NUMERALS.get(raw.charAt(0));
   }
 
   // ==================== 系统提示词与工具定义 ====================
