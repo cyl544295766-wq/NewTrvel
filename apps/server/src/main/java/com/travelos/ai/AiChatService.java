@@ -257,6 +257,7 @@ public class AiChatService {
 
       AiMessage finalReply = null;
       String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
+      String options = null;      /* 本轮 ask_options 工具产生的选择按钮（随最终回复下发） */
       Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         Map<String, Object> message = llm.chat(llmMessages, toolDefinitions());
@@ -267,7 +268,8 @@ public class AiChatService {
         if (toolCalls.isEmpty()) {
           String finalContent = messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent;
           finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
-          finalReply = insertMessage(conversationId, userId, "assistant", finalContent, navigation, null);
+          finalReply = insertMessage(conversationId, userId, "assistant", finalContent,
+              buildReplyMeta(navigation, options), null);
           break;
         }
 
@@ -282,6 +284,8 @@ public class AiChatService {
           String result = executeTool(call, conversation, userId);
           if ("open_page".equals(call.get("name"))) {
             navigation = extractNavigation(result);
+          } else if ("ask_options".equals(call.get("name"))) {
+            options = extractOptions(result);
           }
           Map<String, Object> toolMessage = new LinkedHashMap<>();
           toolMessage.put("role", "tool");
@@ -292,7 +296,8 @@ public class AiChatService {
       }
       if (finalReply == null) {
         finalReply = insertMessage(conversationId, userId, "assistant",
-            "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。", navigation, null);
+            "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。",
+            buildReplyMeta(navigation, options), null);
       }
       conversation.setUpdatedAt(new Date());
       conversationMapper.updateById(conversation);
@@ -710,6 +715,7 @@ public class AiChatService {
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "add_booking" -> createBookingDraft(args, conversation, userId);
+        case "ask_options" -> askOptions(args);
         case "propose_itinerary_change" -> createItineraryDraft(args, conversation, userId);
         case "open_page" -> openPage(args, conversation, userId);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
@@ -1044,6 +1050,81 @@ public class AiChatService {
     return null;
   }
 
+  /** 从 ask_options 工具结果中提取选择按钮（成功才返回 options JSON，否则 null）。 */
+  private String extractOptions(String toolResult) {
+    try {
+      Map<String, Object> map = JsonUtil.readObject(toolResult);
+      if (Boolean.TRUE.equals(map.get("shown")) && map.get("options") instanceof List<?> list
+          && !list.isEmpty()) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("type", "options");
+        if (map.get("question") != null) {
+          options.put("question", map.get("question"));
+        }
+        options.put("options", list);
+        return JsonUtil.write(options);
+      }
+    } catch (Exception ignore) {
+      // 工具结果异常时忽略选项，不影响回复本身
+    }
+    return null;
+  }
+
+  /** 合并导航与选项按钮为随最终回复下发的元数据（都为 null 时不落库）。 */
+  private String buildReplyMeta(String navigation, String options) {
+    if (navigation == null && options == null) {
+      return null;
+    }
+    if (navigation == null) {
+      return options;
+    }
+    if (options == null) {
+      return navigation;
+    }
+    try {
+      Map<String, Object> meta = new LinkedHashMap<>();
+      meta.put("type", "meta");
+      meta.put("navigation", JsonUtil.readObject(navigation));
+      meta.put("options", JsonUtil.readObject(options));
+      return JsonUtil.write(meta);
+    } catch (Exception ignore) {
+      return navigation;
+    }
+  }
+
+  /** ask_options 工具：校验选项并回传（随最终回复下发给前端渲染可点击按钮）。 */
+  private String askOptions(Map<String, Object> args) {
+    List<String> options = new ArrayList<>();
+    if (args.get("options") instanceof List<?> list) {
+      for (Object item : list) {
+        if (item == null) {
+          continue;
+        }
+        String text = item.toString().trim();
+        if (text.length() > 30) {
+          text = text.substring(0, 30);
+        }
+        if (!text.isBlank() && !options.contains(text)) {
+          options.add(text);
+        }
+        if (options.size() >= 6) {
+          break;
+        }
+      }
+    }
+    if (options.isEmpty()) {
+      return "{\"error\":\"options 不能为空，请提供 2-6 个简短选项\"}";
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("shown", true);
+    if (args.get("question") != null && !args.get("question").toString().isBlank()) {
+      result.put("question", args.get("question").toString());
+    }
+    result.put("options", options);
+    result.put("hint", "选项按钮已随回复下发给用户，点击即等价于发送该选项文本；最终回复用一句话提问即可，不要重复罗列选项。");
+    return JsonUtil.write(result);
+  }
+
   // ==================== 系统提示词与工具定义 ====================
 
   /**
@@ -1149,7 +1230,13 @@ public class AiChatService {
         + "全局对话中的记账等写入操作同样默认作用于最近行程，并在回复中说明这一点。\n");
     prompt.append("13. 预订登记（重要）：用户要求预订/登记/记录一条预订（如「订了机票 CA1234」「把这家酒店记下来」「门票已订好」），或选定酒店后要求订下/登记时，"
         + "必须调用 add_booking 生成待确认草稿，绝不直接写入；生成后向用户复述类型、标题、时间与金额，并说明在卡片点「应用」后即写入预定管理。"
-        + "title 必填；时间不确定时可用行程内合理时间并注明假设；不确定是否已登记过时可先 get_bookings 查询避免重复。\n");
+        + "title 必填；时间不确定时可用行程内合理时间并注明假设；不确定是否已登记过时可先 get_bookings 查询避免重复。"
+        + "用户只说「预订/订一下/预定某天的行程」而没指明具体对象（哪一天、哪一项、哪家酒店）时，先按规则 14 用 ask_options 让用户点选，再生成草稿，不要让用户手动输入。\n");
+    prompt.append("14. 选择按钮（重要）：当需要用户从有限候选中做选择时（预订哪一天的哪一项、订哪家酒店、选择类型/日期、是否确认），"
+        + "必须调用 ask_options 生成可点击按钮，不要让用户手动打字：options 必须基于工具返回的真实数据"
+        + "（如 list_trip_days 的每天行程点、search_hotels 的酒店名），每条简短具体（≤16 字），2-6 条；"
+        + "调用后最终回复只写一句自然提问，不要重复罗列选项文本；"
+        + "推荐酒店/景点后若用户下一步大概率要挑选下单，可同时附一组「订这家：××」按钮。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -1334,6 +1421,17 @@ public class AiChatService {
             Map.entry("itemName", stringProp("项目名称（门票，可空）")),
             Map.entry("session", stringProp("场次（门票，可空）")),
             Map.entry("pickup", stringProp("取还/详情（其他，可空）")))));
+    tools.add(function("ask_options",
+        "选择按钮：需要用户从有限候选中做选择时调用（如订哪一天的哪一项、选哪家酒店、选类型、要不要登记），"
+            + "界面会把 options 渲染成可点击按钮，用户点一下即作为消息发回给你。"
+            + "选项必须基于工具返回的真实数据、简短具体（≤16 字，如「第 2 天 · 乌兰布统影视基地」「订这家：××酒店」「暂不登记」），2-6 条；"
+            + "调用后最终回复用一句话提问即可，不要重复罗列选项文字",
+        Map.ofEntries(
+            Map.entry("question", stringProp("引导提问，如「想订哪一天的哪一项？」")),
+            Map.entry("options", Map.of(
+                "type", "array",
+                "description", "可点击选项（2-6 条，简短具体）",
+                "items", Map.of("type", "string"))))));
     tools.add(function("add_expense",
         "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入。"
             + "对话未关联行程时（全局对话），默认记入最近行程，并在回复中说明",
@@ -1520,11 +1618,20 @@ public class AiChatService {
     if (message.getDraftStatus() != null && message.getToolCalls() != null) {
       map.put("draft", JsonUtil.readObject(message.getToolCalls()));
     } else if (message.getToolCalls() != null) {
-      // 非草稿消息的 toolCalls 目前只承载页面导航（open_page），解析失败则不带该字段
+      // 非草稿消息的 toolCalls 承载页面导航（open_page）与选择按钮（ask_options），解析失败则不带
       try {
         Map<String, Object> extra = JsonUtil.readObject(message.getToolCalls());
         if ("navigate".equals(extra.get("type"))) {
           map.put("navigation", extra);
+        } else if ("options".equals(extra.get("type"))) {
+          map.put("options", extra);
+        } else if ("meta".equals(extra.get("type"))) {
+          if (extra.get("navigation") instanceof Map<?, ?>) {
+            map.put("navigation", extra.get("navigation"));
+          }
+          if (extra.get("options") instanceof Map<?, ?>) {
+            map.put("options", extra.get("options"));
+          }
         }
       } catch (Exception ignore) {
         // 历史数据或非法 JSON：忽略

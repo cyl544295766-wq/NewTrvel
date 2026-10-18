@@ -585,24 +585,41 @@
     return html;
   }
 
-  function msgHtml(m) {
+  function optionsHtml(opt) {
+    var list = opt && opt.options;
+    if (!Array.isArray(list) || !list.length) return '';
+    return '<div class="pet-opts">' + list.map(function (o) {
+      return '<button type="button" class="pet-opt">' + escapeHtml(String(o)) + '</button>';
+    }).join('') + '</div>';
+  }
+
+  function msgHtml(m, isLast) {
     var isUser = m.role === 'user';
     if (!isUser && m.draft && m.draftStatus !== undefined) {
       /* 草稿消息：直接渲染卡片（卡片已含摘要与字段） */
       return '<div class="pet-msg ai msg-draft">' + draftHtml(m) + '</div>';
     }
     var nav = (!isUser && !m.draftStatus && m.navigation) ? navChipHtml(m.navigation) : '';
+    /* 选择按钮仅在最新一条消息上可点，历史消息不再给出过时选项 */
+    var opts = (!isUser && !m.draftStatus && isLast && m.options) ? optionsHtml(m.options) : '';
     return '<div class="pet-msg ' + (isUser ? 'user' : 'ai') + '">'
-      + '<div class="txt">' + escapeHtml(m.content || '') + '</div>' + nav + '</div>';
+      + '<div class="txt">' + escapeHtml(m.content || '') + '</div>' + nav + opts + '</div>';
   }
 
   function renderMessages(items) {
     if (!items.length) { renderEmpty(); return; }
     S.el.body.innerHTML = ''
       + '<div class="pb-msgs" id="petMsgs">'
-      +   items.map(msgHtml).join('')
+      +   items.map(function (m, i) { return msgHtml(m, i === items.length - 1); }).join('')
       + '</div>';
     var box = S.el.body.querySelector('#petMsgs');
+    Array.prototype.forEach.call(box.querySelectorAll('.pet-opt'), function (btn) {
+      btn.addEventListener('click', function () {
+        var wrap = btn.closest('.pet-opts');
+        if (wrap) wrap.remove();
+        send(btn.textContent);
+      });
+    });
     box.scrollTop = box.scrollHeight;
     placeBubble();
   }

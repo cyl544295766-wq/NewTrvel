@@ -299,6 +299,19 @@
   transition: background .15s, border-color .15s;
 }
 .pet-chip:hover { background: #EAF7F6; border-color: var(--brand-soft, #5BC5C0); }
+/* 选择按钮（ask_options 快速点选） */
+.pet-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pet-opt {
+  border: 1px solid rgba(13, 110, 110, 0.35);
+  background: rgba(13, 110, 110, 0.06);
+  color: var(--brand, #0D6E6E);
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.pet-opt:hover { background: #EAF7F6; border-color: var(--brand-soft, #5BC5C0); transform: translateY(-1px); }
 /* 输入区 */
 .pet-bubble .pb-input {
   display: flex;
