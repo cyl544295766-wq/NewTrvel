@@ -567,6 +567,11 @@
         else if (c.startTime) meta.push(escapeHtml(c.startTime));
         if (c.estimatedCost != null && c.estimatedCost !== '') meta.push('¥' + escapeHtml(String(c.estimatedCost)));
         if (c.openTime) meta.push('营业 ' + escapeHtml(c.openTime));
+        if (c.address) meta.push(escapeHtml(String(c.address).slice(0, 30)));
+        if (c.notes) {
+          var note = String(c.notes);
+          meta.push(escapeHtml(note.length > 28 ? note.slice(0, 28) + '…' : note));
+        }
         return '<li><span class="op">' + op + '</span>' + escapeHtml(txt)
           + (meta.length ? '<span class="dmeta">' + meta.join(' · ') + '</span>' : '') + '</li>';
       }).join('') + '</ul>';
@@ -593,6 +598,26 @@
     }).join('') + '</div>';
   }
 
+  /* AI 文本轻量渲染：**加粗**、Markdown 表格→列表行、去掉标题井号；其余按纯文本（换行由 pre-wrap 保留） */
+  function mdText(src) {
+    var t = escapeHtml(String(src || ''));
+    t = t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    if (/(^|\n)[ \t]*\|/.test(t)) {
+      t = t.split('\n').map(function (ln) {
+        var s = ln.trim();
+        if (/^\|/.test(s)) {
+          if (/^\|[\s:|-]+\|?$/.test(s)) return ''; /* 表头分隔行 */
+          var cells = s.replace(/^\|/, '').replace(/\|$/, '').split('|')
+            .map(function (c) { return c.trim(); }).filter(Boolean);
+          return cells.length ? '· ' + cells.join(' · ') : '';
+        }
+        return ln;
+      }).join('\n').replace(/\n{3,}/g, '\n\n');
+    }
+    t = t.replace(/^#{1,6}[ \t]+/gm, '');
+    return t;
+  }
+
   function msgHtml(m, isLast) {
     var isUser = m.role === 'user';
     if (!isUser && m.draft && m.draftStatus !== undefined) {
@@ -602,8 +627,9 @@
     var nav = (!isUser && !m.draftStatus && m.navigation) ? navChipHtml(m.navigation) : '';
     /* 选择按钮仅在最新一条消息上可点，历史消息不再给出过时选项 */
     var opts = (!isUser && !m.draftStatus && isLast && m.options) ? optionsHtml(m.options) : '';
+    var txt = isUser ? escapeHtml(m.content || '') : mdText(m.content);
     return '<div class="pet-msg ' + (isUser ? 'user' : 'ai') + '">'
-      + '<div class="txt">' + escapeHtml(m.content || '') + '</div>' + nav + opts + '</div>';
+      + '<div class="txt">' + txt + '</div>' + nav + opts + '</div>';
   }
 
   function renderMessages(items) {
