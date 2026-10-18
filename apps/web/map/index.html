@@ -593,6 +593,7 @@
     overlays: [],
     stats: {},
     failedDays: [],
+    failedTransfers: [],
     focus: null,
     hotTimer: null,
     map: null,
@@ -714,13 +715,18 @@
     if (!el) return;
     var st = state.stats[dayIndex] || {};
     var out = ['<b>' + (st.points || 0) + '</b> 个点'];
-    if (st.timeSec != null) {
-      out.push('<b>' + escapeHtml(fmtDist(st.distanceM)) + '</b>');
-      out.push(escapeHtml(fmtDur(st.timeSec)));
-    } else if (state.failedDays.indexOf(dayIndex) >= 0) {
-      out.push('直线示意（路线未返回）');
-    } else {
-      out.push('路线计算中…');
+    if (st.transferM != null) {
+      out.push('转场 <b>' + escapeHtml(fmtDist(st.transferM)) + '</b>');
+    }
+    if (st.points >= 2) {
+      if (st.timeSec != null) {
+        out.push('<b>' + escapeHtml(fmtDist(st.distanceM)) + '</b>');
+        out.push(escapeHtml(fmtDur(st.timeSec)));
+      } else if (state.failedDays.indexOf(dayIndex) >= 0) {
+        out.push('直线示意（路线未返回）');
+      } else {
+        out.push('路线计算中…');
+      }
     }
     el.innerHTML = out.join(' · ');
   }
@@ -810,27 +816,62 @@
     var AMap = state.AMap;
     var jobs = [];
     var colored = 0;
+    var prevLast = null;   /* 上一个有安排天的最后一个点，用于跨天转场衔接 */
 
     state.days.forEach(function (day) {
       var pts = (day.places || []).filter(hasCoord);
       if (!pts.length) return;
       var color = TravelOSAmap.dayColor(colored);
       colored++;
-      if (pts.length < 2) return;
 
-      var path = pts.map(function (p) { return [Number(p.longitude), Number(p.latitude)]; });
+      /* 跨天转场：connecting 上一有安排天的最后一点 → 本天第一个点，整段旅程首尾相连 */
+      if (prevLast) {
+        var fromPoint = prevLast.point;
+        var prevDayIndex = prevLast.dayIndex;
+        var arrivedDay = day.dayIndex;
+        var fromLng = Number(fromPoint.longitude), fromLat = Number(fromPoint.latitude);
+        var toLng = Number(pts[0].longitude), toLat = Number(pts[0].latitude);
+        if (fromLng !== toLng || fromLat !== toLat) {
+          var tPath = [[fromLng, fromLat], [toLng, toLat]];
+          jobs.push(planDriving(AMap, tPath).then(function (r) {
+            pushPolyline(arrivedDay, r.path, color, false);
+            var st = ensureStats(arrivedDay, pts.length);
+            st.transferM = r.distanceM;
+            st.transferSec = r.timeSec;
+          }).catch(function () {
+            state.failedTransfers.push(prevDayIndex + '→' + arrivedDay);
+            pushPolyline(arrivedDay, tPath, color, true);
+          }));
+        }
+      }
 
-      jobs.push(planDriving(AMap, path).then(function (r) {
-        pushPolyline(day.dayIndex, r.path, color, false);
-        var st = state.stats[day.dayIndex];
-        if (st) { st.distanceM = r.distanceM; st.timeSec = r.timeSec; }
-      }).catch(function () {
-        state.failedDays.push(day.dayIndex);
-        pushPolyline(day.dayIndex, path, color, true);
-      }));
+      if (pts.length >= 2) {
+        var path = pts.map(function (p) { return [Number(p.longitude), Number(p.latitude)]; });
+
+        jobs.push(planDriving(AMap, path).then(function (r) {
+          pushPolyline(day.dayIndex, r.path, color, false);
+          var st = ensureStats(day.dayIndex, pts.length);
+          st.distanceM = r.distanceM;
+          st.timeSec = r.timeSec;
+        }).catch(function () {
+          state.failedDays.push(day.dayIndex);
+          pushPolyline(day.dayIndex, path, color, true);
+        }));
+      }
+
+      prevLast = { point: pts[pts.length - 1], dayIndex: day.dayIndex };
     });
 
     return Promise.all(jobs);
+  }
+
+  function ensureStats(dayIndex, points) {
+    var st = state.stats[dayIndex];
+    if (!st) {
+      st = { points: points || 0, distanceM: null, timeSec: null };
+      state.stats[dayIndex] = st;
+    }
+    return st;
   }
 
   function pushPolyline(dayIndex, path, color, dashed) {
@@ -966,21 +1007,31 @@
 
   function updateTotals() {
     var pts = 0, dist = 0, time = 0, anyDist = false;
-    Object.keys(state.stats).forEach(function (k) {
-      var s = state.stats[k];
+    state.days.forEach(function (day) {
+      var s = state.stats[day.dayIndex];
+      if (!s) { s = ensureStats(day.dayIndex, 0); }
       pts += s.points || 0;
       if (s.distanceM != null) { dist += s.distanceM; anyDist = true; }
-      if (s.timeSec != null) time += s.timeSec;
-      updateDayMeta(Number(k));
+      if (s.transferM != null) { dist += s.transferM; anyDist = true; }
+      if (s.timeSec != null) { time += s.timeSec; }
+      if (s.transferSec != null) { time += s.transferSec; }
+      updateDayMeta(day.dayIndex);
     });
     $('stPoints').textContent = String(pts);
     $('stKm').textContent = anyDist ? compactKm(dist) : '—';
     $('stTime').textContent = anyDist ? compactDur(time) : '—';
 
     var notice = $('routeNotice');
+    var parts = [];
     if (state.failedDays.length) {
+      parts.push('第 ' + state.failedDays.join('、') + ' 天的驾车路线未返回，已用虚线示意');
+    }
+    if (state.failedTransfers.length) {
+      parts.push('第 ' + state.failedTransfers.join('、') + ' 天的转场路线未返回，已用虚线示意');
+    }
+    if (parts.length) {
       notice.hidden = false;
-      notice.textContent = '第 ' + state.failedDays.join('、') + ' 天的驾车路线未返回，已用虚线示意';
+      notice.textContent = parts.join('；');
     } else {
       notice.hidden = true;
     }
@@ -1041,10 +1092,10 @@
       addMarkers();
 
       if (!state.markers.length) {
+        updateTotals();
         $('veilLoad').hidden = true;
         $('routeNotice').hidden = false;
         $('routeNotice').textContent = '这个行程还没有带坐标的地点，先去「行程安排」补充地点后再回来';
-        $('stPoints').textContent = '0';
         return;
       }
 

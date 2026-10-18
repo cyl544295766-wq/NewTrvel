@@ -925,6 +925,12 @@
       }
     });
 
+    /* ===== AI 应用变更后自动刷新（统一派发 travelos:ai-applied） ===== */
+    window.addEventListener('travelos:ai-applied', function (e) {
+      var tid = e && e.detail && e.detail.tripId;
+      if (!tid || tid === tripId) load();
+    });
+
     load();
   })();
 </script>

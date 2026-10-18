@@ -76,6 +76,18 @@ public class AiChatService {
   private static final Set<String> TRIP_SCOPED_PAGES = Set.of(
       "itinerary", "expenses", "packing", "documents", "photos", "journals", "bookings", "vouchers");
 
+  /** 预订类型与中文名（与 BookingService 的校验清单保持一致）。 */
+  private static final Map<String, String> BOOKING_TYPE_LABELS = Map.of(
+      "flight", "机票", "hotel", "酒店", "train", "火车票", "ticket", "门票", "other", "预订");
+
+  /** 各预订类型的扩展字段（与预定管理页表单一致，应用时写入 extra）。 */
+  private static final Map<String, List<String>> BOOKING_EXTRA_KEYS = Map.of(
+      "flight", List.of("flightNo", "airports", "cabin"),
+      "hotel", List.of("hotelName", "roomType", "cancelPolicy", "freeCancelDeadline"),
+      "train", List.of("trainNo", "stations", "seat"),
+      "ticket", List.of("itemName", "session"),
+      "other", List.of("pickup"));
+
   /** 每用户同时最多 1 个进行中的对话请求（并发限流）。 */
   private final Set<String> inFlightUsers = ConcurrentHashMap.newKeySet();
 
@@ -348,6 +360,12 @@ public class AiChatService {
       applied = 1;
       auditService.record(userId, tripId, "ai_expense_applied", "ai_message", messageId,
           Map.of("amount", String.valueOf(draft.getOrDefault("summary", ""))));
+    } else if ("booking".equals(type)) {
+      String tripId = String.valueOf(draft.get("tripId"));
+      applyBookingDraft(tripId, draft, userId);
+      applied = 1;
+      auditService.record(userId, tripId, "ai_booking_applied", "ai_message", messageId,
+          Map.of("summary", String.valueOf(draft.getOrDefault("summary", ""))));
     } else {
       throw ApiException.badRequest("未知草稿类型");
     }
@@ -605,6 +623,68 @@ public class AiChatService {
     tripExpenseService.create(tripId, userId, payload);
   }
 
+  private void applyBookingDraft(String tripId, Map<String, Object> draft, String userId) {
+    @SuppressWarnings("unchecked")
+    Map<String, Object> booking = (Map<String, Object>) draft.get("booking");
+    if (booking == null) {
+      throw ApiException.badRequest("草稿中没有预订信息");
+    }
+    // 走 BookingService.create 全量校验（类型、标题、归属行程等），写入预定管理
+    Map<String, Object> payload = new LinkedHashMap<>();
+    payload.put("type", booking.get("type"));
+    payload.put("title", booking.get("title"));
+    if (booking.get("startTime") != null) {
+      payload.put("startTime", normalizeBookingTime(booking.get("startTime")));
+    }
+    if (booking.get("endTime") != null) {
+      payload.put("endTime", normalizeBookingTime(booking.get("endTime")));
+    }
+    if (booking.get("amount") != null) {
+      payload.put("amount", booking.get("amount"));
+    }
+    if (booking.get("orderNo") != null) {
+      payload.put("orderNo", booking.get("orderNo"));
+    }
+    if (booking.get("confirmCode") != null) {
+      payload.put("confirmCode", booking.get("confirmCode"));
+    }
+    if (booking.get("dayIndex") != null) {
+      try {
+        TripDay day = findDayByIndex(tripId, toInt(booking.get("dayIndex")));
+        payload.put("tripDayId", day.getId());
+      } catch (Exception ignore) {
+        // 天数不存在时忽略关联，不阻断预订写入
+      }
+    }
+    if (booking.get("extra") instanceof Map<?, ?> extra && !extra.isEmpty()) {
+      Map<String, Object> normalized = new LinkedHashMap<>();
+      for (Map.Entry<?, ?> entry : extra.entrySet()) {
+        String key = String.valueOf(entry.getKey());
+        Object value = entry.getValue();
+        if (value == null || String.valueOf(value).isBlank()) {
+          continue;
+        }
+        normalized.put(key,
+            "freeCancelDeadline".equals(key) ? normalizeBookingTime(value) : value);
+      }
+      if (!normalized.isEmpty()) {
+        payload.put("extra", normalized);
+      }
+    }
+    bookingService.create(tripId, userId, payload);
+  }
+
+  /** 预订时间归一化：与前端 datetime-local 约定一致（"YYYY-MM-DD HH:mm"，空格分隔；纯日期按当天零点）。 */
+  private String normalizeBookingTime(Object value) {
+    String text = String.valueOf(value).trim().replace('T', ' ');
+    if (text.matches("\\d{4}-\\d{2}-\\d{2}")) {
+      text += " 00:00:00";
+    } else if (text.length() == 16) {
+      text += ":00";
+    }
+    return text;
+  }
+
   // ==================== 工具执行（全部以当前用户身份） ====================
 
   private String executeTool(Map<String, Object> call, AiConversation conversation, String userId) {
@@ -629,6 +709,7 @@ public class AiChatService {
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
+        case "add_booking" -> createBookingDraft(args, conversation, userId);
         case "propose_itinerary_change" -> createItineraryDraft(args, conversation, userId);
         case "open_page" -> openPage(args, conversation, userId);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
@@ -773,6 +854,84 @@ public class AiChatService {
     result.put("summary", summary);
     result.put("hint", "草稿已创建，请告知用户在「变更预览卡片」上点击「应用」完成记账。");
     return JsonUtil.write(result);
+  }
+
+  /** 预订登记 → 草稿（AI 不直接写预订，应用时才走 BookingService 写入预定管理）。 */
+  private String createBookingDraft(Map<String, Object> args, AiConversation conversation,
+      String userId) {
+    String tripId = conversation.getTripId() != null ? conversation.getTripId()
+        : (args.get("tripId") == null ? null : args.get("tripId").toString());
+    if (tripId == null || tripId.isBlank()) {
+      // 全局对话：默认落到最近行程（与系统提示词中「最近行程」上下文一致）
+      tripId = resolveDefaultTripId(userId);
+    }
+    if (tripId == null || tripId.isBlank()) {
+      return "{\"error\":\"当前对话未关联行程，也没有可用的最近行程，请先创建行程或在具体行程中打开 AI 助手\"}";
+    }
+    tripMemberService.requireTripMember(tripId, userId);
+    String type = args.get("type") == null ? "" : args.get("type").toString().trim();
+    if (!BOOKING_TYPE_LABELS.containsKey(type)) {
+      return "{\"error\":\"type 必须是 flight/hotel/train/ticket/other 之一\"}";
+    }
+    String title = args.get("title") == null ? "" : args.get("title").toString().trim();
+    if (title.isBlank()) {
+      return "{\"error\":\"title（预订标题，如酒店名/航班号/车次）不能为空\"}";
+    }
+    Map<String, Object> booking = new LinkedHashMap<>();
+    booking.put("type", type);
+    booking.put("title", title);
+    for (String key : List.of("startTime", "endTime", "amount", "orderNo", "confirmCode",
+        "dayIndex")) {
+      if (args.get(key) != null && !String.valueOf(args.get(key)).isBlank()) {
+        booking.put(key, args.get(key));
+      }
+    }
+    Map<String, Object> extra = new LinkedHashMap<>();
+    for (String key : BOOKING_EXTRA_KEYS.getOrDefault(type, List.of())) {
+      if (args.get(key) != null && !String.valueOf(args.get(key)).isBlank()) {
+        extra.put(key, args.get(key).toString());
+      }
+    }
+    if (!extra.isEmpty()) {
+      booking.put("extra", extra);
+    }
+
+    String summary = bookingSummary(booking);
+    Map<String, Object> draft = new LinkedHashMap<>();
+    draft.put("type", "booking");
+    draft.put("tripId", tripId);
+    draft.put("summary", summary);
+    draft.put("booking", booking);
+
+    AiMessage draftMessage = insertMessage(conversation.getId(), userId, "assistant",
+        summary, JsonUtil.write(draft), "pending");
+    conversation.setUpdatedAt(new Date());
+    conversationMapper.updateById(conversation);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("draftCreated", true);
+    result.put("messageId", draftMessage.getId());
+    result.put("summary", summary);
+    result.put("hint", "预订草稿已创建，请告知用户在「变更预览卡片」上点击「应用」写入预定管理。");
+    return JsonUtil.write(result);
+  }
+
+  private String bookingSummary(Map<String, Object> booking) {
+    String label = BOOKING_TYPE_LABELS.getOrDefault(String.valueOf(booking.get("type")), "预订");
+    StringBuilder summary = new StringBuilder("将为当前行程登记").append(label).append("「")
+        .append(booking.get("title")).append("」");
+    if (booking.get("startTime") != null) {
+      summary.append("，").append(booking.get("startTime"));
+      if (booking.get("endTime") != null) {
+        summary.append(" ~ ").append(booking.get("endTime"));
+      }
+    }
+    if (booking.get("amount") != null) {
+      summary.append("，金额 ").append(booking.get("amount")).append(" 元");
+    }
+    if (booking.get("dayIndex") != null) {
+      summary.append("，关联第 ").append(booking.get("dayIndex")).append(" 天");
+    }
+    return summary.append("（应用后写入预定管理）。").toString();
   }
 
   /** 行程变更 → 草稿（AI 不直接写行程，应用时才走 TripPlaceService）。 */
@@ -969,7 +1128,8 @@ public class AiChatService {
         + "工具返回 blocked 即表示条件未满足：此时绝对不要推荐或罗列任何酒店（包括凭常识推荐），"
         + "应简洁引导用户先确定缺失天的景点/行程（指出是第几天），并可主动提议「要我先帮你规划第 X 天吗？」；确认后再推荐。"
         + "满足条件后：结合行程地点与预算推荐 2-4 家，给出评分、参考价格、地址与电话；"
-        + "若用户想把住宿安排进行程，可再用 propose_itinerary_change 生成草稿（type=hotel）。\n");
+        + "若用户想把住宿安排进行程，可再用 propose_itinerary_change 生成草稿（type=hotel）；"
+        + "用户选定某家酒店并要求订下/记下时，调用 add_booking（type=hotel，酒店名与参考价格填入 title/amount）生成登记草稿。\n");
     prompt.append("10. 时间规划（重要）：用户要求规划某一天的行程时，用 propose_itinerary_change 生成草稿（不要直接写行程）。要求："
         + "(a) 为每个景点给出合理停留时长——小型景点 1~1.5 小时、中型 2~3 小时、大型景区/博物馆 3~4 小时，"
         + "并用 24 小时制 startTime/endTime 标出；"
@@ -987,6 +1147,9 @@ public class AiChatService {
         + "同时提示用户如需调整（换行程或换天数）可以随时说；"
         + "若该行程不存在第 N 天、或用户所指的行程不明确，先与用户确认，不要臆造日期。"
         + "全局对话中的记账等写入操作同样默认作用于最近行程，并在回复中说明这一点。\n");
+    prompt.append("13. 预订登记（重要）：用户要求预订/登记/记录一条预订（如「订了机票 CA1234」「把这家酒店记下来」「门票已订好」），或选定酒店后要求订下/登记时，"
+        + "必须调用 add_booking 生成待确认草稿，绝不直接写入；生成后向用户复述类型、标题、时间与金额，并说明在卡片点「应用」后即写入预定管理。"
+        + "title 必填；时间不确定时可用行程内合理时间并注明假设；不确定是否已登记过时可先 get_bookings 查询避免重复。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -1143,6 +1306,34 @@ public class AiChatService {
             "city", stringProp("城市名，可空（默认用行程目的地）"))));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
+    tools.add(function("add_booking",
+        "预订登记草稿：用户要预订/登记/记录一条预订（机票、酒店、火车票、门票等），或酒店推荐后用户选定某家要求订下/记下时调用，"
+            + "生成待确认草稿而非直接写入；点「应用」后写入预定管理。必填 type 与 title；"
+            + "时间用「YYYY-MM-DD HH:mm」或「YYYY-MM-DD」；手边没有的信息可以留空。"
+            + "各类型扩展字段：机票 flightNo/airports/cabin，酒店 hotelName/roomType/cancelPolicy，"
+            + "火车 trainNo/stations/seat，门票 itemName/session，其他 pickup。"
+            + "对话未关联行程时（全局对话），默认登记到最近行程，并在回复中说明",
+        Map.ofEntries(
+            Map.entry("type", stringProp("预订类型：flight/hotel/train/ticket/other")),
+            Map.entry("title", stringProp("标题，如酒店名、航班号、车次")),
+            Map.entry("startTime", stringProp("开始时间 YYYY-MM-DD HH:mm（可空）")),
+            Map.entry("endTime", stringProp("结束时间 YYYY-MM-DD HH:mm（可空，如酒店离店）")),
+            Map.entry("amount", stringProp("金额（人民币数字字符串，可空）")),
+            Map.entry("orderNo", stringProp("订单号（可空）")),
+            Map.entry("confirmCode", stringProp("确认码（可空）")),
+            Map.entry("dayIndex", stringProp("关联行程第几天（数字，可空）")),
+            Map.entry("flightNo", stringProp("航班号（机票，可空）")),
+            Map.entry("airports", stringProp("起降机场（机票，如 大兴T2 → 虹桥T2，可空）")),
+            Map.entry("cabin", stringProp("舱位（机票，可空）")),
+            Map.entry("hotelName", stringProp("酒店名称（酒店，可空）")),
+            Map.entry("roomType", stringProp("房型（酒店，可空）")),
+            Map.entry("cancelPolicy", stringProp("取消政策（酒店，可空）")),
+            Map.entry("trainNo", stringProp("车次（火车，可空）")),
+            Map.entry("stations", stringProp("发到站（火车，如 北京南 → 上海虹桥，可空）")),
+            Map.entry("seat", stringProp("座位（火车，可空）")),
+            Map.entry("itemName", stringProp("项目名称（门票，可空）")),
+            Map.entry("session", stringProp("场次（门票，可空）")),
+            Map.entry("pickup", stringProp("取还/详情（其他，可空）")))));
     tools.add(function("add_expense",
         "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入。"
             + "对话未关联行程时（全局对话），默认记入最近行程，并在回复中说明",

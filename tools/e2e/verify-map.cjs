@@ -80,7 +80,9 @@ function ok(msg) { console.log('  OK  ' + msg); }
   if (points !== '10') bail('地点数应为 10，实为 ' + points);
   if (km === '—' || dur === '—') bail('里程/时长未算出 → 驾车路线规划可能全部失败');
   if (!/\d/.test(km) || !/\d/.test(dur)) bail('里程/时长格式异常');
-  ok('概览：10 个地点 · ' + km + ' · ' + dur);
+  const kmNum = parseFloat(km.replace(/[^\d.]/g, ''));
+  if (!(kmNum > 400)) bail('总里程未包含跨天转场（应 > 400，实为 ' + km + '）');
+  ok('概览：10 个地点 · ' + km + ' · ' + dur + '（含跨天转场）');
 
   /* ---------- 4. 每日面板 ---------- */
   console.log('--- 4. 每日面板 ---');
@@ -94,7 +96,8 @@ function ok(msg) { console.log('  OK  ' + msg); }
   const metas = await page.locator('.db-meta').allTextContents();
   metas.forEach((m, i) => console.log('  D' + (i + 1) + ' meta:', m.replace(/\s+/g, ' ').trim()));
   if (metas.some((m) => /路线计算中/.test(m))) bail('仍有天的路线未计算完');
-  ok('3 天 · 10 个地点 · 10 个标点，每天里程已算');
+  if (!metas.slice(1).every((m) => /转场/.test(m))) bail('第 2、3 天应显示跨天转场里程（点未连接）');
+  ok('3 天 · 10 个地点 · 10 个标点，每天里程与跨天转场已算');
 
   const noticeVisible = await page.locator('#routeNotice').isVisible();
   console.log('  路线降级提示 =', noticeVisible ? '显示' : '隐藏');

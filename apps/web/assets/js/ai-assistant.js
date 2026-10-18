@@ -50,7 +50,8 @@
     '这段行程还有什么没准备好的？'
   ];
 
-  var DRAFT_KIND = { expense: '变更预览 · 记一笔账', itinerary_change: '变更预览 · 行程调整' };
+  var DRAFT_KIND = { expense: '变更预览 · 记一笔账', itinerary_change: '变更预览 · 行程调整',
+    booking: '变更预览 · 登记预订' };
 
   var DEFAULTS = {
     name: '游游',
@@ -541,6 +542,20 @@
       if (e.category) bits.push(e.category);
       if (e.title) bits.push(e.title);
       if (bits.length) html += '<ul class="pd-list"><li><span class="op">记账</span>' + escapeHtml(bits.join(' · ')) + '</li></ul>';
+    }
+    if (d.type === 'booking' && d.booking) {
+      var b = d.booking;
+      var bkLabels = { flight: '机票', hotel: '酒店', train: '火车票', ticket: '门票', other: '预订' };
+      var bkBits = [];
+      if (b.startTime) bkBits.push(String(b.startTime) + (b.endTime ? ' ~ ' + String(b.endTime) : ''));
+      if (b.amount != null && b.amount !== '') bkBits.push('¥' + String(b.amount));
+      if (b.orderNo) bkBits.push('订单号 ' + String(b.orderNo));
+      if (b.confirmCode) bkBits.push('确认码 ' + String(b.confirmCode));
+      if (b.dayIndex != null) bkBits.push('第 ' + b.dayIndex + ' 天');
+      html += '<ul class="pd-list"><li><span class="op">' + (bkLabels[b.type] || '预订') + '</span>'
+        + escapeHtml(b.title || '')
+        + (bkBits.length ? '<span class="dmeta">' + escapeHtml(bkBits.join(' · ')) + '</span>' : '')
+        + '</li></ul>';
     }
     if (d.type === 'itinerary_change' && Array.isArray(d.changes)) {
       html += '<ul class="pd-list">' + d.changes.slice(0, 12).map(function (c) {
