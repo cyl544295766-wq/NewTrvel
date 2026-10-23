@@ -150,6 +150,24 @@ public class NotificationService {
     return count != null && count > 0;
   }
 
+  /** 天气提醒（调度器主动）：出发倒计时/明日遇雨等，weatherKey 用于幂等去重。 */
+  public void createWeatherAlert(String userId, String tripId, String tripTitle,
+      String content, String weatherKey) {
+    create(userId, "system", "天气提醒 · " + tripTitle, content,
+        "/trips/" + tripId + "/itinerary",
+        Map.of("tripId", tripId, "kind", "weather_alert", "weatherKey", weatherKey),
+        "high", null);
+  }
+
+  /** 天气提醒幂等判断：同一 user + weatherKey 只发一次。 */
+  public boolean weatherAlertAlreadySent(String userId, String weatherKey) {
+    Long count = notificationMapper.selectCount(new LambdaQueryWrapper<Notification>()
+        .eq(Notification::getUserId, userId)
+        .apply("metadata->>'kind' = 'weather_alert'")
+        .apply("metadata->>'weatherKey' = {0}", weatherKey));
+    return count != null && count > 0;
+  }
+
   /** 预算提醒（AI 主动）：总预算使用率到 80% 预警、到 100% 超支。 */
   public void createBudgetWarning(String userId, String tripId, String tripTitle,
       String content, String level) {
