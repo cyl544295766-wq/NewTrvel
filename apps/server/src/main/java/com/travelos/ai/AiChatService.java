@@ -20,6 +20,7 @@ import com.travelos.service.TripExpenseService;
 import com.travelos.service.TripMemberService;
 import com.travelos.service.TripPlaceService;
 import com.travelos.service.TripService;
+import com.travelos.service.WeatherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -117,13 +118,14 @@ public class AiChatService {
   private final TripExpenseService tripExpenseService;
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
+  private final WeatherService weatherService;
 
   public AiChatService(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       LlmGatewayService llm, TripService tripService, TripDayService tripDayService,
       TripPlaceService tripPlaceService, TripPlaceMapper tripPlaceMapper, TripDayMapper tripDayMapper,
       PlacesService placesService, BookingService bookingService,
       TripExpenseService tripExpenseService, TripMemberService tripMemberService,
-      AuditService auditService) {
+      AuditService auditService, WeatherService weatherService) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.llm = llm;
@@ -137,6 +139,7 @@ public class AiChatService {
     this.tripExpenseService = tripExpenseService;
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
+    this.weatherService = weatherService;
   }
 
   // ==================== 会话管理 ====================
@@ -869,6 +872,7 @@ public class AiChatService {
         case "search_attractions" -> JsonUtil.write(placesService.searchPois(
             requireArg(args, "keyword"), resolveCity(args, conversation), "attraction", 6));
         case "search_hotels" -> searchHotels(args, conversation, userId);
+        case "get_weather" -> getWeather(args, conversation, userId);
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
@@ -941,6 +945,27 @@ public class AiChatService {
     }
     result.put("hint", hint);
     return JsonUtil.write(result);
+  }
+
+  /**
+   * 天气查询（get_weather 工具）：返回行程目的地的每日预报。
+   * 行程缺省回落：显式参数 > 对话关联行程 > 最近行程；失败时返回 error 文本，不阻断对话。
+   */
+  private String getWeather(Map<String, Object> args, AiConversation conversation, String userId) {
+    String tripId = args.get("tripId") == null ? "" : args.get("tripId").toString().trim();
+    if (tripId.isEmpty()) {
+      tripId = conversation.getTripId() != null ? conversation.getTripId()
+          : (resolveDefaultTripId(userId) == null ? "" : resolveDefaultTripId(userId));
+    }
+    if (tripId.isEmpty()) {
+      return "{\"error\":\"当前没有可用行程，无法查询天气。请先创建行程并在行程中设置目的地，再查询天气预报。\"}";
+    }
+    try {
+      return JsonUtil.write(weatherService.getTripWeather(tripId, userId));
+    } catch (Exception ex) {
+      log.warn("get_weather 查询失败 tripId={}", tripId, ex);
+      return "{\"error\":\"天气查询暂时不可用，请稍后再试；规划时先不要引用天气信息\"}";
+    }
   }
 
   /** 城市提示：优先用工具参数 city，缺省回落到当前行程的目的地。 */
@@ -1790,6 +1815,13 @@ public class AiChatService {
         + "(f) 行程超过 7 天时建议分两段（先前半段，确认后再规划后半段），避免单次内容过长；\n"
         + "(g) 最终回复给出逐天概览（每天一行：「第 N 天（日期）：A → B → C」），说明票价与营业时间仅供参考，"
         + "并告知点草稿卡片「应用」后会一次性写入全部天。\n");
+    prompt.append("17. 天气参考（重要）：上下文与 get_weather 工具提供目的地每日预报（现象/最高最低温/降雨概率，"
+        + "Open-Meteo 数据，仅覆盖未来日期，存在 6 小时缓存）。规划行程、推荐景点/餐厅/酒店时必须结合天气：\n"
+        + "(a) 雨/雪/雷暴天优先安排博物馆、展馆、室内乐园等项目，或建议用户把户外景点与晴好天互换"
+        + "（如「10-23 有雨，建议把户外景点换到 10-22，10-23 改逛博物馆」）；\n"
+        + "(b) 温差大（≥12℃）或气温极端（≥35℃/≤-5℃）时提醒携带衣物/防晒/保暖；\n"
+        + "(c) 规划草稿的 notes 里可注明当天天气与提醒；\n"
+        + "(d) 预报未覆盖的日期（过去、或超出预报范围）无法预知天气，直接说明即可，绝不编造天气。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -1812,6 +1844,31 @@ public class AiChatService {
     return prompt.toString();
   }
 
+  /**
+   * 行程目的地逐日预报，按「MM-dd」（UTC，与行程天日期同口径）建索引，供 appendTripContext 内联注入。
+   * WeatherService 自带 6 小时缓存与兜底（无数据返回空列表），任何异常都不影响提示词生成。
+   */
+  private Map<String, Map<String, Object>> loadWeatherByDate(String tripId, String userId) {
+    Map<String, Map<String, Object>> byDate = new LinkedHashMap<>();
+    try {
+      SimpleDateFormat keyFormat = new SimpleDateFormat("MM-dd");
+      keyFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+      Map<String, Object> res = weatherService.getTripWeather(tripId, userId);
+      if (res.get("weather") instanceof List<?> rows) {
+        for (Object row : rows) {
+          if (row instanceof Map<?, ?> map && map.get("date") != null) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> weather = (Map<String, Object>) map;
+            byDate.putIfAbsent(keyFormat.format((Date) map.get("date")), weather);
+          }
+        }
+      }
+    } catch (Exception ignore) {
+      // 天气不可用时不注入，不影响规划主流程
+    }
+    return byDate;
+  }
+
   /** 行程基础信息 + 逐天现有安排，供系统提示词复用。 */
   private void appendTripContext(StringBuilder prompt, String tripId, String userId) {
     try {
@@ -1830,12 +1887,27 @@ public class AiChatService {
         prompt.append("现有行程安排：\n");
         SimpleDateFormat format = new SimpleDateFormat("MM-dd");
         format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        Map<String, Map<String, Object>> weatherByDate = loadWeatherByDate(tripId, userId);
         List<Integer> emptyDays = new ArrayList<>();
         for (Object item : dayList) {
           @SuppressWarnings("unchecked")
           Map<String, Object> day = (Map<String, Object>) item;
           prompt.append("第 ").append(day.get("dayIndex")).append(" 天（")
               .append(format.format(day.get("date"))).append("）：");
+          Object dayDate = day.get("date");
+          Map<String, Object> weather = dayDate == null ? null
+              : weatherByDate.get(format.format(dayDate));
+          if (weather != null) {
+            prompt.append("【天气：").append(weather.get("condition"));
+            if (weather.get("tempLow") != null && weather.get("tempHigh") != null) {
+              prompt.append(" ").append(weather.get("tempLow")).append("~")
+                  .append(weather.get("tempHigh")).append("℃");
+            }
+            if (weather.get("rainChance") != null) {
+              prompt.append("，降雨概率 ").append(weather.get("rainChance")).append("%");
+            }
+            prompt.append("】：");
+          }
           if (day.get("places") instanceof List<?> places && !places.isEmpty()) {
             List<String> names = new ArrayList<>();
             for (Object placeItem : places) {
@@ -1946,6 +2018,12 @@ public class AiChatService {
             + "回复正文给出选定酒店的评分/参考价/地址/电话介绍、选择理由与其他候选清单，可附「换住：××」选项按钮",
         Map.of("keyword", stringProp("关键词，如「酒店」「民宿」「青旅」「近地铁」"),
             "city", stringProp("城市名，可空（默认用行程目的地）"))));
+    tools.add(function("get_weather",
+        "查询行程目的地的每日天气预报（Open-Meteo，最多未来 15 天）：每天返回天气现象(condition)、"
+            + "最高/最低温度(tempHigh/tempLow ℃)、降雨概率(rainChance %)。"
+            + "规划行程、推荐景点/餐厅/酒店前先调用，把户外项目排在晴好天、雨雪天安排室内并提醒用户；"
+            + "仅覆盖未来日期，过去的日期与超出范围的日期无数据。对话未关联行程时默认查最近行程",
+        Map.of("tripId", stringProp("行程 ID，可空（默认当前对话关联行程或最近行程）"))));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
     tools.add(function("add_booking",

@@ -43,6 +43,7 @@ public class WeatherService {
       .connectTimeout(Duration.ofSeconds(5))
       .build();
   private final Map<String, CachedCoordinates> coordinateCache = new ConcurrentHashMap<>();
+  private final Map<String, CachedAdcode> adcodeCache = new ConcurrentHashMap<>();
 
   public WeatherService(TripWeatherMapper weatherMapper, TripDayMapper tripDayMapper,
       TripMapper tripMapper, TripMemberService tripMemberService) {
@@ -306,5 +307,8 @@ public class WeatherService {
   }
 
   private record CachedCoordinates(double latitude, double longitude, long cachedAt) {
+  }
+
+  private record CachedAdcode(String adcode, long cachedAt) {
   }
 }
