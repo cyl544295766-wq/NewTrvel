@@ -356,6 +356,36 @@
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 
+  /* ===== 分享弹窗 ===== */
+  .share-mask { position: fixed; inset: 0; background: rgba(10,40,39,.42); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .share-mask.open { opacity: 1; pointer-events: auto; }
+  .share-modal {
+    position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 104%); z-index: 41;
+    width: min(480px, 96vw); background: #FBF8F2; border: 1px solid #E4E0D2; border-bottom: none;
+    border-radius: 16px 16px 0 0; box-shadow: 0 -14px 40px rgba(10,40,39,.18);
+    transition: transform .24s cubic-bezier(.4,0,.2,1);
+  }
+  .share-modal.open { transform: translate(-50%, 0); }
+  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #EBE7DA; background: #fff; border-radius: 16px 16px 0 0; }
+  .sh-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
+  .sh-head .x { border: none; background: rgba(13,110,110,.08); color: var(--brand); width: 28px; height: 28px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+  .sh-body { padding: 16px 20px 18px; }
+  .sh-desc { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+  .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .vis-pick button {
+    font-size: 13px; border: 1px solid #CBE3E1; background: #fff; color: var(--ink-2);
+    padding: 9px 14px; border-radius: 999px; cursor: pointer; transition: all .16s; font-family: inherit;
+  }
+  .vis-pick button[data-v="public"][aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .vis-pick button[data-v="friends"][aria-pressed="true"] { background: #3A7FA5; border-color: #3A7FA5; color: #fff; }
+  .vis-pick button[data-v="private"][aria-pressed="true"] { background: #4A6068; border-color: #4A6068; color: #fff; }
+  .sh-note { margin: 12px 0 0; font-size: 12.5px; color: var(--mute); }
+  .sh-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid #EBE7DA; background: #fff; }
+  .btn-plain { border: 1px solid #DDD9CB; background: #fff; color: var(--ink-2); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; }
+  .btn-primary-sm { border: none; background: var(--brand); color: #fff; font-weight: 600; font-size: 13.5px; padding: 10px 18px; border-radius: 10px; cursor: pointer; }
+  .btn-primary-sm:hover { background: #0A5A5A; }
+  .btn-primary-sm[disabled] { opacity: .6; cursor: wait; }
+
   .skeleton {
     background: linear-gradient(90deg, #F2FAF9 0%, #E8F6F5 50%, #F2FAF9 100%);
     background-size: 200% 100%; animation: skel 1.4s infinite linear;
@@ -452,6 +482,7 @@
       <div class="nav-label">总览</div>
       <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
       <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span><span class="dot"></span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span></a>
       <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
       <div class="nav-label">洞察</div>
       <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
@@ -477,6 +508,7 @@
         <b id="crumbTitle">…</b>
       </div>
       <div class="actions">
+        <button class="act" id="btnShare" hidden>&#127758; 分享</button>
         <button class="act" id="btnPdf">&#8689; 导出 PDF</button>
         <button class="act" id="btnArchive">&#9636; 归档</button>
         <button class="act" id="btnEdit">&#9998; 编辑</button>
@@ -551,6 +583,27 @@
   </main>
 </div>
 
+
+<div class="share-mask" id="shareMask"></div>
+<aside class="share-modal" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="sh-head">
+    <span class="t" id="shareTitle">分享攻略</span>
+    <button type="button" class="x" id="shareClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="sh-body">
+    <p class="sh-desc">选择这份行程在「攻略广场」（<a href="/square/" target="_blank" rel="noopener">打开广场</a>）对别人可见的程度。公开后别人可以直接把这份行程复制成自己的。</p>
+    <div class="vis-pick" id="sharePick" role="group" aria-label="可见性">
+      <button type="button" data-v="public" aria-pressed="false">🌐 公开</button>
+      <button type="button" data-v="friends" aria-pressed="false">👥 好友可见</button>
+      <button type="button" data-v="private" aria-pressed="false">🔒 私有</button>
+    </div>
+    <p class="sh-note" id="shareNote"></p>
+  </div>
+  <div class="sh-foot">
+    <button type="button" class="btn-plain" id="shareCancel">取消</button>
+    <button type="button" class="btn-primary-sm" id="shareSave">保存</button>
+  </div>
+</aside>
 
 <div class="toast" id="toast"></div>
 
@@ -919,6 +972,81 @@
       document.getElementById('btnEdit').onclick = function () {
         location.href = '/trip-form/?id=' + encodeURIComponent(tripId);
       };
+
+      /* ===== 分享到攻略广场（只有行程创建者能改可见性） ===== */
+      var shareBtn = document.getElementById('btnShare');
+      var shareMask = document.getElementById('shareMask');
+      var shareModal = document.getElementById('shareModal');
+      var sharePick = document.getElementById('sharePick');
+      var shareNote = document.getElementById('shareNote');
+      var shareSave = document.getElementById('shareSave');
+      var shareSel = 'private';
+
+      var VIS_META = {
+        public:  ['🌐 已公开', '任何人都能在攻略广场看到这份行程，并可一键复制成自己的。'],
+        friends: ['👥 好友可见', '只有你的互为好友能在广场「好友」页签里看到这份行程。'],
+        private: ['🔒 私有', '仅你和行程成员可见，攻略广场不展示。']
+      };
+
+      function syncShare() {
+        var trip = state.trip || {};
+        shareBtn.hidden = trip.currentUserRole !== 'owner';
+        shareSel = trip.visibility || 'private';
+        shareBtn.textContent = '🌐 分享';
+        sharePick.querySelectorAll('button').forEach(function (b) {
+          b.setAttribute('aria-pressed', b.dataset.v === shareSel ? 'true' : 'false');
+        });
+        shareNote.textContent = VIS_META[shareSel][1];
+      }
+
+      function openShare() { shareMask.classList.add('open'); shareModal.classList.add('open'); }
+      function closeShare() {
+        shareMask.classList.remove('open');
+        shareModal.classList.remove('open');
+        shareSave.disabled = false;
+        syncShare();
+      }
+
+      shareBtn.onclick = openShare;
+      shareMask.onclick = closeShare;
+      document.getElementById('shareClose').onclick = closeShare;
+      document.getElementById('shareCancel').onclick = closeShare;
+
+      if (!sharePick.dataset.shareBound) {
+        sharePick.dataset.shareBound = '1';
+        sharePick.addEventListener('click', function (e) {
+          var b = e.target.closest('button[data-v]');
+          if (!b) return;
+          shareSel = b.dataset.v;
+          sharePick.querySelectorAll('button').forEach(function (x) {
+            x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+          });
+          shareNote.textContent = VIS_META[shareSel] ? VIS_META[shareSel][1] : '';
+        });
+
+        shareSave.onclick = async function () {
+          if (shareSel === ((state.trip || {}).visibility || 'private')) { closeShare(); return; }
+          shareSave.disabled = true;
+          try {
+            await apiPatch('/trips/' + encodeURIComponent(tripId) + '/visibility', { visibility: shareSel });
+            state.trip.visibility = shareSel;
+            showToast(shareSel === 'public' ? '已公开到攻略广场' : shareSel === 'friends' ? '已设为好友可见' : '已设为私有');
+            syncShare();
+            shareMask.classList.remove('open');
+            shareModal.classList.remove('open');
+          } catch (err) {
+            showToast(humanError(err));
+          } finally {
+            shareSave.disabled = false;
+          }
+        };
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && shareModal.classList.contains('open')) closeShare();
+        });
+      }
+
+      syncShare();
     }
 
     /* ================= 操作记录（审计日志） ================= */

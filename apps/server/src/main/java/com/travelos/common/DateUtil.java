@@ -3,7 +3,10 @@ package com.travelos.common;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.TimeZone;
 
 /**
@@ -48,6 +51,23 @@ public final class DateUtil {
     SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
     format.setTimeZone(TimeZone.getTimeZone("UTC"));
     return utc("yyyy-MM-dd", format.format(date));
+  }
+
+  /** 起止日（含两端）之间的每一天（UTC 零点）；结束日期早于开始日期时报 400。 */
+  public static List<Date> dayRange(Date startDate, Date endDate) {
+    Date start = utcDay(startDate);
+    Date end = utcDay(endDate);
+    if (end.before(start)) {
+      throw ApiException.badRequest("结束日期不能早于开始日期");
+    }
+    List<Date> dates = new ArrayList<>();
+    Calendar cursor = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+    cursor.setTime(start);
+    while (!cursor.getTime().after(end)) {
+      dates.add(cursor.getTime());
+      cursor.add(Calendar.DATE, 1);
+    }
+    return dates;
   }
 
   private static String normalizeMillis(String input) {

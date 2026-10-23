@@ -352,6 +352,7 @@
       <div class="nav-label">总览</div>
       <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
       <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span></a>
       <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
       <div class="nav-label">洞察</div>
       <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
@@ -469,6 +470,7 @@
 
     var $ = function (id) { return document.getElementById(id); };
     var state = { trip: null, days: [], weather: [], editOpen: null };
+    var autoDayGenTried = false;
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -558,6 +560,14 @@
         state.weather = results[2].status === 'fulfilled' ? (results[2].value.weather || []) : [];
 
         if (!state.trip) { showToast('找不到该旅程'); setTimeout(function () { location.replace('/trips/'); }, 1000); return; }
+
+        if (!state.days.length && !autoDayGenTried && state.trip.startDate && state.trip.endDate) {
+          autoDayGenTried = true;
+          try {
+            var generated = await apiPost('/trips/' + tripId + '/days/generate', {});
+            state.days = (generated && generated.days) || state.days;
+          } catch (e) { /* 失败保持空态，用户可点击右上角按钮手动生成 */ }
+        }
 
         document.getElementById('crumbTrip').textContent = state.trip.title || '行程详情';
         document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
@@ -716,7 +726,7 @@
           + '<div class="empty-state">'
           +   '<div class="ic">🗺</div>'
           +   '<div class="t">还没有行程天</div>'
-          +   '<div class="d">点击右上角 <b>「按日期生成行程天」</b>，系统会按旅程起止日期自动铺出 D1-Dn 的骨架</div>'
+          +   '<div class="d">设置旅程的开始与结束日期后会自动铺出 D1-Dn 的骨架；也可点击右上角 <b>「按日期生成行程天」</b> 手动生成</div>'
           + '</div>';
         return;
       }

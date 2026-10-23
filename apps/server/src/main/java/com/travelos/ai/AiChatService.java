@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +48,8 @@ public class AiChatService {
 
   private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
 
-  /** 单次请求最多工具调用轮数，防止死循环。 */
-  private static final int MAX_TOOL_ROUNDS = 6;
+  /** 单次请求最多工具调用轮数，防止死循环（整趟多天规划需要逐天查询+生成草稿，8 轮不够用）。 */
+  private static final int MAX_TOOL_ROUNDS = 12;
 
   /** 上下文携带的历史消息条数上限。 */
   private static final int HISTORY_LIMIT = 20;
@@ -92,6 +93,9 @@ public class AiChatService {
   private static final Pattern BOOKING_INTENT_PATTERN = Pattern.compile("预定|预订|预约|订");
   private static final Pattern DAY_PATTERN = Pattern.compile("第\\s*([0-9一二三四五六七八九十两]+)\\s*天");
   private static final Pattern VAGUE_DAY_PATTERN = Pattern.compile("某天|哪天");
+  /** 酒店/住宿意图（用于给酒店候选按钮确定性补上评分/价格/地址/电话介绍）。 */
+  private static final Pattern HOTEL_INTENT_PATTERN =
+      Pattern.compile("酒店|住宿|民宿|客栈|宾馆|住哪|住在哪|住哪家");
   private static final Map<Character, Integer> CN_NUMERALS = Map.ofEntries(
       Map.entry('一', 1), Map.entry('二', 2), Map.entry('两', 2), Map.entry('三', 3),
       Map.entry('四', 4), Map.entry('五', 5), Map.entry('六', 6), Map.entry('七', 7),
@@ -267,6 +271,7 @@ public class AiChatService {
       AiMessage finalReply = null;
       String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
       String options = null;      /* 本轮 ask_options 工具产生的选择按钮（随最终回复下发） */
+      int draftClaimRetries = 0;  /* 「声称生成了草稿但实际没调用工具」的纠正次数 */
       Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         Map<String, Object> message = llm.chat(llmMessages, toolDefinitions());
@@ -275,7 +280,24 @@ public class AiChatService {
             : message.get("content").toString();
 
         if (toolCalls.isEmpty()) {
+          // 模型可能只写「草稿已生成/点卡片应用」却在轮内没真正调用工具 → 用户看不到卡片，纠正后重试
+          if (draftClaimRetries < 2 && claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
+            draftClaimRetries++;
+            Map<String, Object> retryTurn = new LinkedHashMap<>();
+            retryTurn.put("role", "assistant");
+            retryTurn.put("content", messageContent);
+            llmMessages.add(retryTurn);
+            llmMessages.add(Map.of("role", "user", "content",
+                "（系统提示：你刚才的回复说草稿已生成、让用户点卡片上的「应用」，但本轮并没有调用 propose_itinerary_change，"
+                    + "用户看不到任何卡片。请立刻调用 propose_itinerary_change 生成草稿，不要在正文里重复描述方案；"
+                    + "若确实缺少必要信息（哪一天、哪个行程），就直说需要用户补充什么。）"));
+            continue;
+          }
           String finalContent = messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent;
+          if (claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
+            // 重试仍未生成草稿：明确告知，避免用户以为有卡片
+            finalContent = "（提示：本轮没有生成可应用的卡片，以下内容仅供参考；回复「生成草稿」我再试一次）\n\n" + finalContent;
+          }
           finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
           String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
           finalReply = insertMessage(conversationId, userId, "assistant", finalContent,
@@ -310,9 +332,16 @@ public class AiChatService {
       }
       if (finalReply == null) {
         String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
-        finalReply = insertMessage(conversationId, userId, "assistant",
-            replyOptions != null ? "想预订的话，直接点选下面的一项就可以～"
-                : "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。",
+        String fallback;
+        if (replyOptions != null) {
+          fallback = "想预订的话，直接点选下面的一项就可以～";
+        } else if (hasPendingDraft(conversationId, turnStart)) {
+          // 本轮的草稿卡片已经生成，不要再说「请求复杂」，否则用户会以为没出应用按钮
+          fallback = "草稿已经生成，点卡片上的「应用」即可写入行程；想调整的话，直接告诉我要改哪一天或哪个地点。";
+        } else {
+          fallback = "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。";
+        }
+        finalReply = insertMessage(conversationId, userId, "assistant", fallback,
             buildReplyMeta(navigation, replyOptions), null);
       }
       conversation.setUpdatedAt(new Date());
@@ -339,6 +368,42 @@ public class AiChatService {
           "assistantMessage", toMessageResponse(reply),
           "newMessages", newMessagesSince(conversationId, userMessage.getCreatedAt()));
     }
+  }
+
+  /** 本轮是否已经生成了待确认草稿（用于工具轮数耗尽时的兜底文案）。 */
+  private boolean hasPendingDraft(String conversationId, Date turnStart) {
+    return messageMapper.selectCount(new LambdaQueryWrapper<AiMessage>()
+        .eq(AiMessage::getConversationId, conversationId)
+        .ge(AiMessage::getCreatedAt, turnStart)
+        .eq(AiMessage::getDraftStatus, "pending")) > 0;
+  }
+
+  /**
+   * 本轮回复「声称已生成草稿、让用户点应用」但实际没有任何待确认草稿 —— 用户会看不到卡片。
+   * 仅当用户这轮确实在要求改行程/记账/预订时才判定，避免误伤普通问答。
+   */
+  private boolean claimsMissingDraft(String reply, String conversationId, Date turnStart,
+      String userContent) {
+    if (reply == null || reply.isBlank() || userContent == null) {
+      return false;
+    }
+    boolean claims = reply.contains("草稿已生成") || reply.contains("草稿已经生成")
+        || reply.contains("已生成草稿") || reply.contains("已为你生成")
+        || reply.contains("已重新生成") || reply.contains("生成草稿卡片")
+        || reply.contains("点卡片") || reply.contains("卡片上的「应用」")
+        || reply.contains("点「应用」") || reply.contains("点“应用”")
+        || (reply.contains("卡片") && reply.contains("应用"));
+    if (!claims) {
+      return false;
+    }
+    boolean changeRequest = userContent.contains("规划") || userContent.contains("安排")
+        || userContent.contains("行程") || userContent.contains("改")
+        || userContent.contains("预订") || userContent.contains("订") || userContent.contains("记账")
+        || userContent.contains("删除") || userContent.contains("新增") || userContent.contains("加一个");
+    if (!changeRequest) {
+      return false;
+    }
+    return !hasPendingDraft(conversationId, turnStart);
   }
 
   /** 本次请求产生的全部新消息（含工具生成的草稿消息），按时间升序。 */
@@ -423,6 +488,20 @@ public class AiChatService {
     } catch (Exception ignore) {
       // 读取行程失败仅影响地理编码质量
     }
+    // 目标天 → 当天 add 变更数：用于识别「重新规划整天」（多个点 → 覆盖当天，而非叠加）
+    Map<Integer, Integer> addCountByDay = new LinkedHashMap<>();
+    for (Object item : changes) {
+      if (item instanceof Map<?, ?> raw && raw.get("dayIndex") != null
+          && "add".equals(String.valueOf(raw.get("action")))) {
+        try {
+          addCountByDay.merge(toInt(raw.get("dayIndex")), 1, Integer::sum);
+        } catch (Exception ignore) {
+          // dayIndex 非法时跳过统计，后续按普通追加处理
+        }
+      }
+    }
+    Object replaceFlag = draft.get("replaceDay");
+    Set<String> replacedDayIds = new HashSet<>();
     int count = 0;
     for (Object item : changes) {
       if (!(item instanceof Map<?, ?> raw)) {
@@ -434,30 +513,49 @@ public class AiChatService {
       switch (action) {
         case "add" -> {
           TripDay day = findDayByIndex(tripId, toInt(change.get("dayIndex")));
-          Map<String, Object> payload = new LinkedHashMap<>();
-          payload.put("tripDayId", day.getId());
-          payload.put("name", change.get("name"));
-          if (change.get("type") != null) {
-            payload.put("type", change.get("type"));
+          // 覆盖语义：重新规划当天时清空原有安排，避免多次应用后「一天出现多段行程」
+          if (shouldReplaceDay(replaceFlag, addCountByDay, change.get("dayIndex"))
+              && replacedDayIds.add(day.getId())) {
+            clearDayPlaces(tripId, day.getId(), null);
           }
-          if (change.get("address") != null) {
-            payload.put("address", change.get("address"));
+          String placeType = change.get("type") == null ? null : change.get("type").toString();
+          // 住宿是「一家」：同一天重新选酒店时替换旧酒店，而不是并列两家
+          if (placeType != null && "hotel".equalsIgnoreCase(placeType)) {
+            clearDayPlaces(tripId, day.getId(), "hotel");
           }
-          // 时间规划：把草稿的 HH:mm 落到该天的具体日期（startTime/endTime）
-          putTime(payload, "startTime", day.getDate(), change.get("startTime"));
-          putTime(payload, "endTime", day.getDate(), change.get("endTime"));
-          // 票价：写入预估费用（estimatedCost）
-          putCost(payload, change.get("estimatedCost"));
-          // 营业时间并入备注（notes）
-          putNotes(payload, change.get("notes"), stringValue(change.get("openTime")));
-          // 坐标：草稿携带则直接用，缺则按名称/地址地理编码补齐 —— 否则地图无法定位（历史 bug：AI 应用的地点全部无坐标）
-          String[] coord = resolveCoordinates(change, cityHint);
-          if (coord[0] != null) {
-            payload.put("latitude", coord[0]);
-            payload.put("longitude", coord[1]);
+          String placeName = change.get("name") == null ? null
+              : change.get("name").toString().trim();
+          boolean duplicate = placeName != null && !placeName.isEmpty()
+              && dayHasPlaceNamed(tripId, day.getId(), placeName);
+          if (duplicate) {
+            // 同名点已存在：视为同一安排，跳过重复插入
+            count++;
+          } else {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("tripDayId", day.getId());
+            payload.put("name", change.get("name"));
+            if (change.get("type") != null) {
+              payload.put("type", change.get("type"));
+            }
+            if (change.get("address") != null) {
+              payload.put("address", change.get("address"));
+            }
+            // 时间规划：把草稿的 HH:mm 落到该天的具体日期（startTime/endTime）
+            putTime(payload, "startTime", day.getDate(), change.get("startTime"));
+            putTime(payload, "endTime", day.getDate(), change.get("endTime"));
+            // 票价：写入预估费用（estimatedCost）
+            putCost(payload, change.get("estimatedCost"));
+            // 营业时间并入备注（notes）
+            putNotes(payload, change.get("notes"), stringValue(change.get("openTime")));
+            // 坐标：草稿携带则直接用，缺则按名称/地址地理编码补齐 —— 否则地图无法定位（历史 bug：AI 应用的地点全部无坐标）
+            String[] coord = resolveCoordinates(change, cityHint);
+            if (coord[0] != null) {
+              payload.put("latitude", coord[0]);
+              payload.put("longitude", coord[1]);
+            }
+            tripPlaceService().create(tripId, payload, userId);
+            count++;
           }
-          tripPlaceService().create(tripId, payload, userId);
-          count++;
         }
         case "remove" -> {
           tripPlaceService().delete(tripId, String.valueOf(change.get("placeId")), userId);
@@ -494,6 +592,50 @@ public class AiChatService {
       }
     }
     return count;
+  }
+
+  /**
+   * 是否用本次变更覆盖当天原有安排：
+   * 草稿显式 replaceDay=true → 覆盖；显式 false → 追加；
+   * 未提供时按启发式判断——同一草稿给某天 add 了 2 个及以上地点，视为「重新规划当天」→ 覆盖。
+   * 历史 bug：多次应用同一天的规划时地点不断累加，导致一天出现多段行程。
+   */
+  private boolean shouldReplaceDay(Object replaceFlag, Map<Integer, Integer> addCountByDay,
+      Object dayIndexValue) {
+    if (Boolean.TRUE.equals(replaceFlag)) {
+      return true;
+    }
+    if (Boolean.FALSE.equals(replaceFlag)) {
+      return false;
+    }
+    if (dayIndexValue == null) {
+      return false;
+    }
+    try {
+      return addCountByDay.getOrDefault(toInt(dayIndexValue), 0) >= 2;
+    } catch (Exception ignore) {
+      return false;
+    }
+  }
+
+  /** 清空某天原有地点（type 为 null 时清全部；指定 type 时只清该类型，如换酒店）。 */
+  private void clearDayPlaces(String tripId, String dayId, String type) {
+    LambdaQueryWrapper<TripPlace> wrapper = new LambdaQueryWrapper<TripPlace>()
+        .eq(TripPlace::getTripId, tripId)
+        .eq(TripPlace::getTripDayId, dayId);
+    if (type != null) {
+      wrapper.eq(TripPlace::getType, type);
+    }
+    tripPlaceMapper.delete(wrapper);
+  }
+
+  /** 当天是否已存在同名地点（用于避免重复叠加同一安排）。 */
+  private boolean dayHasPlaceNamed(String tripId, String dayId, String name) {
+    Long existing = tripPlaceMapper.selectCount(new LambdaQueryWrapper<TripPlace>()
+        .eq(TripPlace::getTripId, tripId)
+        .eq(TripPlace::getTripDayId, dayId)
+        .eq(TripPlace::getName, name));
+    return existing != null && existing > 0;
   }
 
   /**
@@ -713,7 +855,7 @@ public class AiChatService {
     Map<String, Object> args = LlmGatewayService.parseArguments(
         String.valueOf(call.getOrDefault("arguments", "{}")));
     try {
-      return switch (name) {
+      String result = switch (name) {
         case "get_trip" -> JsonUtil.write(
             tripService.findOne(requireArg(args, "tripId"), userId));
         case "list_trip_days" -> JsonUtil.write(
@@ -736,7 +878,14 @@ public class AiChatService {
         case "open_page" -> openPage(args, conversation, userId);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
       };
+      if (result != null && result.startsWith("{\"error\":")) {
+        // 工具参数错误会让模型「嘴上说草稿已生成、实际没有卡片」，这里留痕便于排查
+        log.warn("AI tool {} failed: {}", name,
+            result.length() > 300 ? result.substring(0, 300) : result);
+      }
+      return result;
     } catch (ApiException ex) {
+      log.warn("AI tool {} rejected: {}", name, ex.getMessage());
       return "{\"error\":\"" + ex.getMessage().replace("\"", "'") + "\"}";
     }
   }
@@ -979,6 +1128,9 @@ public class AiChatService {
     draft.put("tripId", tripId);
     draft.put("summary", summary);
     draft.put("changes", changes);
+    if (args.get("replaceDay") != null) {
+      draft.put("replaceDay", Boolean.parseBoolean(args.get("replaceDay").toString()));
+    }
 
     AiMessage draftMessage = insertMessage(conversation.getId(), userId, "assistant",
         summary, JsonUtil.write(draft), "pending");
@@ -1110,7 +1262,7 @@ public class AiChatService {
 
   /** ask_options 工具：校验选项并回传（随最终回复下发给前端渲染可点击按钮）。 */
   private String askOptions(Map<String, Object> args) {
-    List<String> options = new ArrayList<>();
+    List<Object> options = new ArrayList<>();
     Object raw = args.get("options");
     if (raw instanceof List<?> list) {
       for (Object item : list) {
@@ -1137,34 +1289,65 @@ public class AiChatService {
     return JsonUtil.write(result);
   }
 
-  /** 单个选项归一化：兼容字符串与 {label/text/value/name} 对象，去重复、限长、限量。 */
-  private void addOption(List<String> options, Object item) {
+  /**
+   * 单个选项归一化：兼容字符串与 {label/text/value/name} 对象，对象可带 description 介绍。
+   * 去重复（按展示文字）、限长、限量；有介绍时才输出 {label, description} 对象。
+   */
+  private void addOption(List<Object> options, Object item) {
     if (item == null || options.size() >= 6) {
       return;
     }
-    String text;
+    String label;
+    String description = null;
     if (item instanceof Map<?, ?> map) {
-      Object value = map.get("label");
-      if (value == null) {
-        value = map.get("text");
+      Object value = firstNonNull(map.get("label"), map.get("text"), map.get("value"),
+          map.get("name"));
+      label = value == null ? "" : value.toString();
+      Object detail = firstNonNull(map.get("description"), map.get("detail"), map.get("desc"),
+          map.get("intro"));
+      if (detail != null) {
+        description = detail.toString().trim();
+        if (description.length() > 80) {
+          description = description.substring(0, 80);
+        }
+        if (description.isBlank()) {
+          description = null;
+        }
       }
-      if (value == null) {
-        value = map.get("value");
-      }
-      if (value == null) {
-        value = map.get("name");
-      }
-      text = value == null ? "" : value.toString();
     } else {
-      text = item.toString();
+      label = item.toString();
     }
-    text = text.trim();
-    if (text.length() > 30) {
-      text = text.substring(0, 30);
+    label = label.trim();
+    if (label.length() > 30) {
+      label = label.substring(0, 30);
     }
-    if (!text.isBlank() && !options.contains(text)) {
-      options.add(text);
+    if (label.isBlank()) {
+      return;
     }
+    for (Object existing : options) {
+      String existingLabel = existing instanceof Map<?, ?> map
+          ? String.valueOf(map.get("label")) : String.valueOf(existing);
+      if (label.equals(existingLabel)) {
+        return;
+      }
+    }
+    if (description == null) {
+      options.add(label);
+    } else {
+      Map<String, Object> option = new LinkedHashMap<>();
+      option.put("label", label);
+      option.put("description", description);
+      options.add(option);
+    }
+  }
+
+  private Object firstNonNull(Object... values) {
+    for (Object value : values) {
+      if (value != null && !value.toString().isBlank()) {
+        return value;
+      }
+    }
+    return null;
   }
 
   /**
@@ -1173,8 +1356,18 @@ public class AiChatService {
    */
   private String resolveReplyOptions(String options, String userContent, AiConversation conversation,
       String userId, Date turnStart) {
-    if (options != null || userContent == null || userContent.isBlank()
+    if (userContent == null || userContent.isBlank()
         || !BOOKING_INTENT_PATTERN.matcher(userContent).find()) {
+      return options;
+    }
+    // 酒店/住宿候选：保证按钮携带评分/参考价/地址/电话介绍（模型漏给时用检索结果补全）
+    if (HOTEL_INTENT_PATTERN.matcher(userContent).find()) {
+      String hotelOptions = hotelOptionsWithIntro(options, conversation, userId, turnStart);
+      if (hotelOptions != null) {
+        return hotelOptions;
+      }
+    }
+    if (options != null) {
       return options;
     }
     Integer dayIndex = extractDayIndex(userContent);
@@ -1269,6 +1462,170 @@ public class AiChatService {
     }
   }
 
+  /**
+   * 酒店候选按钮补全：把 search_hotels 的评分/参考价/地址/电话写成按钮介绍。
+   * 模型已给按钮时按名称匹配补介绍（匹配不上则保持原样、返回 null）；模型漏给按钮时
+   * 直接用检索结果生成候选。检索不可用或与行程城市无关时返回 null，走通用兜底。
+   */
+  private String hotelOptionsWithIntro(String options, AiConversation conversation, String userId,
+      Date turnStart) {
+    List<Map<String, Object>> hotels = searchHotelRows(conversation);
+    if (hotels.isEmpty()) {
+      return null;
+    }
+    if (options != null) {
+      try {
+        Map<String, Object> payload = JsonUtil.readObject(options);
+        if (!(payload.get("options") instanceof List<?> rawItems) || rawItems.isEmpty()) {
+          return null;
+        }
+        List<Object> items = new ArrayList<>();
+        for (Object item : rawItems) {
+          addOption(items, item);
+        }
+        Map<String, String> intros = new LinkedHashMap<>();
+        for (Map<String, Object> hotel : hotels) {
+          String name = hotel.get("name") == null ? "" : hotel.get("name").toString().trim();
+          String intro = hotelIntro(hotel);
+          if (!name.isBlank() && intro != null) {
+            intros.put(name, intro);
+          }
+        }
+        List<Object> merged = new ArrayList<>();
+        boolean enriched = false;
+        for (Object item : items) {
+          if (item instanceof Map<?, ?> map && map.get("description") != null) {
+            merged.add(item);
+            enriched = true;
+            continue;
+          }
+          String label = item instanceof Map<?, ?> map ? String.valueOf(map.get("label"))
+              : String.valueOf(item);
+          String intro = matchHotelIntro(label, intros);
+          if (intro == null) {
+            merged.add(label);
+          } else {
+            Map<String, Object> withIntro = new LinkedHashMap<>();
+            withIntro.put("label", label);
+            withIntro.put("description", intro);
+            merged.add(withIntro);
+            enriched = true;
+          }
+        }
+        if (!enriched) {
+          return null;
+        }
+        payload.put("options", merged);
+        if (payload.get("type") == null) {
+          payload.put("type", "options");
+        }
+        return JsonUtil.write(payload);
+      } catch (Exception ex) {
+        log.warn("hotel options intro merge failed", ex);
+        return null;
+      }
+    }
+    // 模型漏给按钮：直接生成带介绍的酒店候选（本轮已有待确认草稿时不补，避免与卡片重复）
+    Long pending = messageMapper.selectCount(new LambdaQueryWrapper<AiMessage>()
+        .eq(AiMessage::getConversationId, conversation.getId())
+        .eq(AiMessage::getDraftStatus, "pending")
+        .ge(AiMessage::getCreatedAt, turnStart));
+    if (pending != null && pending > 0) {
+      return null;
+    }
+    List<Object> generated = new ArrayList<>();
+    for (Map<String, Object> hotel : hotels) {
+      String name = hotel.get("name") == null ? "" : hotel.get("name").toString().trim();
+      if (name.isBlank()) {
+        continue;
+      }
+      if (name.length() > 22) {
+        name = name.substring(0, 22);
+      }
+      Map<String, Object> option = new LinkedHashMap<>();
+      option.put("label", "订这家：" + name);
+      String intro = hotelIntro(hotel);
+      if (intro != null) {
+        option.put("description", intro);
+      }
+      generated.add(option);
+      if (generated.size() >= 5) {
+        break;
+      }
+    }
+    if (generated.isEmpty()) {
+      return null;
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("type", "options");
+    result.put("question", "想订哪家酒店？");
+    result.put("options", generated);
+    return JsonUtil.write(result);
+  }
+
+  /** 选项文字与酒店名的匹配（如「订这家：鑫农门客栈」命中「鑫农门客栈」）。 */
+  private String matchHotelIntro(String label, Map<String, String> intros) {
+    if (label == null || label.isBlank()) {
+      return null;
+    }
+    for (Map.Entry<String, String> entry : intros.entrySet()) {
+      if (label.contains(entry.getKey()) || entry.getKey().contains(label)) {
+        return entry.getValue();
+      }
+    }
+    return null;
+  }
+
+  /** 酒店介绍：评分 · 参考价 · 地址 · 电话（缺项自动省略，最多 80 字）。 */
+  private String hotelIntro(Map<String, Object> hotel) {
+    List<String> parts = new ArrayList<>();
+    Object rating = hotel.get("rating");
+    if (rating != null && !rating.toString().isBlank()) {
+      parts.add(rating + " 分");
+    }
+    Object avgCost = hotel.get("avgCost");
+    if (avgCost != null && !avgCost.toString().isBlank()) {
+      parts.add("¥" + avgCost);
+    }
+    Object address = hotel.get("address");
+    Object district = hotel.get("district");
+    String location = address != null && !address.toString().isBlank() ? address.toString()
+        : (district == null ? null : district.toString());
+    if (location != null && !location.isBlank()) {
+      parts.add("地址 " + location);
+    }
+    Object tel = hotel.get("tel");
+    if (tel != null && !tel.toString().isBlank()) {
+      parts.add("电话 " + tel);
+    }
+    if (parts.isEmpty()) {
+      return null;
+    }
+    String intro = String.join(" · ", parts);
+    return intro.length() > 80 ? intro.substring(0, 80) : intro;
+  }
+
+  @SuppressWarnings("unchecked")
+  private List<Map<String, Object>> searchHotelRows(AiConversation conversation) {
+    try {
+      Map<String, Object> result = placesService.searchPois("酒店",
+          resolveCity(Map.of(), conversation), "hotel", 6);
+      if (!(result.get("places") instanceof List<?> list) || list.isEmpty()) {
+        return List.of();
+      }
+      List<Map<String, Object>> rows = new ArrayList<>();
+      for (Object item : list) {
+        if (item instanceof Map<?, ?> map) {
+          rows.add((Map<String, Object>) map);
+        }
+      }
+      return rows;
+    } catch (Exception ex) {
+      log.warn("hotel intro search failed", ex);
+      return List.of();
+    }
+  }
+
   /** 从用户话术里解析「第 N 天」的天数（支持阿拉伯数字与常见的汉字数字）。 */
   private Integer extractDayIndex(String content) {
     Matcher matcher = DAY_PATTERN.matcher(content);
@@ -1351,7 +1708,9 @@ public class AiChatService {
     prompt.append("你是 Travel OS 的 AI 旅行助手，帮助用户规划行程、查询信息、记录开销。");
     prompt.append("规则：\n");
     prompt.append("1. 行程变更必须通过 propose_itinerary_change 工具生成草稿，绝不直接写行程；用户确认后才生效。")
-        .append("新增或修改地点时，先用 search_places 查询该地点，把返回的 latitude/longitude 写入草稿的 change 项（名称也不要改动为其他城市同名地点），确保应用后地图能定位。\n");
+        .append("新增或修改地点时，先用 search_places 查询该地点，把返回的 latitude/longitude 写入草稿的 change 项（名称也不要改动为其他城市同名地点），确保应用后地图能定位。")
+        .append("重新规划某一整天的行程时，工具参数 replaceDay 传 true：应用时会先清空当天原有安排再写入，")
+        .append("避免同一天多次应用后新行程与旧行程叠加（历史 bug：一天出现多段行程）；只是往某天追加单个地点时传 false。\n");
     prompt.append("2. 记账必须通过 add_expense 工具生成草稿，并在回复中向用户复述关键信息（类别、金额、分摊方式），用户确认后才生效。\n");
     prompt.append("3. 回答使用简体中文，简洁友好；不确定时先用工具查询再回答。\n");
     prompt.append("4. 金额一律人民币，不做汇率折算。\n");
@@ -1371,7 +1730,8 @@ public class AiChatService {
         + "应简洁引导用户先确定缺失天的景点/行程（指出是第几天），并可主动提议「要我先帮你规划第 X 天吗？」；确认后再推荐。"
         + "满足条件后，流程与行程规划保持一致、一次到位：结合当天行程（尤其当天最后一个景点位置与次日出发路线）、评分与参考价格，"
         + "由你直接选定最合适的一家，立即调用 propose_itinerary_change 生成 type=hotel 的写入草稿"
-        + "（change 项填全 name/address/latitude/longitude/startTime/endTime/notes），"
+        + "（change 项填全 name/address/latitude/longitude/startTime/endTime/notes，replaceDay 传 false——住宿是往当天追加，"
+        + "同一天重复选酒店会自动替换旧酒店，不会并列两家），"
         + "不要先让用户点选、再等下一轮才生成草稿。"
         + "回复正文必须包含：① 选定酒店的完整介绍——评分、参考价格（工具未返回价格时按常识估计并注明「仅供参考」）、地址、电话（工具返回时给出）；"
         + "② 一句话选择理由（如离当晚景点/次日出发更近）；③ 其他候选酒店各一行（名称·评分·参考价·地址），"
@@ -1384,7 +1744,10 @@ public class AiChatService {
         + "(c) 用餐时段（午 11:30–13:00、晚 17:30–19:00）安排餐厅，避免与景点冲突；"
         + "(d) 严格遵守景点营业时间，避开展馆闭馆日/闭馆时段（如博物馆多周一闭馆）；"
         + "(e) 每个景点在 change 项给出 estimatedCost（门票，人民币数字，免费填 0），并将营业时间放入 openTime；"
-        + "(f) 一天不宜排得过满，一般不超过 6 个点；回复中给出该天的整体时间轴概览。\n");
+        + "(f) 一天不宜排得过满，一般不超过 6 个点；回复中给出该天的整体时间轴概览；"
+        + "(g) 该整天规划草稿必须传 replaceDay=true，应用时覆盖当天原有安排；若只是往某天补充单个地点，则传 replaceDay=false；"
+        + "(h) 用户一次要求规划多天（2 天及以上，如「规划前两天」「第 1、2 天一起安排」）时，必须把全部天放进同一次 propose_itinerary_change 调用"
+        + "（changes 里用不同 dayIndex 区分，replaceDay=true），不要按天拆成多次调用，也不要只规划其中一天。\n");
     prompt.append("11. 票价：购物车/高德不返回门票价格，estimatedCost 由你按常识给出参考值，"
         + "并在回复中说明「票价与营业时间仅供参考，以景区/餐厅公示为准」。金额一律人民币。\n");
     prompt.append("12. 相对天数与默认行程（重要）：用户说「第二天」「第 N 天」时，一律指行程内的第 N 天（dayIndex=N，从 1 开始），"
@@ -1400,11 +1763,33 @@ public class AiChatService {
         + "用户只说「预订/订一下/预定某天的行程」而没指明具体对象（哪一天、哪一项、哪家酒店）时，先按规则 14 用 ask_options 让用户点选，再生成草稿，不要让用户手动输入。\n");
     prompt.append("14. 选择按钮（重要）：当需要用户从有限候选中做选择时（预订哪一天的哪一项、选择类型/日期、是否确认），"
         + "必须调用 ask_options 生成可点击按钮，不要让用户手动打字：options 必须基于工具返回的真实数据"
-        + "（如 list_trip_days 的每天行程点），每条简短具体（≤16 字），2-6 条；"
+        + "（如 list_trip_days 的每天行程点或 search_hotels 的酒店），每条简短具体（≤16 字），2-6 条；"
+        + "酒店/住宿候选的每条选项必须写成对象 {\"label\":\"订这家：××酒店\",\"description\":\"4.6 分 · ¥320 · 地址 ×× · 电话 ××\"}，"
+        + "description 取自 search_hotels 的 rating/avgCost/address/tel（缺项省略），让用户能比较后再点选；其他场景选项用字符串即可。"
         + "调用后最终回复只写一句自然提问，不要重复罗列选项文本"
         + "（酒店推荐场景除外：按规则 9 正文必须给出选定酒店的完整介绍与其他候选清单）。"
         + "注意：本轮已经生成草稿卡片时，选择已由卡片承载，不要再调用 ask_options；"
-        + "酒店推荐生成草稿后，可额外附一组「换住：××」按钮方便用户一键换酒店。\n");
+        + "酒店推荐生成草稿后，可额外附一组「换住：××」按钮（同样带 description 介绍）方便用户一键换酒店。\n");
+    prompt.append("15. 草稿必须真调用工具（重要）：历史消息里形如「【系统记录·历史草稿卡片（…），不是你的回复】」的内容是系统记录，"
+        + "不是你说过的话，也绝不代表本轮已有草稿。用户每次要求规划/调整行程、记账、登记预订时，"
+        + "你都必须在本轮实际调用对应工具（propose_itinerary_change / add_expense / add_booking）生成新草稿；"
+        + "回复正文里出现「草稿已生成」「点卡片上的应用」之前，必须已经成功调用了工具。"
+        + "禁止只用文字描述变更、或在正文里复述一句草稿摘要就声称卡片已生成——用户看不到任何卡片。\n");
+    prompt.append("16. 整趟规划（重要）：用户要求一次性规划整趟行程/全程/所有天（如「帮我规划整个行程」「把这几天都安排好」「生成一份 N 日游攻略」）时，"
+        + "不要一天一天反复对话，在同一轮内完成：\n"
+        + "(a) 逐天规划、并行查询：一次消息里同时调用多个 search_places/search_attractions（每天一组），减少工具轮次；\n"
+        + "(b) 查完后只调用一次 propose_itinerary_change：changes 数组包含全部各天的变更项，每项必须带 dayIndex、name、"
+        + "latitude/longitude（来自搜索结果）、startTime/endTime、estimatedCost、openTime；"
+        + "整趟重新规划时 replaceDay=true（会覆盖各天原有安排，须在回复中明确提醒用户）；"
+        + "若行程已有部分安排、用户只想补全空白天，则只对空白天给出变更且 replaceDay=false；\n"
+        + "(c) 每天安排 2-5 个景点/活动 + 对应用餐，遵守规则 10 的时长/交通/用餐/营业时间规范，按地理路线就近排序、避免来回折返；"
+        + "相邻天之间顺路衔接（前一晚住在哪，次日上午就从附近开始）；\n"
+        + "(d) 严格基于行程已有的目的地与天数规划，不要虚构行程没有的天数；行程还没有任何天时，先引导用户创建行程再规划；\n"
+        + "(e) 用户给了偏好（亲子/穷游/自驾/摄影/美食等）时按偏好调整：自驾控制单日车程与路线顺路性，亲子减少每日点数并优先亲子友好场所，"
+        + "穷游优先免费/低价景点，并在回复开头用一句话点明采纳的偏好；\n"
+        + "(f) 行程超过 7 天时建议分两段（先前半段，确认后再规划后半段），避免单次内容过长；\n"
+        + "(g) 最终回复给出逐天概览（每天一行：「第 N 天（日期）：A → B → C」），说明票价与营业时间仅供参考，"
+        + "并告知点草稿卡片「应用」后会一次性写入全部天。\n");
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -1594,13 +1979,16 @@ public class AiChatService {
     tools.add(function("ask_options",
         "选择按钮：需要用户从有限候选中做选择时调用（如订哪一天的哪一项、选哪家酒店、选类型、要不要登记），"
             + "界面会把 options 渲染成可点击按钮，用户点一下即作为消息发回给你。"
-            + "选项必须基于工具返回的真实数据、简短具体（≤16 字，如「第 2 天 · 乌兰布统影视基地」「订这家：××酒店」「暂不登记」），2-6 条；"
+            + "选项必须基于工具返回的真实数据、简短具体（如「第 2 天 · 乌兰布统影视基地」「订这家：××酒店」「暂不登记」），2-6 条；"
+            + "酒店/住宿候选必须用对象 {\"label\":\"订这家：××酒店\",\"description\":\"评分 · 参考价 · 地址 · 电话\"} 形式携带介绍"
+            + "（介绍取自 search_hotels 的 rating/avgCost/address/tel 字段，缺项省略），方便用户比较后点选；其他场景直接传字符串；"
             + "调用后最终回复用一句话提问即可，不要重复罗列选项文字",
         Map.ofEntries(
             Map.entry("question", stringProp("引导提问，如「想订哪一天的哪一项？」")),
             Map.entry("options", Map.of(
                 "type", "array",
-                "description", "可点击选项（2-6 条，简短具体）",
+                "description", "可点击选项（2-6 条）：字符串，或酒店候选的对象 "
+                    + "{\"label\":\"订这家：××酒店\",\"description\":\"4.6 分 · ¥320 · 地址 ×× · 电话 ××\"}",
                 "items", Map.of("type", "string"))))));
     tools.add(function("add_expense",
         "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入。"
@@ -1610,10 +1998,16 @@ public class AiChatService {
             "title", stringProp("标题，可空"), "notes", stringProp("备注，可空"))));
     tools.add(function("propose_itinerary_change",
         "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。"
+            + "changes 数组可一次包含多天的变更项（整趟规划时一次调用覆盖全部天，每项各带 dayIndex）；"
             + "「第二天」「第 N 天」一律按行程的第 N 天理解（结合上下文中的各天日期），不要按日历的明天理解；"
             + "对话未关联行程时（全局对话），草稿默认作用于最近行程（见系统提示词中的「最近行程」）。"
-            + "规划某天行程时，请为每个点给出合理的 startTime/endTime（含游玩时长与交通衔接）、estimatedCost（票价）与 openTime（营业时间，来自 search_attractions），并携带 latitude/longitude（来自搜索结果）以便地图定位",
+            + "规划某天行程时，请为每个点给出合理的 startTime/endTime（含游玩时长与交通衔接）、estimatedCost（票价）与 openTime（营业时间，来自 search_attractions），并携带 latitude/longitude（来自搜索结果）以便地图定位。"
+            + "replaceDay：重新规划某一天（整天的行程安排）时传 true，应用时会先清空当天原有安排再写入（避免同一天多次应用后旧行程与新行程叠加）；"
+            + "只是往某天追加单个地点时传 false",
         Map.of("summary", stringProp("变更摘要，如「第二天：故宫→午餐→天安门」"),
+            "replaceDay", Map.of(
+                "type", "boolean",
+                "description", "是否覆盖当天原有安排：整天重新规划传 true；仅追加单个地点传 false。同一天给出 2 个及以上 add 时默认按 true 处理"),
             "changes", Map.of(
                 "type", "array",
                 "items", Map.of(
@@ -1683,11 +2077,17 @@ public class AiChatService {
     for (int index = history.size() - 1; index >= 0; index--) {
       AiMessage message = history.get(index);
       if (message.getDraftStatus() != null) {
-        // 草稿消息以简短摘要参与上下文
+        // 草稿消息是系统生成的卡片记录，必须与「你的回复」明确区分，
+        // 否则模型会模仿这个格式、只在正文里写一句草稿摘要就谎称已生成卡片（历史 bug）
         llmMessages.add(Map.of("role", message.getRole(),
-            "content", "[草稿·" + message.getDraftStatus() + "] " + message.getContent()));
+            "content", "【系统记录·历史草稿卡片（" + message.getDraftStatus() + "），不是你的回复】"
+                + message.getContent()));
       } else if (message.getContent() != null && !message.getContent().isBlank()) {
-        llmMessages.add(Map.of("role", message.getRole(), "content", message.getContent()));
+        // 历史里遗留的旧格式标记（模型曾模仿它在正文里谎称生成了草稿）在送上下文前剥掉
+        String text = message.getContent().replaceFirst("^\\s*\\[草稿·[^\\]]*\\]\\s*", "");
+        if (!text.isBlank()) {
+          llmMessages.add(Map.of("role", message.getRole(), "content", text));
+        }
       }
     }
   }

@@ -22,10 +22,13 @@ public class TripController {
 
   private final TripService tripService;
   private final TripMemberService tripMemberService;
+  private final com.travelos.service.TripSquareService squareService;
 
-  public TripController(TripService tripService, TripMemberService tripMemberService) {
+  public TripController(TripService tripService, TripMemberService tripMemberService,
+      com.travelos.service.TripSquareService squareService) {
     this.tripService = tripService;
     this.tripMemberService = tripMemberService;
+    this.squareService = squareService;
   }
 
   @PostMapping
@@ -68,6 +71,14 @@ public class TripController {
   @PatchMapping("/{tripId}/favorite")
   public Map<String, Object> favorite(@PathVariable String tripId, @CurrentUser UserContext user) {
     return tripService.favorite(tripId, user.id());
+  }
+
+  /** 攻略广场可见性：public / friends / private，仅行程创建者可改。 */
+  @PatchMapping("/{tripId}/visibility")
+  public Map<String, Object> setVisibility(@PathVariable String tripId,
+      @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
+    return squareService.setVisibility(tripId, user.id(),
+        dto.get("visibility") == null ? null : dto.get("visibility").toString());
   }
 
   @DeleteMapping("/{tripId}")

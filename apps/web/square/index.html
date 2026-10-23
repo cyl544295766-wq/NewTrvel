@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS · 攻略广场</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/theme.css">
+<link rel="stylesheet" href="../assets/css/pet.css">
+<style>
+  /* ===== 壳（与全站统一的侧栏 + 主区） ===== */
+  .shell { display: grid; grid-template-columns: var(--rail-w, 232px) 1fr; min-height: 100vh; transition: grid-template-columns .24s cubic-bezier(.4,0,.2,1); }
+  .shell[data-collapsed="true"] { --rail-w: 76px; }
+  .side {
+    position: sticky; top: 0; height: 100vh;
+    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    padding: 18px 14px 20px; display: flex; flex-direction: column; gap: 6px;
+    border-right: 1px solid #C9E8E6; overflow: hidden;
+  }
+  .side .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  .side .nav::-webkit-scrollbar { width: 5px; }
+  .side .nav::-webkit-scrollbar-thumb { background: #C9E8E6; border-radius: 3px; }
+  .rail-toggle {
+    align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
+    display: grid; place-items: center; border: none; border-radius: 9px;
+    background: rgba(255,255,255,.7); color: var(--brand); font-size: 15px; cursor: pointer; flex: none;
+    transition: background .16s, transform .24s;
+  }
+  .rail-toggle:hover { background: #fff; }
+  .shell[data-collapsed="true"] .rail-toggle { transform: rotate(180deg); align-self: center; }
+  .brand { font-family: var(--slab); font-weight: 700; font-size: 23px; padding: 0 8px 4px; color: var(--brand); white-space: nowrap; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; color: var(--mute); letter-spacing: .1em; margin-top: 2px; }
+  .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
+  .nav-label { font-size: 11px; letter-spacing: .15em; color: var(--mute); padding: 20px 10px 6px; white-space: nowrap; }
+  .nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; border-radius: 9px; white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
+  .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,.10); }
+  .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
+  .side-foot {
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  }
+  .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .side-foot .side-exit {
+    margin-left: auto; width: 26px; height: 26px; border: none; border-radius: 8px; flex: none;
+    background: rgba(255,255,255,.7); color: var(--mute); font-size: 13px; line-height: 1; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .side-foot .side-exit:hover { background: #fff; color: #C4643B; }
+  .shell[data-collapsed="true"] .side-foot .side-exit { margin-left: 0; }
+  .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
+  .shell[data-collapsed="true"] .nav a .txt,
+  .shell[data-collapsed="true"] .brand,
+  .shell[data-collapsed="true"] .side-foot .who { display: none; }
+  .shell[data-collapsed="true"] .brand-mark { display: block; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
+
+  /* ===== 主区 ===== */
+  main { padding: 36px 44px 80px; max-width: 1760px; width: 100%; margin: 0 auto; }
+  .crumb { font-size: 13px; color: var(--mute); display: flex; gap: 7px; align-items: center; }
+  .crumb a { color: var(--mute); text-decoration: none; }
+  .crumb a:hover { color: var(--brand); }
+  .crumb b { color: var(--brand); font-weight: 600; }
+  .page-head { margin-top: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-family: var(--slab); font-weight: 600; font-size: 34px; line-height: 1.15; color: var(--brand); }
+  h1 .en { display: block; font-size: 12px; font-family: var(--grot); font-weight: 500; letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px; }
+  .meta { font-size: 14px; color: var(--mute); margin-top: 10px; }
+  .meta b { color: var(--brand); font-weight: 600; }
+
+  /* ===== 筛选 ===== */
+  .toolbar { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .seg { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); }
+  .seg button {
+    font-family: var(--grot); font-size: 13px; color: var(--ink-2); border: none; background: transparent;
+    padding: 9px 16px; border-radius: 8px; cursor: pointer; transition: background .16s, color .16s;
+  }
+  .seg button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+  .seg.scope button[aria-pressed="true"] { background: #FF8A4C; }
+  .search { flex: 1 1 220px; min-width: 180px; position: relative; }
+  .search input {
+    width: 100%; box-sizing: border-box; font-size: 14px; padding: 11px 14px 11px 34px;
+    border: 1px solid #CBE3E1; border-radius: 10px; background: #fff; color: var(--ink); outline: none;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .search input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(13,110,110,.10); }
+  .search .si { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--mute); font-size: 14px; }
+  select#destSel {
+    font-size: 14px; padding: 10px 12px; border: 1px solid #CBE3E1; border-radius: 10px;
+    background: #fff; color: var(--ink); max-width: 200px; cursor: pointer;
+  }
+
+  /* ===== 卡片 ===== */
+  .g-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 16px; }
+  .g-card {
+    background: #fff; border-radius: var(--r-card, 14px); box-shadow: var(--card-shadow);
+    overflow: hidden; display: flex; flex-direction: column;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .g-card:hover { transform: translateY(-3px); box-shadow: 0 14px 34px rgba(13,110,110,.14); }
+  .g-cover { height: 138px; position: relative; background-size: cover; background-position: center; cursor: pointer; }
+  .g-cover.na { background: linear-gradient(135deg, #CDEAE8 0%, #EAF4EE 60%, #F6EDD9 100%); display: grid; place-items: center; }
+  .g-cover.na .na-initial {
+    font-family: var(--slab); font-size: 28px; font-weight: 700;
+    color: rgba(13,110,110,.22); line-height: 1;
+    position: absolute; right: 14px; bottom: 8px;
+  }
+  .g-theme { position: absolute; left: 10px; top: 10px; font-family: var(--grot); font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.9); color: var(--brand); max-width: calc(100% - 88px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .g-copysee { position: absolute; right: 10px; top: 10px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255,138,76,.92); color: #fff; }
+  .g-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; }
+  .g-title { margin: 0; font-family: var(--grot); font-weight: 600; font-size: 15.5px; color: var(--ink); line-height: 1.35; cursor: pointer; }
+  .g-title:hover { color: var(--brand); }
+  .g-desc { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .g-author { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--mute); }
+  .g-author .av { width: 24px; height: 24px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+  .g-author img.av { object-fit: cover; }
+  .g-fast { display: flex; justify-content: space-between; font-size: 12px; color: var(--mute); }
+  .g-fast b { color: var(--brand); font-weight: 600; }
+  .g-actions { margin-top: auto; display: flex; gap: 8px; }
+  .act {
+    flex: 1 1 auto; font-family: var(--grot); font-weight: 600; font-size: 13px; border: none;
+    padding: 10px 12px; border-radius: 9px; cursor: pointer; transition: transform .14s, background .14s;
+  }
+  .act.primary { background: var(--brand); color: #fff; }
+  .act.primary:hover { background: #0A5A5A; }
+  .act.plain { background: #EFF6F5; color: var(--brand); }
+  .act.plain:hover { background: #E0EEED; }
+  .act[disabled] { opacity: .55; cursor: not-allowed; }
+  .empty {
+    grid-column: 1 / -1; text-align: center; padding: 48px 16px; border: 1.5px dashed #CFE5E3;
+    border-radius: 14px; color: var(--mute); font-size: 14px;
+  }
+  .more-wrap { margin-top: 20px; text-align: center; }
+  .more-btn {
+    font-family: var(--grot); font-weight: 600; font-size: 14px; color: var(--brand);
+    background: #fff; border: 1px solid #CBE3E1; padding: 11px 26px; border-radius: 999px; cursor: pointer;
+    box-shadow: var(--card-shadow); transition: background .16s;
+  }
+  .more-btn:hover:not([disabled]) { background: #F2FAF9; }
+  .more-btn[disabled] { opacity: .6; cursor: wait; }
+  [hidden] { display: none !important; }
+
+  /* ===== 详情抽屉 ===== */
+  .drawer-mask { position: fixed; inset: 0; background: rgba(10,40,39,.42); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .drawer-mask.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100vh; width: min(560px, 94vw); z-index: 41;
+    background: #FBF8F2; border-left: 1px solid #E4E0D2; box-shadow: -18px 0 44px rgba(10,40,39,.16);
+    display: flex; flex-direction: column; transform: translateX(102%); transition: transform .26s cubic-bezier(.4,0,.2,1);
+  }
+  .drawer.open { transform: translateX(0); }
+  .dr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #EBE7DA; background: #fff; }
+  .dr-head .t { font-family: var(--slab); font-weight: 600; font-size: 18px; color: var(--brand); }
+  .dr-head .x { border: none; background: rgba(13,110,110,.08); color: var(--brand); width: 30px; height: 30px; border-radius: 9px; cursor: pointer; font-size: 14px; }
+  .dr-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; padding: 18px 20px 26px; display: flex; flex-direction: column; gap: 14px; }
+  .dr-body > * { flex: none; }
+  .dr-cover { height: 168px; border-radius: 14px; background-size: cover; background-position: center; }
+  .dr-cover.na { background: linear-gradient(135deg, #CDEAE8 0%, #EAF4EE 60%, #F6EDD9 100%); }
+  .dr-title { margin: 0; font-family: var(--slab); font-weight: 600; font-size: 22px; color: var(--ink); line-height: 1.3; }
+  .dr-author { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--ink-2); }
+  .dr-author .av { width: 32px; height: 32px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; flex: none; }
+  .dr-author img.av { object-fit: cover; }
+  .dr-stats { margin-left: auto; display: flex; gap: 8px; }
+  .dr-stats span { font-family: var(--grot); font-size: 12px; background: #fff; border: 1px solid #E4E0D2; padding: 5px 10px; border-radius: 999px; color: var(--ink-2); }
+  .dr-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12.5px; color: var(--mute); }
+  .dr-meta span { background: #fff; border: 1px solid #E4E0D2; border-radius: 999px; padding: 5px 12px; }
+  .dr-desc { margin: 0; font-size: 13.5px; line-height: 1.7; color: var(--ink); background: #fff; border-radius: 12px; padding: 12px 14px; border: 1px solid #EFECE1; }
+  .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .vis-pick button {
+    font-size: 13px; border: 1px solid #CBE3E1; background: #fff; color: var(--ink-2);
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: all .16s;
+  }
+  .vis-pick button[data-v="public"][aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .vis-pick button[data-v="friends"][aria-pressed="true"] { background: #3A7FA5; border-color: #3A7FA5; color: #fff; }
+  .vis-pick button[data-v="private"][aria-pressed="true"] { background: var(--ink-2); border-color: var(--ink-2); color: #fff; }
+  .vis-tip { font-size: 12px; color: var(--mute); margin-top: 6px; }
+  .days { display: flex; flex-direction: column; gap: 10px; }
+  .dr-map-wrap { position: relative; height: 240px; border-radius: 14px; overflow: hidden; border: 1px solid #E4E0D2; background: #E8F6F5; }
+  .dr-map-wrap #drMap { position: absolute; inset: 0; }
+  .dr-map-note { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mute); font-size: 13px; background: rgba(238,246,245,.86); z-index: 5; padding: 0 24px; text-align: center; }
+  .dr-map-foot { position: absolute; left: 8px; bottom: 8px; right: 8px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 6; pointer-events: none; }
+  .dr-map-foot span {
+    display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.92);
+    color: var(--ink-2); font-family: var(--grot); font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    box-shadow: 0 1px 4px rgba(10,40,39,.14);
+  }
+  .dr-map-foot span i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #drMap .sq-mk { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  #drMap .sq-mk-no { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 11px; display: grid; place-items: center; box-shadow: 0 1px 4px rgba(10,40,39,.3); flex: none; }
+  #drMap .sq-mk-lab { background: rgba(255,255,255,.92); color: var(--ink); font-size: 11.5px; padding: 2px 7px; border-radius: 6px; white-space: nowrap; box-shadow: 0 1px 3px rgba(10,40,39,.2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  #drMap .sq-mk:hover .sq-mk-lab { max-width: 260px; }
+  .day { background: #fff; border: 1px solid #EFECE1; border-radius: 12px; padding: 12px 14px; }
+  .day h4 { margin: 0 0 6px; font-family: var(--grot); font-size: 13.5px; color: var(--brand); }
+  .day h4 em { font-style: normal; font-weight: 400; color: var(--mute); margin-left: 8px; font-size: 12px; }
+  .day ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); display: flex; flex-direction: column; gap: 3px; }
+  .day .none { font-size: 12.5px; color: var(--mute); }
+  .dr-foot { padding: 14px 20px; border-top: 1px solid #EBE7DA; background: #fff; display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .dr-foot .msg { margin-right: auto; font-size: 12.5px; color: var(--mute); }
+  .btn-plain { border: 1px solid #DDD9CB; background: #fff; color: var(--ink-2); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; }
+  .btn-danger { border: none; background: #FDEDF1; color: #C2566C; font-weight: 600; font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; transition: background .16s; }
+  .btn-danger:hover { background: #F9DCE3; }
+  .btn-danger[disabled] { opacity: .6; cursor: wait; }
+  .btn-primary-sm { border: none; background: var(--brand); color: #fff; font-family: var(--grot); font-weight: 600; font-size: 13.5px; padding: 11px 18px; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 12px rgba(13,110,110,.28); }
+  .btn-primary-sm:hover { background: #0A5A5A; }
+  .btn-primary-sm[disabled] { opacity: .6; cursor: wait; }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); z-index: 60;
+    background: var(--ink); color: #fff; font-size: 13.5px; padding: 10px 20px; border-radius: 999px;
+    opacity: 0; pointer-events: none; transition: opacity .22s, transform .22s; max-width: 80vw; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 900px) {
+    main { padding: 24px 18px 60px; }
+    h1 { font-size: 27px; }
+    .crumb, .meta { font-size: 12.5px; }
+    .toolbar { gap: 9px; }
+    .seg { padding: 3px; }
+    .seg button { padding: 8px 12px; font-size: 12.5px; }
+    .g-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+    .g-cover { height: 118px; }
+    .g-cover.na .na-initial { font-size: 20px; }
+    .g-theme { font-size: 11px; padding: 3px 10px; }
+    .g-title { font-size: 14px; }
+    .g-desc { font-size: 12px; }
+    .g-author { font-size: 11.5px; }
+    .g-fast { font-size: 11px; }
+    .act { padding: 9px 10px; font-size: 12.5px; }
+    .dr-cover { height: 130px; }
+    .dr-title { font-size: 18px; }
+    .dr-map-wrap { height: 200px; }
+    .day h4 { font-size: 12.5px; }
+    .day ul { font-size: 12px; }
+  }
+  @media (max-width: 640px) {
+    /* 侧栏收成图标窄导航，保证手机端仍可跳转 */
+    .shell { --rail-w: 72px; }
+    .rail-toggle, .brand, .nav a .txt, .side-foot .who { display: none; }
+    .brand-mark { display: block; }
+    .side { padding: 12px 8px 14px; }
+    .nav { overflow-x: hidden; }
+    .nav-label { padding: 0; margin: 12px 10px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+    .nav a { justify-content: center; padding: 11px 0; }
+    .dr-cover { height: 140px; }
+    .g-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+    .g-cover { height: 96px; }
+    .g-cover.na .na-initial { font-size: 18px; }
+    #drMap .sq-mk-lab { font-size: 10.5px; max-width: 96px; }
+    #drMap .sq-mk-no { width: 17px; height: 17px; font-size: 10px; }
+    .g-copysee { font-size: 10px; padding: 3px 8px; }
+    .page-head { margin-top: 10px; }
+    main { padding: 20px 14px 60px; }
+    .dr-map-wrap { height: 170px; }
+    #drMapWrap { height: 170px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
+    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
+    <div class="brand-mark" aria-hidden="true">T</div>
+    <nav class="nav" id="sideNav" aria-label="主导航">
+      <div class="nav-label">总览</div>
+      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <a href="/square/" aria-current="page"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span><span class="dot"></span></a>
+      <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
+      <div class="nav-label">洞察</div>
+      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span><span class="badge" id="navUnread" hidden>0</span></a>
+      <div class="nav-label">行程</div>
+      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
+      <a href="/admin/"><span class="ico" aria-hidden="true">&#9881;</span><span class="txt">管理后台</span></a>
+    </nav>
+    <div class="side-foot">
+      <span class="avatar" id="avatar">A</span>
+      <span class="who" id="who">…</span>
+      <button type="button" class="side-exit" id="sideLogout" title="退出登录" aria-label="退出登录">&#9211;</button>
+    </div>
+  </aside>
+
+  <main>
+    <p class="crumb"><a href="/home/">首页</a><span>/</span><b>攻略广场</b></p>
+    <div class="page-head">
+      <div>
+        <h1>攻略广场<span class="en">Explore Guides</span></h1>
+        <p class="meta" id="pageMeta">浏览其他旅行者公开的行程，一键复制成自己的旅行再调整。</p>
+      </div>
+    </div>
+
+    <!-- 筛选 -->
+    <div class="toolbar">
+      <div class="seg scope" id="scopeSeg" role="group" aria-label="范围">
+        <button type="button" data-scope="public" aria-pressed="true">🌐 公开攻略</button>
+        <button type="button" data-scope="friends" aria-pressed="false">👥 好友的攻略</button>
+      </div>
+      <div class="search">
+        <span class="si" aria-hidden="true">&#9906;</span>
+        <input type="search" id="kwInput" placeholder="搜索标题、说明或目的地…" aria-label="搜索攻略">
+      </div>
+      <select id="destSel" aria-label="按目的地筛选">
+        <option value="">全部目的地</option>
+      </select>
+      <div class="seg" id="sortSeg" role="group" aria-label="排序方式">
+        <button type="button" data-sort="latest" aria-pressed="true">最新发布</button>
+        <button type="button" data-sort="hot" aria-pressed="false">最热</button>
+        <button type="button" data-sort="copies" aria-pressed="false">复制量</button>
+      </div>
+    </div>
+
+    <!-- 卡片区 -->
+    <section class="g-grid" id="grid" aria-label="攻略列表">
+      <p class="empty" id="loading">正在加载攻略…</p>
+    </section>
+    <div class="more-wrap">
+      <button type="button" class="more-btn" id="btnMore" hidden>加载更多</button>
+    </div>
+  </main>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer-mask" id="drMask"></div>
+<aside class="drawer" id="drawer" aria-label="攻略详情" role="dialog" aria-modal="true">
+  <div class="dr-head">
+    <span class="t" id="drTitle">攻略详情</span>
+    <button type="button" class="x" id="drClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="dr-body" id="drBody">
+    <p class="dr-desc" id="drLoading" style="text-align:center;color:var(--mute);">正在加载攻略…</p>
+  </div>
+  <div class="dr-foot">
+    <span class="msg" id="drMsg"></span>
+    <button type="button" class="btn-danger" id="drDelete" hidden>删除攻略</button>
+    <button type="button" class="btn-plain" id="drCancel">关闭</button>
+    <button type="button" class="btn-primary-sm" id="drCopy" hidden>复制到我的旅行</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
+<script src="../assets/js/pet.js"></script>
+<script src="../assets/js/amap.js"></script>
+<script>
+  (function () {
+    if (!requireLogin('/login/')) return;
+
+    /* ===== 壳 ===== */
+    var user = getCurrentUser() || {};
+    document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
+    document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
+
+    var shell = document.querySelector('.shell');
+    var railBtn = document.getElementById('railToggle');
+    var KEY = 'travel-os-rail-collapsed';
+    function applyRail(collapsed) {
+      shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
+      railBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      document.querySelectorAll('.nav a').forEach(function (a) {
+        var t = a.querySelector('.txt');
+        if (!t) return;
+        if (collapsed) a.setAttribute('title', t.textContent); else a.removeAttribute('title');
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyRail(saved === 'true');
+    railBtn.addEventListener('click', function () {
+      var next = shell.getAttribute('data-collapsed') !== 'true';
+      applyRail(next);
+      try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+
+    /* ===== Toast ===== */
+    var toast = document.getElementById('toast');
+    var toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+    }
+
+    /* ===== 状态 ===== */
+    var currentUserId = user.id || '';
+    var state = {
+      scope: 'public', keyword: '', destination: '', sort: 'latest',
+      page: 1, pageSize: 12, hasMore: false, total: 0, loading: false
+    };
+    var seenCopied = {}; // 本次会话内已知"我复制过"（后端 copiedByMe 标记）
+
+    var $grid = document.getElementById('grid');
+    var $meta = document.getElementById('pageMeta');
+    var $more = document.getElementById('btnMore');
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function ymd(v) { return String(v || '').slice(0, 10); }
+    function debounce(fn, wait) { var t = null; return function () { clearTimeout(t); var a = arguments, c = this; t = setTimeout(function () { fn.apply(c, a); }, wait); }; }
+
+    /* ===== facets ===== */
+    function loadFacets() {
+      apiGet('/square/facets').then(function (r) {
+        var sel = document.getElementById('destSel');
+        var current = sel.value;
+        sel.innerHTML = '<option value="">全部目的地</option>' + (r.destinations || []).map(function (d) {
+          return '<option value="' + esc(d.destination) + '">' + esc(d.destination) + '（' + d.count + '）</option>';
+        }).join('');
+        sel.value = current;
+      }).catch(function () {});
+    }
+
+    /* ===== 列表 ===== */
+    function query() {
+      var p = new URLSearchParams();
+      p.set('scope', state.scope);
+      p.set('sort', state.sort);
+      p.set('page', state.page);
+      p.set('pageSize', state.pageSize);
+      if (state.keyword) p.set('keyword', state.keyword);
+      if (state.destination) p.set('destination', state.destination);
+      return '/square?' + p.toString();
+    }
+
+    function card(r) {
+      var author = r.author || {};
+      var name = author.displayName || author.username || '旅行者';
+      var initial = (author.initial || '旅').slice(0, 1).toUpperCase();
+      var avatar = author.avatarUrl
+        ? '<img class="av" src="' + esc(author.avatarUrl) + '" alt="">'
+        : '<span class="av" aria-hidden="true">' + esc(initial) + '</span>';
+      var cover = r.coverImageUrl
+        ? '<div class="g-cover" style="background-image:url(&quot;' + esc(r.coverImageUrl) + '&quot;)" data-detail="' + esc(r.id) + '" role="button" tabindex="0" aria-label="查看 ' + esc(r.title) + '">'
+        : '<div class="g-cover na" data-detail="' + esc(r.id) + '" role="button" tabindex="0" aria-label="查看 ' + esc(r.title) + '"><span class="na-initial">' + esc(initial) + '</span>';
+      var copyTag = r.copiedByMe ? '<span class="g-copysee">已复制</span>' : '';
+      var heat = (r.viewCount || 0) + (r.copyCount || 0) * 5;
+      return '<article class="g-card" data-id="' + esc(r.id) + '">' +
+        cover + '<span class="g-theme">' + esc(r.destination || '未知目的地') + '</span>' + copyTag + '</div>' +
+        '<div class="g-body">' +
+        '<h3 class="g-title" data-detail="' + esc(r.id) + '" role="button" tabindex="0">' + esc(r.title || '未命名攻略') + '</h3>' +
+        '<p class="g-desc">' + esc(r.description || '作者没有写介绍。') + '</p>' +
+        '<div class="g-author">' + avatar + '<span>' + esc(name) + '</span></div>' +
+        '<div class="g-fast"><span>' + esc(ymd(r.startDate)) + ' · ' + (r.dayCount || 0) + ' 天</span>' +
+        '<span>👁 ' + r.viewCount + ' · ⧉ ' + r.copyCount + ' · 🔥 ' + heat + '</span></div>' +
+        '<div class="g-actions">' +
+        (r.isOwner
+          ? '<button type="button" class="act plain" data-detail="' + esc(r.id) + '">查看</button>'
+          : '<button type="button" class="act primary" data-copy="' + esc(r.id) + '"' + (r.copiedByMe ? ' data-more="1"' : '') + '>' + (r.copiedByMe ? '再来一份' : '复制攻略') + '</button>') +
+        '</div></div></article>';
+    }
+
+    function renderList(res, append) {
+      var items = res.items || [];
+      state.hasMore = !!res.hasMore;
+      state.total = res.total || 0;
+      $more.hidden = !state.hasMore;
+      if (!append) $grid.innerHTML = '';
+      (items || []).forEach(function (r) {
+        if (r.copiedByMe) seenCopied[r.id] = true;
+        $grid.insertAdjacentHTML('beforeend', card(r));
+      });
+      if (!items.length && state.page === 1) {
+        $grid.innerHTML = '<div class="empty">' +
+          (state.scope === 'friends'
+            ? '好友还没有公开给好友的攻略，先去加几个旅行搭子吧。'
+            : '还没有公开的攻略。写好行程后，在详情里把可见性设为「公开」就能出现在这里。') +
+          '</div>';
+      }
+      var scopeText = state.scope === 'friends' ? '好友的攻略' : '公开攻略';
+      $meta.innerHTML = '共 <b>' + state.total + '</b> 篇' + (state.scope === 'public' ? '公开攻略' : '好友攻略（' + (res.friendCount || 0) + ' 位好友）') + ' · ' + scopeText;
+    }
+
+    function loadPage(page, append) {
+      if (state.loading) return;
+      state.loading = true;
+      $more.disabled = true;
+      state.page = page;
+      apiGet(query()).then(function (r) {
+        renderList(r, append);
+      }).catch(function (err) {
+        if (!append) $grid.innerHTML = '<div class="empty">加载失败：' + esc(humanError(err)) + '</div>';
+        showToast(humanError(err));
+      }).finally(function () {
+        state.loading = false;
+        $more.disabled = false;
+      });
+    }
+
+    function loadFriendsBadge() {
+      apiGet('/square?scope=friends&page=1&pageSize=1').then(function (r) {
+        var btn = document.querySelector('#scopeSeg [data-scope="friends"]');
+        if (btn) btn.textContent = '👥 好友的攻略' + (r.total ? '（' + r.total + '）' : '');
+      }).catch(function () {});
+    }
+
+    /* ===== 筛选接线 ===== */
+    var debouncedSearch = debounce(function () {
+      state.keyword = document.getElementById('kwInput').value.trim();
+      loadPage(1, false);
+    }, 380);
+    document.getElementById('kwInput').addEventListener('input', debouncedSearch);
+
+    document.getElementById('destSel').addEventListener('change', function () {
+      state.destination = this.value;
+      loadPage(1, false);
+    });
+
+    document.getElementById('scopeSeg').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-scope]');
+      if (!btn) return;
+      state.scope = btn.dataset.scope;
+      document.querySelectorAll('#scopeSeg button').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+      loadPage(1, false);
+    });
+
+    document.getElementById('sortSeg').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-sort]');
+      if (!btn) return;
+      state.sort = btn.dataset.sort;
+      document.querySelectorAll('#sortSeg button').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+      loadPage(1, false);
+    });
+
+    $more.addEventListener('click', function () { loadPage(state.page + 1, true); });
+
+    $grid.addEventListener('click', function (e) {
+      var copyBtn = e.target.closest('button[data-copy]');
+      if (copyBtn) { copyTrip(copyBtn.dataset.copy, copyBtn); return; }
+      var target = e.target.closest('[data-detail]');
+      if (target) openDetail(target.dataset.detail);
+    });
+    $grid.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        var target = e.target.closest('[data-detail]');
+        if (target) { e.preventDefault(); openDetail(target.dataset.detail); }
+      }
+    });
+
+    /* ===== 详情抽屉 ===== */
+    var drawer = document.getElementById('drawer');
+    var drMask = document.getElementById('drMask');
+    var drBody = document.getElementById('drBody');
+    var drCopy = document.getElementById('drCopy');
+    var drMsg = document.getElementById('drMsg');
+    var detailTrip = null;
+    var visState = 'public';
+
+    function openDrawer() {
+      drawer.classList.add('open');
+      drMask.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      drMask.classList.remove('open');
+      document.body.style.overflow = '';
+      destroyDetailMap();
+      detailTrip = null;
+      drCopy.hidden = true;
+      document.getElementById('drDelete').hidden = true;
+      drMsg.textContent = '';
+    }
+    drMask.addEventListener('click', closeDrawer);
+    document.getElementById('drClose').addEventListener('click', closeDrawer);
+    document.getElementById('drCancel').addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+    });
+
+    function visLabel(v) {
+      return v === 'public' ? '🌐 公开' : v === 'friends' ? '👥 好友可见' : '🔒 私有';
+    }
+
+    function dayHtml(day, index) {
+      var date = ymd(day.date);
+      var list = (day.places || []);
+      return '<div class="day">' +
+        '<h4>第 ' + (index + 1) + ' 天' + (date ? '<em>' + esc(date) + '</em>' : '') + (day.title ? ' · ' + esc(day.title) : '') + '</h4>' +
+        (list.length
+          ? '<ul>' + list.map(function (p) { return '<li>' + esc(p.name || '未命名地点') + (p.address ? ' <em style="color:var(--mute)">' + esc(p.address) + '</em>' : '') + '</li>'; }).join('') + '</ul>'
+          : '<div class="none">这一天还没有安排。</div>') +
+        '</div>';
+    }
+
+    /* ===== 攻略路线小地图（高德 JS API，与地图页同一配色语言） ===== */
+    var ROUTE_MAX_POINTS = 16;  // 高德驾车 waypoints 上限 16
+    var ROUTE_GAP_MS = 320;     // 限流间隔
+    var drMapState = null;
+
+    function destroyDetailMap() {
+      if (drMapState && drMapState.map) {
+        try { drMapState.map.destroy(); } catch (e) {}
+      }
+      drMapState = null;
+    }
+
+    function coordOk(p) {
+      return isFinite(Number(p.latitude)) && isFinite(Number(p.longitude));
+    }
+
+    function markerEl(name, no, color) {
+      var wrap = document.createElement('div');
+      wrap.className = 'sq-mk';
+      var noEl = document.createElement('span');
+      noEl.className = 'sq-mk-no';
+      noEl.style.background = color;
+      noEl.textContent = String(no);
+      var lab = document.createElement('span');
+      lab.className = 'sq-mk-lab';
+      lab.textContent = name || '';
+      wrap.appendChild(noEl);
+      wrap.appendChild(lab);
+      return wrap;
+    }
+
+    function hasDayPoints(day) {
+      return (day.places || []).filter(coordOk);
+    }
+
+    /** 驾车规划（单次，失败返回 null，由上层降级为虚线） */
+    function planDrivingOnce(AMap, path) {
+      return new Promise(function (resolve, reject) {
+        var driving = new AMap.Driving({ policy: 0, hideMarkers: true });
+        var origin = path[0], dest = path[path.length - 1];
+        var waypoints = path.slice(1, -1).slice(0, ROUTE_MAX_POINTS - 2).map(function (p) {
+          return new AMap.LngLat(p[0], p[1]);
+        });
+        var done = false;
+        var timer = setTimeout(function () {
+          if (!done) { done = true; reject(new Error('timeout')); }
+        }, 10000);
+        driving.search(new AMap.LngLat(origin[0], origin[1]), new AMap.LngLat(dest[0], dest[1]),
+          { waypoints: waypoints }, function (status, result) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            if (status !== 'complete') { reject(new Error(String(status))); return; }
+            var route = result && result.routes && result.routes[0];
+            var line = [];
+            if (route && Array.isArray(route.path) && route.path.length >= 2) {
+              line = route.path;
+            } else if (route && route.steps) {
+              route.steps.forEach(function (st) {
+                if (Array.isArray(st.path)) line = line.concat(st.path);
+              });
+            }
+            if (line.length < 2) { reject(new Error('route is empty')); return; }
+            resolve({
+              path: line,
+              distanceM: Number(route.distance) || 0
+            });
+          });
+      });
+    }
+
+    function delay(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+    function drawDetailMap(data) {
+      destroyDetailMap();
+      var mapEl = document.getElementById('drMap');
+      var hint = document.getElementById('drMapHint');
+      var foot = document.getElementById('drMapFoot');
+      if (!mapEl || !hint) return;
+      var days = (data.overview || {}).days || [];
+      var totalPoints = 0;
+      var pointDays = [];  // 有坐标的天：[{day, pts}]
+      days.forEach(function (day) {
+        var pts = hasDayPoints(day);
+        if (pts.length) { totalPoints += pts.length; pointDays.push({ day: day, pts: pts }); }
+      });
+      if (!totalPoints) {
+        mapEl.style.display = 'none';
+        if (foot) foot.innerHTML = '';
+        hint.textContent = '作者没有标注地点位置，暂无路线图。下面的每日安排里有详细地点可参考。';
+        return;
+      }
+      hint.textContent = '正在加载地图…';
+      TravelOSAmap.load(['AMap.Driving']).then(function (AMap) {
+        if (!document.getElementById('drMap')) return;  // 抽屉已被重开/关闭
+        mapEl.style.display = '';
+        hint.style.display = 'none';
+        var map = new AMap.Map('drMap', {
+          zoom: 10, mapStyle: 'amap://styles/fresh',
+          resizeEnable: true, viewMode: '2D'
+        });
+        drMapState = { AMap: AMap, map: map };
+        var jobs = [];
+        var seq = 0;          // 「有安排的天」序号（配色、文案都按它对齐）
+        var dists = {};       // seq → 累计驾车米数
+        var prev = null;      // 上一个有坐标天的最后一点
+
+        pointDays.forEach(function (item) {
+          var color = TravelOSAmap.dayColor(seq);
+          item.seq = seq;
+          seq++;
+          item.pts.forEach(function (p, pi) {
+            var el = markerEl(p.name, pi + 1, color);
+            var marker = new AMap.Marker({
+              position: [Number(p.longitude), Number(p.latitude)],
+              content: el,
+              offset: new AMap.Pixel(-10, -10),
+              zIndex: 70 + pi
+            });
+            el.addEventListener('click', function () {
+              map.setZoomAndCenter(15, [Number(p.longitude), Number(p.latitude)]);
+            });
+            map.add(marker);
+          });
+
+          var pts = item.pts;
+          if (prev) {
+            // 跨天转场：上一天的最后一个点 → 本天第一个点（并入本天配色）
+            var from = prev[prev.length - 1];
+            var tPath = [[Number(from.longitude), Number(from.latitude)],
+              [Number(pts[0].longitude), Number(pts[0].latitude)]];
+            if (tPath[0][0] !== tPath[1][0] || tPath[0][1] !== tPath[1][1]) {
+              jobs.push(makeJob(tPath.slice(), item.day.dayIndex, item.seq, true));
+            }
+          }
+          if (pts.length >= 2) {
+            jobs.push(makeJob(pts.map(function (p) {
+              return [Number(p.longitude), Number(p.latitude)];
+            }), item.day.dayIndex, item.seq, false));
+          }
+          prev = pts;
+        });
+
+        // 串行规划：高德并发会限流；成功画实线累计里程，失败画直线虚线兜底
+        var chain = Promise.resolve();
+        jobs.forEach(function (job) {
+          chain = chain.then(function () {
+            return job.run().then(function (r) {
+              var color = TravelOSAmap.dayColor(job.seq);
+              var good = r && r.path && r.path.length >= 2;
+              var path = good ? r.path : straighten(job);
+              if (good && r.distanceM) {
+                dists[job.seq] = (dists[job.seq] || 0) + r.distanceM;
+              }
+              addPolyline(map, path, color, good ? (job.transfer ? 4 : 5) : 3, !good);
+            }).then(function () { return delay(ROUTE_GAP_MS); });
+          });
+        });
+
+        return chain.then(function () {
+          if (!drMapState || !foot) return;
+          foot.innerHTML = pointDays.map(function (item) {
+            var km = dists[item.seq] ? (dists[item.seq] / 1000).toFixed(1) + ' 公里' : '待标注';
+            return '<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.94);padding:4px 10px;border-radius:999px;font-size:12px;color:#33555A;box-shadow:0 1px 4px rgba(10,40,39,.16);"><i style="width:9px;height:9px;border-radius:50%;display:inline-block;background:' + TravelOSAmap.dayColor(item.seq) + '"></i>第 ' + (item.seq + 1) + ' 天 · ' + km + '</span>';
+          }).join('');
+          if (drMapState.map) {
+            // 抽屉有 260ms 滑入动画：等布局稳定后重测容器并重新视野，避免 tiles 裁切
+            setTimeout(function () {
+              if (!drMapState || !drMapState.map) return;
+              drMapState.map.resize();
+              drMapState.map.setFitView(null, false, [46, 46, 46, 46]);
+            }, 280);
+            drMapState.map.setFitView(null, false, [46, 46, 46, 46]);
+          }
+        });
+      }).catch(function (err) {
+        hint.style.display = 'grid';
+        hint.textContent = '地图加载失败：' + (err && err.message ? err.message : '请稍后重试');
+        if (window.console && console.warn) console.warn('drawDetailMap failed:', err);
+      });
+    }
+
+    function makeJob(path, dayIndex, seq, transfer) {
+      var job = {
+        path: path,
+        dayIndex: dayIndex,
+        seq: seq,
+        transfer: !!transfer,
+        run: function () { return planDriving(drMapState ? drMapState.AMap : window.AMap, path); }
+      };
+      return job;
+    }
+
+    /** 规划失败兜底：首尾两点连线 */
+    function straighten(job) {
+      var p = job.path;
+      if (p.length >= 2 && (p[0][0] !== p[p.length - 1][0] || p[0][1] !== p[p.length - 1][1])) {
+        return [p[0], p[p.length - 1]];
+      }
+      return job.path;
+    }
+
+    function planDriving(AMap, path) {
+      if (path.length <= ROUTE_MAX_POINTS) {
+        return planDrivingOnce(AMap, path).catch(function () { return null; });
+      }
+      var chunks = [];
+      for (var i = 0; i < path.length - 1; i += ROUTE_MAX_POINTS - 1) {
+        chunks.push(path.slice(i, Math.min(i + ROUTE_MAX_POINTS, path.length)));
+      }
+      var chain = Promise.resolve();
+      var total = { path: [], distanceM: 0 };
+      chunks.forEach(function (chunk) {
+        chain = chain.then(function () {
+          return planDrivingOnce(AMap, chunk).catch(function () { return null; });
+        }).then(function (r) {
+          if (r && r.path) {
+            total.path = total.path.concat(r.path);
+            total.distanceM += r.distanceM || 0;
+          }
+          return delay(ROUTE_GAP_MS);
+        });
+      });
+      return chain.then(function () {
+        return total.path.length >= 2 ? total : { path: null, distanceM: 0 };
+      });
+    }
+
+    function addPolyline(map, path, color, weight, dashed) {
+      var opts = {
+        path: path, strokeColor: color, strokeWeight: weight,
+        strokeOpacity: dashed ? 0.62 : 0.9, lineJoin: 'round', lineCap: 'round',
+        zIndex: 40, showDir: !dashed
+      };
+      if (dashed) { opts.strokeStyle = 'dashed'; opts.strokeDasharray = [7, 8]; }
+      map.add(new AMap.Polyline(opts));
+      if (drMapState) {
+        drMapState.lines = drMapState.lines || [];
+        drMapState.lines.push(opts);
+      }
+    }
+
+    function bodyHtml(data) {
+      var r = data.square || {};
+      var author = r.author || {};
+      var name = author.displayName || author.username || '旅行者';
+      var initial = (author.initial || '旅').slice(0, 1).toUpperCase();
+      var avatar = author.avatarUrl
+        ? '<img class="av" src="' + esc(author.avatarUrl) + '" alt="">'
+        : '<span class="av" aria-hidden="true">' + esc(initial) + '</span>';
+      var heat = (r.viewCount || 0) + (r.copyCount || 0) * 5;
+      var overview = data.overview || { dayCount: 0, days: [] };
+
+      var visBlock = r.isOwner && !r.isCopy
+        ? '<div><label style="font-family:var(--grot);font-size:13px;font-weight:600;color:var(--ink-2)">谁能看这份攻略</label>' +
+          '<div class="vis-pick" id="visPick">' +
+          '<button type="button" data-v="public" aria-pressed="' + (r.visibility === 'public') + '">🌐 公开</button>' +
+          '<button type="button" data-v="friends" aria-pressed="' + (r.visibility === 'friends') + '">👥 好友可见</button>' +
+          '<button type="button" data-v="private" aria-pressed="' + (r.visibility !== 'public' && r.visibility !== 'friends') + '">🔒 私有</button>' +
+          '</div><div class="vis-tip">公开将出现在攻略广场，任何人都能查看与复制。</div></div>'
+        : '';
+
+      return '<div class="dr-cover ' + (r.coverImageUrl ? '' : 'na') + '" style="height:168px;border-radius:14px;background-size:cover;background-position:center;width:100%;' + (r.coverImageUrl ? 'background-image:url(&quot;' + esc(r.coverImageUrl) + '&quot;)' : '') + '"></div>' +
+        '<h2 class="dr-title">' + esc(r.title || '未命名攻略') + '</h2>' +
+        '<div class="dr-author">' + avatar + '<span>' + esc(name) + '</span>' +
+        '<div class="dr-stats"><span>👁 ' + r.viewCount + '</span><span>⧉ ' + r.copyCount + '</span><span>🔥 ' + heat + '</span></div></div>' +
+        '<div class="dr-meta">' +
+        '<span>📍 ' + esc(r.destination || '未填写目的地') + '</span>' +
+        '<span>📅 ' + esc(ymd(r.startDate)) + ' ~ ' + esc(ymd(r.endDate)) + '</span>' +
+        '<span>🧭 ' + (overview.dayCount || r.dayCount || 0) + ' 天</span>' +
+        '<span>' + visLabel(r.visibility) + '</span>' +
+        '</div>' +
+        '<div class="dr-map-wrap" id="drMapWrap" style="position:relative;flex:none;height:220px;width:100%;border:1px solid #E4E0D2;border-radius:14px;overflow:hidden;background:#E8F6F5;">' +
+        '<div id="drMap" style="position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;"></div>' +
+        '<div id="drMapFoot" style="position:absolute;left:8px;bottom:8px;right:8px;display:flex;gap:6px;flex-wrap:wrap;z-index:6;pointer-events:none;"></div>' +
+        '<div id="drMapHint" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;color:#6E8A94;font-size:13px;background:rgba(238,246,245,.92);z-index:5;padding:0 24px;text-align:center;">正在加载地图…</div>' +
+        '</div>' +
+        (r.description ? '<p class="dr-desc">' + esc(r.description) + '</p>' : '') +
+        visBlock +
+        '<div class="days">' + (overview.days || []).map(dayHtml).join('') + '</div>';
+    }
+
+    function openDetail(tripId) {
+      openDrawer();
+      drBody.innerHTML = '<p class="dr-desc" style="text-align:center;color:var(--mute)">正在加载攻略…</p>';
+      apiGet('/square/' + encodeURIComponent(tripId)).then(function (data) {
+        detailTrip = data.square;
+        drBody.innerHTML = bodyHtml(data);
+        drCopy.hidden = !data.canCopy;
+        drCopy.textContent = data.square.copiedByMe ? '再复制一份' : '复制到我的旅行';
+        document.getElementById('drDelete').hidden = !data.square.isOwner;
+        try { drawDetailMap(data); } catch (mapErr) {
+          var mw = document.getElementById('drMapWrap');
+          var hd = document.getElementById('drMapHint');
+          if (mw && hd) { hd.style.display = 'flex'; hd.textContent = '地图加载失败，请稍后重试'; }
+          if (window.console && console.warn) console.warn('drawDetailMap failed:', mapErr);
+        }
+        var visPick = document.getElementById('visPick');
+        if (visPick) {
+          visState = detailTrip.visibility || 'private';
+          visPick.addEventListener('click', function (e) {
+            var btn = e.target.closest('button[data-v]');
+            if (!btn) return;
+            saveVisibility(btn.dataset.v);
+          });
+        }
+      }).catch(function (err) {
+        drBody.innerHTML = '<p class="dr-desc" style="text-align:center;color:#C2566C">加载失败：' + esc(humanError(err)) + '</p>';
+      });
+    }
+
+    function saveVisibility(v) {
+      if (!detailTrip) return;
+      apiPatch('/trips/' + encodeURIComponent(detailTrip.id) + '/visibility', { visibility: v }).then(function (r) {
+        visState = v;
+        detailTrip.visibility = v;
+        document.querySelectorAll('#visPick button').forEach(function (b) {
+          b.setAttribute('aria-pressed', b.dataset.v === v ? 'true' : 'false');
+        });
+        showToast('已设为' + (v === 'public' ? '公开' : v === 'friends' ? '好友可见' : '私有'));
+        if (state.scope === 'public') loadPage(1, false);
+        loadFriendsBadge();
+      }).catch(function (err) {
+        showToast(humanError(err));
+      });
+    }
+
+    function copyTrip(tripId, btn) {
+      if (btn) { btn.disabled = true; }
+      apiPost('/square/' + encodeURIComponent(tripId) + '/copy', {}).then(function (r) {
+        var trip = r.trip || {};
+        showToast('已复制为「' + (trip.title || '我的副本') + '」，去我的旅行查看');
+        seenCopied[tripId] = true;
+        loadPage(1, false);
+        if (confirm('复制成功，现在打开行程详情吗？')) {
+          location.href = '/trip-detail/?id=' + encodeURIComponent(trip.id);
+        }
+      }).catch(function (err) {
+        showToast(humanError(err));
+      }).finally(function () {
+        if (btn) btn.disabled = false;
+      });
+    }
+
+    drCopy.addEventListener('click', function () {
+      if (detailTrip) copyTrip(detailTrip.id, drCopy);
+    });
+
+    /* 删除攻略：仅作者可见，软删除后广场立即下架 */
+    var drDelete = document.getElementById('drDelete');
+    drDelete.addEventListener('click', function () {
+      if (!detailTrip || drDelete.disabled) return;
+      if (!confirm('删除「' + (detailTrip.title || '该攻略') + '」？\n删除后别人的复制副本不受影响，但广场里立刻下架，且在「我的旅行」里也不可见。')) return;
+      drDelete.disabled = true;
+      apiDelete('/trips/' + encodeURIComponent(detailTrip.id)).then(function () {
+        showToast('已删除');
+        closeDrawer();
+        loadPage(1, false);
+        loadFacets();
+      }).catch(function (err) {
+        showToast(humanError(err));
+      }).finally(function () {
+        drDelete.disabled = false;
+      });
+    });
+
+    /* ===== 启动 ===== */
+    loadFacets();
+    loadFriendsBadge();
+    loadPage(1, false);
+  })();
+</script>
+</body>
+</html>

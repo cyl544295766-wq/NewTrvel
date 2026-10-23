@@ -37,6 +37,23 @@ public class Trip {
   @TableField("owner_id")
   private String ownerId;
 
+  /** 攻略广场可见性：private 私有（默认）/ friends 好友可见 / public 公开 */
+  private String visibility;
+
+  /** 首次公开时间，供广场「最新发布」排序 */
+  @TableField("published_at")
+  private Date publishedAt;
+
+  /** 广场浏览量：非作者查看时 +1 */
+  private Integer viewCount;
+
+  /** 被复制次数 */
+  private Integer copyCount;
+
+  /** 来源行程：复制攻略时记录，副本可溯源 */
+  @TableField("source_trip_id")
+  private String sourceTripId;
+
   @TableField("is_favorite")
   private Boolean isFavorite;
 
@@ -72,6 +89,16 @@ public class Trip {
   public void setBudget(BigDecimal budget) { this.budget = budget; }
   public String getOwnerId() { return ownerId; }
   public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
+  public String getVisibility() { return visibility; }
+  public void setVisibility(String visibility) { this.visibility = visibility; }
+  public Date getPublishedAt() { return publishedAt; }
+  public void setPublishedAt(Date publishedAt) { this.publishedAt = publishedAt; }
+  public Integer getViewCount() { return viewCount; }
+  public void setViewCount(Integer viewCount) { this.viewCount = viewCount; }
+  public Integer getCopyCount() { return copyCount; }
+  public void setCopyCount(Integer copyCount) { this.copyCount = copyCount; }
+  public String getSourceTripId() { return sourceTripId; }
+  public void setSourceTripId(String sourceTripId) { this.sourceTripId = sourceTripId; }
   public Boolean getIsFavorite() { return isFavorite; }
   public void setIsFavorite(Boolean isFavorite) { this.isFavorite = isFavorite; }
   public Date getArchivedAt() { return archivedAt; }

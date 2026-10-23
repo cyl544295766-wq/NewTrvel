@@ -312,6 +312,24 @@
   transition: background .15s, border-color .15s, transform .15s;
 }
 .pet-opt:hover { background: #EAF7F6; border-color: var(--brand-soft, #5BC5C0); transform: translateY(-1px); }
+.pet-opt.has-desc {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 12px;
+  padding: 7px 12px;
+  text-align: left;
+  max-width: 100%;
+}
+.pet-opt .po-label { font-weight: 600; line-height: 1.3; }
+.pet-opt .po-desc {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--mute, #5E7A7A);
+  opacity: .9;
+  white-space: normal;
+}
 /* 输入区 */
 .pet-bubble .pb-input {
   display: flex;
@@ -396,7 +414,11 @@
 }
 .pet-draft .pd-b { padding: 9px 11px; }
 .pet-draft .pd-s { font-size: 12.5px; color: var(--ink, #17272B); line-height: 1.6; }
-.pet-draft .pd-list { list-style: none; margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+.pet-draft .pd-list {
+  list-style: none; margin-top: 7px;
+  display: flex; flex-direction: column; gap: 5px;
+  max-height: 248px; overflow-y: auto; scrollbar-width: thin;
+}
 .pet-draft .pd-list li {
   font-size: 12px;
   color: var(--ink-2, #3D6A6C);
@@ -405,16 +427,30 @@
   border-radius: 8px;
   padding: 5px 9px;
   display: flex;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 2px 7px;
   align-items: baseline;
+}
+.pet-draft .pd-list li .pd-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pet-draft .pd-more {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--mute, #7A9296);
 }
 .pet-draft .pd-list li .op {
   flex: none; font-size: 10.5px; font-weight: 600; color: #B8830F;
   background: #FFF4E3; border-radius: 5px; padding: 1px 6px;
 }
 .pet-draft .pd-list li .dmeta {
-  margin-left: auto; flex: none; font-size: 11px; color: var(--ink-3, #8A7A66);
-  white-space: nowrap;
+  flex: 1 1 100%; margin-left: 0; min-width: 0;
+  font-size: 11px; color: var(--ink-3, #8A7A66);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pet-draft .pd-acts { display: flex; gap: 8px; padding: 0 11px 11px; }
 .pet-draft .pd-btn {
@@ -428,6 +464,16 @@
 .pet-draft .pd-stat { padding: 0 11px 10px; font-size: 11.5px; font-weight: 600; }
 .pet-draft .pd-stat.ok { color: #2A8055; }
 .pet-draft .pd-stat.no { color: var(--mute, #7A9296); }
+.pet-draft .pd-cover {
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #FFF6EA;
+  border: 1px solid #F3E2C8;
+  color: #9A6B22;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
 
 /* 气泡内轻提示（草稿应用/放弃反馈） */
 .pet-toast {

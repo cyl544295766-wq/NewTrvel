@@ -39,6 +39,10 @@ public class TripDayService {
     this.bookingService = bookingService;
   }
 
+  /**
+   * 按旅行日期范围补齐行程天。改日期后也走同一套同步逻辑（补天 + 重排日期），
+   * 避免「改了日期，行程天不动」的不一致。
+   */
   @Transactional
   public Map<String, Object> generate(String tripId, String userId) {
     Trip trip = tripService.findLive(tripId);
@@ -48,28 +52,7 @@ public class TripDayService {
     if (trip.getStartDate() == null || trip.getEndDate() == null) {
       throw ApiException.badRequest("旅行缺少开始日期或结束日期");
     }
-
-    List<Date> dates = buildDateRange(trip.getStartDate(), trip.getEndDate());
-    if (dates.size() > 60) {
-      throw ApiException.badRequest("行程天数不能超过 60 天");
-    }
-
-    for (int index = 0; index < dates.size(); index++) {
-      // skip days that already exist (skipDuplicates behaviour)
-      Long existing = tripDayMapper.selectCount(new LambdaQueryWrapper<TripDay>()
-          .eq(TripDay::getTripId, tripId)
-          .eq(TripDay::getDate, dates.get(index)));
-      if (existing > 0) {
-        continue;
-      }
-      TripDay day = new TripDay();
-      day.setTripId(tripId);
-      day.setDate(dates.get(index));
-      day.setDayIndex(index + 1);
-      day.setCreatedAt(new Date());
-      day.setUpdatedAt(new Date());
-      tripDayMapper.insert(day);
-    }
+    tripService.syncDaysWithRange(tripId);
     return findAll(tripId, userId);
   }
 
@@ -143,23 +126,6 @@ public class TripDayService {
     map.put("createdAt", place.getCreatedAt());
     map.put("updatedAt", place.getUpdatedAt());
     return map;
-  }
-
-  private List<Date> buildDateRange(Date startDate, Date endDate) {
-    Date start = DateUtil.utcDay(startDate);
-    Date end = DateUtil.utcDay(endDate);
-    if (end.before(start)) {
-      throw ApiException.badRequest("结束日期不能早于开始日期");
-    }
-    List<Date> dates = new ArrayList<>();
-    Calendar cursor = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-    cursor.setTime(start);
-    Date cursorEnd = end;
-    while (!cursor.getTime().after(cursorEnd)) {
-      dates.add(cursor.getTime());
-      cursor.add(Calendar.DATE, 1);
-    }
-    return dates;
   }
 
   private String toNullable(Object value) {

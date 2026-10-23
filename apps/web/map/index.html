@@ -370,6 +370,7 @@
       <div class="nav-label">总览</div>
       <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
       <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span></a>
       <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
       <div class="nav-label">洞察</div>
       <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
@@ -602,6 +603,12 @@
     road: null
   };
 
+  /* 高德驾车规划对并发敏感：同时发起十几个请求时，除前几条外全部被限流（路线缺失、总里程偏小）。
+     因此改为串行执行，并在失败时重试；单次请求最多 16 个途经点（含起终点 18 个点）。 */
+  var ROUTE_GAP_MS = 150;
+  var ROUTE_MAX_POINTS = 18;
+  var ROUTE_RETRY = 2;
+
   /* ---------- 侧栏 ---------- */
   (function initRail() {
     var shell = $('shell');
@@ -833,36 +840,56 @@
         var toLng = Number(pts[0].longitude), toLat = Number(pts[0].latitude);
         if (fromLng !== toLng || fromLat !== toLat) {
           var tPath = [[fromLng, fromLat], [toLng, toLat]];
-          jobs.push(planDriving(AMap, tPath).then(function (r) {
-            pushPolyline(arrivedDay, r.path, color, false);
-            var st = ensureStats(arrivedDay, pts.length);
-            st.transferM = r.distanceM;
-            st.transferSec = r.timeSec;
-          }).catch(function () {
-            state.failedTransfers.push(prevDayIndex + '→' + arrivedDay);
-            pushPolyline(arrivedDay, tPath, color, true);
-          }));
+          jobs.push(function () {
+            return planDriving(AMap, tPath).then(function (r) {
+              pushPolyline(arrivedDay, r.path, color, false);
+              var st = ensureStats(arrivedDay, pts.length);
+              st.transferM = r.distanceM;
+              st.transferSec = r.timeSec;
+            }).catch(function () {
+              state.failedTransfers.push(prevDayIndex + '→' + arrivedDay);
+              pushPolyline(arrivedDay, tPath, color, true);
+            });
+          });
         }
       }
 
       if (pts.length >= 2) {
         var path = pts.map(function (p) { return [Number(p.longitude), Number(p.latitude)]; });
 
-        jobs.push(planDriving(AMap, path).then(function (r) {
-          pushPolyline(day.dayIndex, r.path, color, false);
-          var st = ensureStats(day.dayIndex, pts.length);
-          st.distanceM = r.distanceM;
-          st.timeSec = r.timeSec;
-        }).catch(function () {
-          state.failedDays.push(day.dayIndex);
-          pushPolyline(day.dayIndex, path, color, true);
-        }));
+        jobs.push(function () {
+          return planDriving(AMap, path).then(function (r) {
+            pushPolyline(day.dayIndex, r.path, color, false);
+            var st = ensureStats(day.dayIndex, pts.length);
+            st.distanceM = r.distanceM;
+            st.timeSec = r.timeSec;
+          }).catch(function () {
+            state.failedDays.push(day.dayIndex);
+            pushPolyline(day.dayIndex, path, color, true);
+          });
+        });
       }
 
       prevLast = { point: pts[pts.length - 1], dayIndex: day.dayIndex };
     });
 
-    return Promise.all(jobs);
+    return runSequential(jobs);
+  }
+
+  /** 逐条执行规划任务：高德并发会被限流，串行 + 间隔才能拿到完整路线；每条完成后刷新统计，里程逐步累加 */
+  function runSequential(jobs) {
+    var chain = Promise.resolve();
+    jobs.forEach(function (job) {
+      chain = chain.then(job).then(function () {
+        updateTotals();
+        return delay(ROUTE_GAP_MS);
+      });
+    });
+    return chain;
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
   function ensureStats(dayIndex, points) {
@@ -893,8 +920,38 @@
     state.overlays.push(pl);
   }
 
+  /** 驾车规划（带重试）：限流是瞬时的，失败后等一会儿再试，避免整天路线降级成虚线 */
+  function planDriving(AMap, path, retries) {
+    var left = (retries == null) ? ROUTE_RETRY : retries;
+    return planDrivingSegmented(AMap, path).catch(function (err) {
+      if (left <= 0) throw err;
+      return delay(600).then(function () { return planDriving(AMap, path, left - 1); });
+    });
+  }
+
+  /** 超过单次上限的点集切段规划再拼接，否则中间站点会被丢弃——地图上表现为路线断成几截、总里程偏小 */
+  function planDrivingSegmented(AMap, path) {
+    if (path.length <= ROUTE_MAX_POINTS) return planDrivingOnce(AMap, path);
+    var chunks = [];
+    for (var i = 0; i < path.length - 1; i += ROUTE_MAX_POINTS - 1) {
+      chunks.push(path.slice(i, Math.min(i + ROUTE_MAX_POINTS, path.length)));
+    }
+    var total = { path: [], timeSec: 0, distanceM: 0 };
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk) {
+      chain = chain.then(function () {
+        return planDrivingOnce(AMap, chunk).then(function (r) {
+          total.path = total.path.concat(r.path);
+          total.timeSec += r.timeSec;
+          total.distanceM += r.distanceM;
+        });
+      }).then(function () { return delay(ROUTE_GAP_MS); });
+    });
+    return chain.then(function () { return total; });
+  }
+
   /** 用高德驾车规划取真实路径与时长/里程（waypoints 上限 16） */
-  function planDriving(AMap, path) {
+  function planDrivingOnce(AMap, path) {
     return new Promise(function (resolve, reject) {
       var driving = new AMap.Driving({ policy: 0, hideMarkers: true });
       var origin = path[0];

@@ -572,9 +572,22 @@
           var note = String(c.notes);
           meta.push(escapeHtml(note.length > 28 ? note.slice(0, 28) + '…' : note));
         }
-        return '<li><span class="op">' + op + '</span>' + escapeHtml(txt)
+        return '<li><span class="op">' + op + '</span><span class="pd-name">' + escapeHtml(txt) + '</span>'
           + (meta.length ? '<span class="dmeta">' + meta.join(' · ') + '</span>' : '') + '</li>';
       }).join('') + '</ul>';
+      if (d.changes.length > 12) {
+        html += '<div class="pd-more">另有 ' + (d.changes.length - 12) + ' 项未展开</div>';
+      }
+      var addDays = {};
+      d.changes.forEach(function (c) {
+        if (c.action === 'add' && c.dayIndex != null) addDays[c.dayIndex] = (addDays[c.dayIndex] || 0) + 1;
+      });
+      var coverDays = Object.keys(addDays).filter(function (k) {
+        return d.replaceDay === true || (d.replaceDay !== false && addDays[k] >= 2);
+      });
+      if (coverDays.length) {
+        html += '<div class="pd-cover">应用后将覆盖第 ' + escapeHtml(coverDays.join('、')) + ' 天原有安排</div>';
+      }
     }
     html += '</div>';
     if (done) {
@@ -594,7 +607,16 @@
     var list = opt && opt.options;
     if (!Array.isArray(list) || !list.length) return '';
     return '<div class="pet-opts">' + list.map(function (o) {
-      return '<button type="button" class="pet-opt">' + escapeHtml(String(o)) + '</button>';
+      var isObj = o && typeof o === 'object';
+      var label = isObj ? String(o.label || '') : String(o);
+      var desc = isObj && o.description ? String(o.description) : '';
+      if (!label) return '';
+      return '<button type="button" class="pet-opt' + (desc ? ' has-desc' : '') + '"'
+        + ' data-send="' + escapeHtml(label) + '"'
+        + ' title="' + escapeHtml(desc || label) + '">'
+        + '<span class="po-label">' + escapeHtml(label) + '</span>'
+        + (desc ? '<span class="po-desc">' + escapeHtml(desc) + '</span>' : '')
+        + '</button>';
     }).join('') + '</div>';
   }
 
@@ -643,10 +665,17 @@
       btn.addEventListener('click', function () {
         var wrap = btn.closest('.pet-opts');
         if (wrap) wrap.remove();
-        send(btn.textContent);
+        send(btn.getAttribute('data-send') || btn.textContent);
       });
     });
     box.scrollTop = box.scrollHeight;
+    /* 多天规划草稿卡片较长时，末尾的「应用」按钮可能被挤出可视区，这里再把卡片底部拉进视野 */
+    var applyBtns = box.querySelectorAll('.msg-draft .pet-draft .pd-btn.apply');
+    var applyBtn = applyBtns[applyBtns.length - 1];
+    if (applyBtn) {
+      var overflow = applyBtn.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+      if (overflow > 0) box.scrollTop += overflow + 12;
+    }
     placeBubble();
   }
 
