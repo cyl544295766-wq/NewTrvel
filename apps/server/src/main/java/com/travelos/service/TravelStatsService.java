@@ -7,11 +7,15 @@ import com.travelos.common.Fmt;
 import com.travelos.entity.Trip;
 import com.travelos.entity.TripDay;
 import com.travelos.entity.TripExpense;
+import com.travelos.entity.TripExpenseShare;
 import com.travelos.entity.TripMember;
+import com.travelos.entity.User;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripExpenseMapper;
+import com.travelos.mapper.TripExpenseShareMapper;
 import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripMemberMapper;
+import com.travelos.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -43,13 +47,18 @@ public class TravelStatsService {
   private final TripMapper tripMapper;
   private final TripDayMapper tripDayMapper;
   private final TripExpenseMapper expenseMapper;
+  private final TripExpenseShareMapper shareMapper;
+  private final UserMapper userMapper;
 
   public TravelStatsService(TripMemberMapper tripMemberMapper, TripMapper tripMapper,
-      TripDayMapper tripDayMapper, TripExpenseMapper expenseMapper) {
+      TripDayMapper tripDayMapper, TripExpenseMapper expenseMapper,
+      TripExpenseShareMapper shareMapper, UserMapper userMapper) {
     this.tripMemberMapper = tripMemberMapper;
     this.tripMapper = tripMapper;
     this.tripDayMapper = tripDayMapper;
     this.expenseMapper = expenseMapper;
+    this.shareMapper = shareMapper;
+    this.userMapper = userMapper;
   }
 
   public Map<String, Object> getOverview(String userId) {
@@ -192,6 +201,190 @@ public class TravelStatsService {
     busiestMonth.put("count", busiestMonthCount);
     body.put("busiestMonth", busiestMonth);
     return body;
+  }
+
+  /** 预算 vs 已花：逐趟行程汇总总预算与 CNY 花费，>=80% 提示 warn，>=100% 提示 over。 */
+  public Map<String, Object> getBudgetOverview(String userId) {
+    List<StatsTrip> trips = findTripsForUser(userId);
+    List<Map<String, Object>> rows = new ArrayList<>();
+    long totalBudget = 0;
+    long totalSpent = 0;
+    long warnCount = 0;
+    long overCount = 0;
+    for (StatsTrip statsTrip : trips) {
+      Trip trip = statsTrip.trip();
+      long budgetCents = trip.getBudget() == null ? 0L : Math.round(trip.getBudget().doubleValue() * 100);
+      long spentCents = 0;
+      for (TripExpense expense : statsTrip.expenses()) {
+        if (PRIMARY_CURRENCY.equals(expense.getCurrency())) {
+          spentCents += Math.round(expense.getAmount().doubleValue() * 100);
+        }
+      }
+      if (budgetCents <= 0 && spentCents <= 0) {
+        continue;
+      }
+      double percentage = budgetCents > 0 ? spentCents * 100.0 / budgetCents : 0;
+      String status = budgetCents <= 0 ? "no_budget"
+          : percentage >= 100 ? "over"
+          : percentage >= 80 ? "warn"
+          : "ok";
+      if ("over".equals(status)) {
+        overCount++;
+      } else if ("warn".equals(status)) {
+        warnCount++;
+      }
+      if (budgetCents > 0) {
+        totalBudget += budgetCents;
+      }
+      totalSpent += spentCents;
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("tripId", trip.getId());
+      row.put("title", trip.getTitle());
+      row.put("destination", trip.getDestination());
+      row.put("startDate", trip.getStartDate());
+      row.put("tripStatus", trip.getStatus());
+      row.put("budgetStatus", status);
+      row.put("budget", budgetCents > 0 ? centsToString(budgetCents) : null);
+      row.put("spent", centsToString(spentCents));
+      row.put("remaining", budgetCents > 0 ? centsToString(budgetCents - spentCents) : null);
+      row.put("percentage", BigDecimal.valueOf(percentage).setScale(1, RoundingMode.HALF_UP).doubleValue());
+      rows.add(row);
+    }
+    rows.sort((left, right) -> {
+      int a = statusRank(String.valueOf(left.get("budgetStatus")));
+      int b = statusRank(String.valueOf(right.get("budgetStatus")));
+      if (a != b) {
+        return Integer.compare(a, b);
+      }
+      return Double.compare(
+          ((Number) right.get("percentage")).doubleValue(),
+          ((Number) left.get("percentage")).doubleValue());
+    });
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("primaryCurrency", PRIMARY_CURRENCY);
+    body.put("totalBudget", totalBudget > 0 ? centsToString(totalBudget) : null);
+    body.put("totalSpent", centsToString(totalSpent));
+    body.put("totalPercentage", totalBudget > 0
+        ? BigDecimal.valueOf(totalSpent * 100.0 / totalBudget).setScale(1, RoundingMode.HALF_UP).doubleValue()
+        : 0);
+    body.put("warnCount", warnCount);
+    body.put("overCount", overCount);
+    body.put("trips", rows);
+    return body;
+  }
+
+  private int statusRank(String status) {
+    return switch (status) {
+      case "over" -> 0;
+      case "warn" -> 1;
+      case "no_budget" -> 3;
+      default -> 2;
+    };
+  }
+
+  /** 结算建议：把用户名下的每趟行程按费用分摊算净额，给出涉及该用户的转账建议。 */
+  public Map<String, Object> getSettlementSuggestions(String userId) {
+    List<StatsTrip> trips = findTripsForUser(userId);
+    List<Map<String, Object>> items = new ArrayList<>();
+    long inTotal = 0;
+    long outTotal = 0;
+    for (StatsTrip statsTrip : trips) {
+      Trip trip = statsTrip.trip();
+      if ("archived".equals(trip.getStatus())) {
+        continue;
+      }
+      List<TripExpense> expenses = statsTrip.expenses().stream()
+          .filter(expense -> PRIMARY_CURRENCY.equals(expense.getCurrency()))
+          .toList();
+      if (expenses.isEmpty()) {
+        continue;
+      }
+      Map<String, String> names = memberNames(trip.getId());
+      Map<String, Long> paid = new LinkedHashMap<>();
+      Map<String, Long> owed = new LinkedHashMap<>();
+      for (TripExpense expense : expenses) {
+        paid.merge(expense.getPayerUserId(), Math.round(expense.getAmount().doubleValue() * 100), Long::sum);
+        for (TripExpenseShare share : shareMapper.selectList(new LambdaQueryWrapper<TripExpenseShare>()
+            .eq(TripExpenseShare::getExpenseId, expense.getId()))) {
+          owed.merge(share.getUserId(), Math.round(share.getShareAmount().doubleValue() * 100), Long::sum);
+        }
+      }
+      List<String> ids = new ArrayList<>(paid.keySet());
+      for (String uid : owed.keySet()) {
+        if (!ids.contains(uid)) {
+          ids.add(uid);
+        }
+      }
+      List<long[]> creditors = new ArrayList<>(); // 应收
+      List<long[]> debtors = new ArrayList<>();   // 应付
+      for (int index = 0; index < ids.size(); index++) {
+        String uid = ids.get(index);
+        long net = paid.getOrDefault(uid, 0L) - owed.getOrDefault(uid, 0L);
+        if (net > 0) {
+          creditors.add(new long[]{index, net});
+        } else if (net < 0) {
+          debtors.add(new long[]{index, -net});
+        }
+      }
+      creditors.sort((left, right) -> Long.compare(right[1], left[1]));
+      debtors.sort((left, right) -> Long.compare(right[1], left[1]));
+      int ci = 0;
+      int di = 0;
+      while (ci < creditors.size() && di < debtors.size()) {
+        long[] creditor = creditors.get(ci);
+        long[] debtor = debtors.get(di);
+        long amount = Math.min(creditor[1], debtor[1]);
+        String fromId = ids.get((int) debtor[0]);
+        String toId = ids.get((int) creditor[0]);
+        if (amount > 0 && (userId.equals(fromId) || userId.equals(toId))) {
+          boolean incoming = userId.equals(toId);
+          Map<String, Object> row = new LinkedHashMap<>();
+          row.put("tripId", trip.getId());
+          row.put("tripTitle", trip.getTitle());
+          row.put("direction", incoming ? "in" : "out");
+          row.put("counterpartyId", incoming ? fromId : toId);
+          row.put("counterpartyName", names.getOrDefault(incoming ? fromId : toId, "成员"));
+          row.put("amount", centsToString(amount));
+          items.add(row);
+          if (incoming) {
+            inTotal += amount;
+          } else {
+            outTotal += amount;
+          }
+        }
+        creditor[1] -= amount;
+        debtor[1] -= amount;
+        if (creditor[1] == 0) {
+          ci++;
+        }
+        if (debtor[1] == 0) {
+          di++;
+        }
+      }
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("currency", PRIMARY_CURRENCY);
+    body.put("inTotal", centsToString(inTotal));
+    body.put("outTotal", centsToString(outTotal));
+    body.put("suggestions", items);
+    return body;
+  }
+
+  /** 行程成员 id → 展示名（优先 display_name，缺省用 username）。 */
+  private Map<String, String> memberNames(String tripId) {
+    Map<String, String> names = new LinkedHashMap<>();
+    List<TripMember> members = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
+        .eq(TripMember::getTripId, tripId));
+    for (TripMember member : members) {
+      User user = userMapper.selectById(member.getUserId());
+      if (user != null) {
+        String name = user.getDisplayName() == null || user.getDisplayName().isBlank()
+            ? user.getUsername()
+            : user.getDisplayName();
+        names.put(member.getUserId(), name);
+      }
+    }
+    return names;
   }
 
   private List<Map<String, Object>> buildYearlyComparison(List<StatsTrip> trips) {

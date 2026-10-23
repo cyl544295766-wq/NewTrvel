@@ -69,6 +69,9 @@ public class TripService {
     trip.setEndDate(toDateOrNull(dto.get("endDate")));
     trip.setStatus("draft");
     trip.setCoverImageUrl(toNullable(dto.get("coverImageUrl")));
+    if (dto.containsKey("budget")) {
+      trip.setBudget(toBudgetOrNull(dto.get("budget")));
+    }
     trip.setOwnerId(userId);
     trip.setIsFavorite(false);
     String visibility = TripSquareService.normalizedVisibility(dto.get("visibility"));

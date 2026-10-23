@@ -140,6 +140,25 @@ public class NotificationService {
         "normal", null);
   }
 
+  /** 预算提醒去重：同一行程同一档位（warn ≥80% / over ≥100%）只发一次。 */
+  public boolean budgetWarningAlreadySent(String userId, String tripId, String level) {
+    Long count = notificationMapper.selectCount(new LambdaQueryWrapper<Notification>()
+        .eq(Notification::getUserId, userId)
+        .apply("metadata->>'kind' = 'budget_warning'")
+        .apply("metadata->>'tripId' = {0}", tripId)
+        .apply("metadata->>'level' = {0}", level));
+    return count != null && count > 0;
+  }
+
+  /** 预算提醒（AI 主动）：总预算使用率到 80% 预警、到 100% 超支。 */
+  public void createBudgetWarning(String userId, String tripId, String tripTitle,
+      String content, String level) {
+    create(userId, "system", "🤖 预算提醒 · " + tripTitle, content,
+        "/trips/" + tripId + "/expenses",
+        Map.of("tripId", tripId, "kind", "budget_warning", "level", level),
+        "high", null);
+  }
+
   private void create(String userId, String type, String title, String content, String link,
       Map<String, Object> metadata, String priority, Date expiresAt) {
     Notification notification = new Notification();

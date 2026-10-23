@@ -162,6 +162,7 @@ public class TripExpenseService {
     for (Map<String, String> share : shares) {
       insertShare(expense.getId(), share.get("userId"), share.get("shareAmount"));
     }
+    checkBudgetNotice(tripId, payerUserId);
     return Map.of("expense", toExpenseResponse(expenseMapper.selectById(expense.getId())));
   }
 
@@ -230,6 +231,7 @@ public class TripExpenseService {
     for (Map<String, String> share : shares) {
       insertShare(expenseId, share.get("userId"), share.get("shareAmount"));
     }
+    checkBudgetNotice(tripId, payerUserId);
     return Map.of("expense", toExpenseResponse(expenseMapper.selectById(expenseId)));
   }
 
@@ -249,6 +251,56 @@ public class TripExpenseService {
   }
 
   // ==================== 需求 1：类别预算与超支预警 ====================
+
+  /** 记账后的总预算提醒：使用率 ≥80% 预警、≥100% 超支；同档位只发一次，失败不影响记账。 */
+  private void checkBudgetNotice(String tripId, String payerUserId) {
+    try {
+      Trip trip = tripMapper.selectById(tripId);
+      if (trip == null || trip.getBudget() == null) {
+        return;
+      }
+      long budgetCents = toCentsQuiet(trip.getBudget());
+      if (budgetCents <= 0) {
+        return;
+      }
+      long spentCents = 0L;
+      for (TripExpense expense : findExpenses(tripId)) {
+        if ("CNY".equals(expense.getCurrency())) {
+          spentCents += toCentsQuiet(expense.getAmount());
+        }
+      }
+      double pct = spentCents * 100.0 / budgetCents;
+      if (pct < 80) {
+        return;
+      }
+      boolean over = pct >= 100;
+      String level = over ? "over" : "warn";
+      String tripTitle = trip.getTitle() == null || trip.getTitle().isBlank() ? "行程" : trip.getTitle();
+      String spentM = Fmt.money(centsToDecimal(spentCents));
+      String budgetM = Fmt.money(trip.getBudget());
+      long remainingCents = budgetCents - spentCents;
+      String content = over
+          ? "预算已超支！这一趟已花 ¥" + spentM + "，超出预算 ¥" + Fmt.money(centsToDecimal(-remainingCents))
+              + "。建议精简剩余行程的开销，或者调高预算额度～"
+          : "预算已用到 " + Math.round(pct) + "%（¥" + spentM + " / ¥" + budgetM + "），剩余 ¥"
+              + Fmt.money(centsToDecimal(remainingCents)) + "。按现在的节奏可能会超支，花销前先想一想哦～";
+      Set<String> notifyIds = new LinkedHashSet<>();
+      if (trip.getOwnerId() != null) {
+        notifyIds.add(trip.getOwnerId());
+      }
+      if (payerUserId != null) {
+        notifyIds.add(payerUserId);
+      }
+      for (String uid : notifyIds) {
+        if (notificationService.budgetWarningAlreadySent(uid, tripId, level)) {
+          continue;
+        }
+        notificationService.createBudgetWarning(uid, tripId, tripTitle, content, level);
+      }
+    } catch (Exception ignoredEx) {
+      // 预算提醒失败不影响记账主流程
+    }
+  }
 
   /** 预算总览：总预算 + 各类别 预算/已花/预估占用/剩余/超支。 */
   public Map<String, Object> getBudget(String tripId, String userId) {

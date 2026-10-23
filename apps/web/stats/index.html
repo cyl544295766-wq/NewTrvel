@@ -142,6 +142,36 @@
 
   /* 亮点卡 */
   .highlights { display: flex; flex-direction: column; gap: 14px; }
+
+  /* 预算 vs 已花 */
+  .bud-total { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; font-size: 13px; color: var(--ink-2); }
+  .bud-total b { font-family: var(--grot); color: var(--ink); font-weight: 600; }
+  .pill { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .pill.warn { background: #FDF5E2; color: #B8830F; }
+  .pill.over { background: #FDEFF2; color: #C2566C; }
+  .bud { display: flex; flex-direction: column; gap: 13px; }
+  .bud-row .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; }
+  .bud-row .nm { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bud-row .nm b { color: var(--ink); font-weight: 600; }
+  .bud-row .val { font-family: var(--grot); font-weight: 600; color: var(--ink); white-space: nowrap; font-size: 12.5px; }
+  .track-lg { height: 10px; border-radius: 999px; background: #EDF5F4; overflow: hidden; margin-top: 7px; }
+  .track-lg i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5BC5C0, #0D6E6E); transition: width .5s cubic-bezier(.4,0,.2,1); }
+  .track-lg.warn i { background: linear-gradient(90deg, #F3B596, #FF8A4C); }
+  .track-lg.over i { background: linear-gradient(90deg, #E88A8A, #C2566C); }
+  .track-lg.none i { background: #C9D6D4; }
+
+  /* 结算建议 */
+  .sumchips { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+  .chip { font-size: 12px; border-radius: 999px; padding: 5px 12px; background: #DCF2F0; color: #0D6E6E; font-weight: 600; }
+  .chip.out { background: #FDF5E2; color: #B8830F; }
+  .stl { display: flex; gap: 12px; flex-direction: column; }
+  .stl-row { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: var(--cloud); border-radius: 12px; }
+  .stl-row .ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; flex: none; }
+  .stl-row .tx { font-size: 13px; color: var(--ink-2); line-height: 1.55; min-width: 0; }
+  .stl-row .tx b { color: var(--ink); font-weight: 600; }
+  .stl-row .tx .trip-t { color: var(--mute); font-size: 11.5px; display: block; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stl-row .go { margin-left: auto; font-size: 12px; color: var(--brand); white-space: nowrap; flex: none; text-decoration: none; padding: 6px 10px; border-radius: 8px; background: rgba(13,110,110,.07); }
+  .stl-row .go:hover { background: rgba(13,110,110,.13); }
   .hl { display: flex; align-items: center; gap: 16px; background: var(--cloud); border-radius: 12px; padding: 16px 18px; }
   .hl .ic2 { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 20px; flex: none; }
   .hl .k { font-size: 11.5px; color: var(--mute); letter-spacing: .08em; }
@@ -283,6 +313,14 @@
         <div id="chartCat"></div>
       </div>
       <div class="card">
+        <div class="t">预算 vs 已花 <small id="budgetSub"></small></div>
+        <div id="chartBudget"></div>
+      </div>
+      <div class="card">
+        <div class="t">结算建议 <small>· 谁该转给谁</small></div>
+        <div id="chartSettle"></div>
+      </div>
+      <div class="card">
         <div class="t">年度亮点</div>
         <div class="highlights" id="highlights"></div>
       </div>
@@ -345,7 +383,7 @@
       activity: '#2A8055', other: '#0D6E6E'
     };
     var $ = function (id) { return document.getElementById(id); };
-    var state = { year: null, overview: null, yearly: null, monthly: null, cats: null };
+    var state = { year: null, overview: null, yearly: null, monthly: null, cats: null, budgets: null, settle: null };
 
     function escapeHtml(s) {
       return String(s == null ? '' : s)
@@ -367,12 +405,103 @@
         var years = (ov && ov.availableYears) || [];
         state.year = years.length ? String(years[0]) : String(new Date().getFullYear());
         buildYearPill(years.length ? years : [new Date().getFullYear()]);
+        loadBudget();
+        loadSettle();
         await loadYear(state.year);
         renderYearTable();
       } catch (err) {
         showToast(humanError(err));
         $('pageMeta').textContent = '统计加载失败，请刷新重试';
       }
+    }
+
+    /* ===== 预算 vs 已花（不按年份过滤，看全部活动行程） ===== */
+    async function loadBudget() {
+      var box = $('chartBudget');
+      try {
+        state.budgets = await apiGet('/stats/budgets');
+        renderBudget();
+      } catch (err) {
+        box.innerHTML = '<div class="chart-empty">预算数据加载失败</div>';
+      }
+    }
+    function renderBudget() {
+      var d = state.budgets || {};
+      var rows = d.trips || [];
+      var box = $('chartBudget');
+      if (!rows.length) {
+        box.innerHTML = '<div class="chart-empty">还没有带预算或花费的行程<br><span style="font-size:12px;">给行程设置预算、记一笔费用，这里就会出现进度条</span></div>';
+        $('budgetSub').textContent = '';
+        return;
+      }
+      var warn = num(d.warnCount), over = num(d.overCount);
+      var chips = '';
+      if (warn) chips += '<span class="pill warn">⚠ ' + warn + ' 趟接近超支</span>';
+      if (over) chips += '<span class="pill over">✋ ' + over + ' 趟已超支</span>';
+      $('budgetSub').innerHTML = chips ? '· ' + chips : '';
+      if (over || warn) box.setAttribute('data-alert', 'true'); else box.removeAttribute('data-alert');
+      box.innerHTML = ''
+        + '<div class="bud-total"><b>' + money(rows.length ? d.totalSpent : 0) + '</b> 已花'
+        + (d.totalBudget ? ' / 预算 <b>' + money(d.totalBudget) + '</b>（' + num(d.totalPercentage).toFixed(0) + '%）' : '（行程未设预算）')
+        + '</div>'
+        + '<div class="bud">' + rows.map(function (r) {
+            var pct = num(r.percentage);
+            var w = Math.min(100, Math.max(r.budget ? 4 : 0, pct));
+            var cls = r.budgetStatus === 'over' ? 'over' : r.budgetStatus === 'warn' ? 'warn' : r.budgetStatus === 'no_budget' ? 'none' : '';
+            var val = r.budget
+              ? '<span class="pill ' + cls + '" style="' + (cls === 'warn' || cls === 'over' ? '' : 'display:none;') + '">' + pct.toFixed(0) + '%</span>'
+              : '';
+            var right = r.budget
+              ? money(r.spent) + ' / ' + money(r.budget) + '（' + pct.toFixed(0) + '%）'
+              : '未设预算 · 已花 ' + money(r.spent);
+            var badge = '';
+            if (cls === 'warn' || cls === 'over') {
+              badge = val ? '' : '<span class="pill ' + cls + '">' + pct.toFixed(0) + '%</span>';
+            }
+            return '<div class="bud-row">'
+              + '<div class="top"><span class="nm"><b>' + escapeHtml(r.title || '未命名行程') + '</b>'
+              + (r.destination ? ' · ' + escapeHtml(r.destination) : '')
+              + (r.remaining && num(r.remaining) < 0 && r.budget ? '<span class="pill over" style="margin-left:6px;">超 ¥' + escapeHtml(String(-num(r.remaining)).replace(/\.00$/, '')) + '</span>' : '')
+              + '</span><span class="val">' + right + badge + '</span></div>'
+              + '<div class="track-lg ' + cls + '"><i style="width:' + w.toFixed(1) + '%"></i></div>'
+              + '</div>';
+          }).join('') + '</div>';
+    }
+
+    /* ===== 结算建议 ===== */
+    async function loadSettle() {
+      var box = $('chartSettle');
+      try {
+        state.settle = await apiGet('/stats/settlement-suggestions');
+        renderSettle();
+      } catch (err) {
+        box.innerHTML = '<div class="chart-empty">结算数据加载失败</div>';
+      }
+    }
+    function renderSettle() {
+      var d = state.settle || {};
+      var items = d.suggestions || [];
+      var box = $('chartSettle');
+      var chips = '';
+      if (num(d.inTotal) > 0) chips += '<span class="chip">✅ 应收合计 ' + money(d.inTotal) + '</span>';
+      if (num(d.outTotal) > 0) chips += '<span class="chip out">↗ 应付合计 ' + money(d.outTotal) + '</span>';
+      if (!items.length) {
+        box.innerHTML = (chips ? '<div class="sumchips">' + chips + '</div>' : '')
+          + '<div class="chart-empty">目前没有需要结算的账目<br><span style="font-size:12px;">在行程里记账并选择「分摊给成员」，这里会给出「谁该转给谁」的建议</span></div>';
+        return;
+      }
+      box.innerHTML = ''
+        + (chips ? '<div class="sumchips">' + chips + '</div>' : '')
+        + '<div class="stl">' + items.map(function (it) {
+            var isin = it.direction === 'in';
+            return '<div class="stl-row">'
+              + '<span class="ic" style="background:' + (isin ? '#DCF2F0' : '#FDF5E2') + ';">' + (isin ? '✅' : '↗') + '</span>'
+              + '<div class="tx"><b>' + escapeHtml(isin ? it.counterpartyName : '你') + '</b> '
+              + (isin ? '应转你 <b>' + money(it.amount) + '</b>' : '应转 <b>' + escapeHtml(it.counterpartyName) + ' ' + money(it.amount) + '</b>')
+              + '<span class="trip-t">「' + escapeHtml(it.tripTitle || '行程') + '」</span></div>'
+              + '<a class="go" href="/trip-detail/?id=' + encodeURIComponent(it.tripId) + (isin ? '' : '') + '">去处理</a>'
+              + '</div>';
+          }).join('') + '</div>';
     }
 
     async function loadYear(year) {

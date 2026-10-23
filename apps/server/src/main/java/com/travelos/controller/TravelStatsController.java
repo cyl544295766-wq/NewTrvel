@@ -41,4 +41,14 @@ public class TravelStatsController {
   public Map<String, Object> expenseCategories(@CurrentUser UserContext user) {
     return statsService.getExpenseCategories(user.id());
   }
+
+  @GetMapping("/budgets")
+  public Map<String, Object> budgets(@CurrentUser UserContext user) {
+    return statsService.getBudgetOverview(user.id());
+  }
+
+  @GetMapping("/settlement-suggestions")
+  public Map<String, Object> settlementSuggestions(@CurrentUser UserContext user) {
+    return statsService.getSettlementSuggestions(user.id());
+  }
 }
