@@ -11,18 +11,7 @@
 <link rel="stylesheet" href="../assets/css/theme.css">
 <link rel="stylesheet" href="../assets/css/pet.css">
 <style>
-  :root {
-    --brand: #0D6E6E;
-    --brand-soft: #5BC5C0;
-    --mist: #DCF2F0;
-    --cloud: #F7FAFA;
-    --stamp: #FF8A4C;
-    --mute: #9BB0B5;
-    --ink: #123A3C;
-    --slab: "Fraunces", "Noto Sans SC", serif;
-    --grot: "Space Grotesk", "Noto Sans SC", sans-serif;
-    --card-shadow: 0 8px 24px rgba(13,110,110,0.10), 0 1px 2px rgba(13,110,110,0.06);
-  }
+  /* 令牌统一取自 theme.css（本页无页面特有变量） */
   .auth { display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh; }
 
   /* ===== 左侧：登机牌票面意象（青绿山水背景 + 渐变叠层保证文字可读） ===== */
@@ -80,7 +69,7 @@
   .pd-route .from, .pd-route .to {
     font-family: var(--slab); font-weight: 700; font-size: 30px; letter-spacing: .02em;
   }
-  .pd-route .to { color: #A7E3DF; }
+  .pd-route .to { color: var(--brand-tint); }
   .pd-route .arrow { color: rgba(255,255,255,.5); font-size: 17px; }
   .pd-fields { display: flex; gap: 26px; margin-top: 20px; }
   .pd-fields .f .k { font-size: 9.5px; letter-spacing: .16em; color: rgba(255,255,255,.55); }
@@ -106,7 +95,7 @@
     font-family: var(--slab); font-weight: 600; font-size: 25px; line-height: 1.4;
     margin-bottom: 10px;
   }
-  .v-slogan em { font-style: normal; color: #A7E3DF; }
+  .v-slogan em { font-style: normal; color: var(--brand-tint); }
   .v-desc { font-size: 13.5px; color: rgba(255,255,255,.72); }
 
   /* ===== 右侧：表单 ===== */
@@ -118,7 +107,7 @@
   }
   .panel::before {
     content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px;
-    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 50%, #A7E3DF 100%);
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 50%, var(--brand-tint) 100%);
   }
   .card { width: 100%; max-width: 400px; }
   .card-logo { display: none; align-items: center; gap: 10px; margin-bottom: 26px; }
@@ -139,16 +128,16 @@
     box-shadow: var(--card-shadow); width: fit-content;
   }
   .mode-tabs button {
-    font-family: var(--grot); font-size: 14px; color: #3D6A6C;
+    font-family: var(--grot); font-size: 14px; color: var(--ink-2);
     background: none; border: none; padding: 9px 26px; border-radius: 9px;
     cursor: pointer; transition: background .16s, color .16s;
   }
-  .mode-tabs button:hover { background: #F2FAF9; color: var(--brand); }
+  .mode-tabs button:hover { background: var(--panel); color: var(--brand); }
   .mode-tabs button[aria-selected="true"] { background: var(--brand); color: #fff; font-weight: 600; }
 
   .form { display: flex; flex-direction: column; gap: 17px; }
   .field { display: flex; flex-direction: column; gap: 7px; }
-  .field label { font-size: 12.5px; color: #3D6A6C; font-weight: 500; }
+  .field label { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
   .input-wrap { position: relative; display: flex; align-items: center; }
   .input-wrap .ico {
     position: absolute; left: 15px; color: var(--mute); font-size: 15px;
@@ -157,7 +146,7 @@
   .input-wrap input {
     width: 100%;
     font-family: var(--grot); font-size: 14.5px; color: var(--ink);
-    background: #fff; border: 1.5px solid #E4F1F1; border-radius: 11px;
+    background: #fff; border: 1.5px solid var(--line); border-radius: 11px;
     padding: 14px 44px 14px 42px; outline: none;
     box-shadow: var(--card-shadow);
     transition: border-color .16s, box-shadow .16s;
@@ -181,7 +170,7 @@
   }
   .check {
     display: inline-flex; align-items: center; gap: 8px;
-    font-size: 13.5px; color: #3D6A6C; cursor: pointer;
+    font-size: 13.5px; color: var(--ink-2); cursor: pointer;
   }
   .check input { accent-color: var(--brand); width: 16px; height: 16px; }
 
@@ -191,7 +180,7 @@
     margin: 22px 0 18px; color: var(--mute); font-size: 12px;
   }
   .divider::before, .divider::after {
-    content: ""; flex: 1; border-top: 1px solid #E4F1F1;
+    content: ""; flex: 1; border-top: 1px solid var(--line);
   }
   .alt-note {
     font-size: 13px; color: var(--mute); text-align: center;

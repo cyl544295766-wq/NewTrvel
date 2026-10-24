@@ -29,6 +29,20 @@
   --warn: #E8B23A;
   --info: #3D7DBE;
 
+  /* 状态色扩展（统一各页近义色） */
+  --danger: #D2543A;          /* 危险 / 删除 / 超支（取代 #C2566C / #C0392B 等散值） */
+  --danger-bg: #FFF3F0;
+  --danger-deep: #B8451F;
+  --warn-deep: #8A5A16;       /* 琥珀文字 */
+  --warn-bg: #FDF5E2;
+  --warn-line: #F0DFB9;
+
+  /* 中性扩展（侧栏 / 描边体系） */
+  --side-a: #E8F6F5;          /* 侧栏渐变起点 */
+  --line-2: #C9E8E6;          /* 中强描边 */
+  --line-3: #B9DEDC;          /* 强描边 / 虚线 */
+  --panel: #F2FAF9;           /* 浅色面板底 */
+
   /* 字体 */
   --slab: "Fraunces", "Noto Sans SC", Georgia, serif;
   --grot: "Space Grotesk", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -86,5 +100,25 @@ a { color: inherit; }
 .link:hover { border-bottom-color: var(--brand); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ===== 键盘焦点可见性（全站统一）===== */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2.5px solid var(--brand-soft);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ===== 窄屏表格 / 宽内容横向滚动容器 ===== */
+.tbl-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* 超级管理员专属入口：非超管登录时由页面脚本标记 data-hide-admin 隐藏 */
 [data-hide-admin] .nav a[href="/admin/"] { display: none !important; }

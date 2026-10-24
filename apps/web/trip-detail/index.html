@@ -12,17 +12,13 @@
 <link rel="stylesheet" href="../assets/css/pet.css">
 <style>
   :root {
-    --brand: #0D6E6E;
-    --brand-soft: #5BC5C0;
-    --mist: #DCF2F0;
-    --cloud: #F7FAFA;
-    --stamp: #FF8A4C;
-    --mute: #9BB0B5;
-    --ink: #123A3C;
+    /* --brand/--brand-soft/--mist/--cloud/--stamp/--mute/--ink/--card-shadow 由 theme.css 提供 */
+
+    /* 字体栈与 theme.css 略有差异（无 Georgia/Inter 回退），保留页面定义 */
     --slab: "Fraunces", "Noto Sans SC", serif;
     --grot: "Space Grotesk", "Noto Sans SC", sans-serif;
-    --card-shadow: 0 8px 24px rgba(13,110,110,0.10), 0 1px 2px rgba(13,110,110,0.06);
 
+    /* 状态色（页面特有） */
     --st-draft:     #8A9BA5;
     --st-planning:  #C08A2E;
     --st-active:    #1E9A6E;
@@ -46,14 +42,14 @@
 
   .side {
     position: sticky; top: 0; height: 100vh; /* 吸附视口：内容再长，用户信息/退出也不随页面滚走 */
-    background: linear-gradient(180deg, #E8F6F5 0%, #DCF2F0 100%);
+    background: linear-gradient(180deg, var(--side-a) 0%, #DCF2F0 100%);
     padding: 18px 14px 20px; display: flex; flex-direction: column; gap: 6px;
-    border-right: 1px solid #C9E8E6; overflow: hidden;
+    border-right: 1px solid var(--line-2); overflow: hidden;
   }
   /* 导航过长时内部滚动，品牌区与底部用户区保持固定可见 */
   .side .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
   .side .nav::-webkit-scrollbar { width: 5px; }
-  .side .nav::-webkit-scrollbar-thumb { background: #C9E8E6; border-radius: 3px; }
+  .side .nav::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
   .rail-toggle {
     align-self: flex-end; width: 34px; height: 34px; margin-bottom: 8px;
     display: grid; place-items: center; border: none; border-radius: 9px;
@@ -81,7 +77,7 @@
   .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
 
   .side-foot {
-    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed #B9DEDC;
+    margin-top: auto; padding: 14px 8px 4px; border-top: 1px dashed var(--line-3);
     font-size: 13px; color: #3D6A6C; display: flex; align-items: center; gap: 9px; white-space: nowrap;
   }
   .side-foot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
@@ -90,7 +86,7 @@
     background: rgba(255,255,255,0.7); color: var(--mute); font-size: 13px; line-height: 1;
     cursor: pointer; transition: background .16s, color .16s;
   }
-  .side-foot .side-exit:hover { background: #fff; color: #C4643B; }
+  .side-foot .side-exit:hover { background: #fff; color: var(--danger-deep); }
   .shell[data-collapsed="true"] .side-foot .side-exit { margin-left: 0; }
 
   .shell[data-collapsed="true"] .nav a { justify-content: center; padding: 11px 0; }
@@ -98,7 +94,7 @@
   .shell[data-collapsed="true"] .brand,
   .shell[data-collapsed="true"] .side-foot .who { display: none; }
   .shell[data-collapsed="true"] .brand-mark { display: block; }
-  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid #C9E8E6; font-size: 0; overflow: hidden; }
+  .shell[data-collapsed="true"] .nav-label { padding: 0; margin: 14px 12px 6px; height: 0; border-top: 1px solid var(--line-2); font-size: 0; overflow: hidden; }
   .shell[data-collapsed="true"] .side-foot { justify-content: center; padding: 14px 0 4px; }
 
   main { padding: 30px 44px 52px; max-width: 1520px; width: 100%; margin: 0 auto; }
@@ -128,18 +124,18 @@
   }
   .act:hover { color: var(--brand); background: var(--mist); transform: translateY(-1px); }
   .act.primary { background: var(--stamp); color: #fff; box-shadow: 0 6px 16px rgba(255,138,76,.3); }
-  .act.primary:hover { background: #FF7A36; color: #fff; }
+  .act.primary:hover { background: var(--stamp); color: #fff; }
 
   /* ===== 主票：登机牌档案 ===== */
   .pass {
     margin-top: 22px; background: #fff; border-radius: 18px;
     display: grid; grid-template-columns: 1fr 208px;
-    position: relative; box-shadow: 0 10px 30px rgba(13,110,110,0.12);
+    position: relative; box-shadow: var(--card-shadow-strong);
     overflow: hidden;
   }
   .pass::before {
     content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px;
-    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 60%, #A7E3DF 100%);
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 60%, var(--brand-tint) 100%);
   }
   .pass-main { padding: 32px 34px 28px; }
 
@@ -160,7 +156,7 @@
   .pass-title { font-size: 16px; margin-top: 8px; color: #3D6A6C; }
   .pass-title .code {
     font-size: 11px; letter-spacing: .14em; color: var(--stamp); font-weight: 600;
-    background: #FFF1E8; border-radius: 5px; padding: 2px 8px; margin-left: 8px; vertical-align: 1px;
+    background: var(--stamp-bg); border-radius: 5px; padding: 2px 8px; margin-left: 8px; vertical-align: 1px;
   }
 
   .fields {
@@ -239,7 +235,7 @@
     cursor: pointer;
     transition: background .16s, color .16s;
   }
-  .tabs button:hover { background: #F2FAF9; color: var(--brand); }
+  .tabs button:hover { background: var(--panel); color: var(--brand); }
   .tabs button[aria-selected="true"] { background: var(--brand); color: #fff; font-weight: 600; }
 
   /* ===== 8 模块宫格 ===== */
@@ -257,7 +253,7 @@
   .modules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
   .module {
     display: flex; flex-direction: column; gap: 9px;
-    padding: 17px 16px; border-radius: 13px; border: 1.5px solid #EDF6F6;
+    padding: 17px 16px; border-radius: 13px; border: 1.5px solid var(--line);
     background: #FCFEFE; cursor: pointer; text-align: left;
     font-family: var(--grot);
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
@@ -287,7 +283,7 @@
   .weather-panel { margin-top: 18px; }
   .weathers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 11px; }
   .weather {
-    background: #FCFEFE; border: 1.5px solid #EDF6F6; border-radius: 13px;
+    background: #FCFEFE; border: 1.5px solid var(--line); border-radius: 13px;
     padding: 15px 12px; text-align: center;
   }
   .weather .d { font-size: 11px; letter-spacing: .1em; color: var(--mute); }
@@ -298,7 +294,7 @@
   .weather .t small { font-size: 11px; font-weight: 500; color: var(--brand-soft); }
 
   .weather-empty {
-    background: #FCFEFE; border: 1.5px dashed #C9E8E6; border-radius: 13px;
+    background: #FCFEFE; border: 1.5px dashed var(--line-2); border-radius: 13px;
     padding: 28px; text-align: center; color: var(--mute); font-size: 13px;
   }
   .weather-empty .ic { font-size: 26px; margin-bottom: 8px; }
@@ -331,9 +327,9 @@
     margin-left: auto; font-size: 12px; font-weight: 500;
     padding: 4px 12px; border-radius: 7px;
   }
-  .role.owner  { background: #FDF5E2; color: #B8830F; }
+  .role.owner  { background: var(--warn-bg); color: var(--warn-deep); }
   .role.admin  { background: var(--mist); color: var(--brand); }
-  .role.member { background: #EAF7EF; color: #3E8F63; }
+  .role.member { background: #E5F5E9; color: var(--ok); }
   .role.viewer { background: #F0F4F6; color: #6E8A94; }
 
   .member .acts { display: flex; gap: 6px; margin-left: 10px; }
@@ -343,13 +339,13 @@
     transition: background .16s, color .16s;
   }
   .member .acts button:hover { background: var(--mist); color: var(--brand); }
-  .member .acts .danger:hover { background: #FFEDE6; color: #D2542A; }
+  .member .acts .danger:hover { background: var(--danger-bg); color: var(--danger); }
 
   .pane[hidden] { display: none; }
 
   .toast {
     position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
-    background: #123A3C; color: #fff; font-size: 13px;
+    background: var(--ink); color: #fff; font-size: 13px;
     padding: 10px 18px; border-radius: 9px; box-shadow: 0 8px 20px rgba(0,0,0,0.18);
     opacity: 0; transition: opacity .2s ease, transform .2s ease;
     pointer-events: none;
@@ -361,33 +357,33 @@
   .share-mask.open { opacity: 1; pointer-events: auto; }
   .share-modal {
     position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 104%); z-index: 41;
-    width: min(480px, 96vw); background: #FBF8F2; border: 1px solid #E4E0D2; border-bottom: none;
+    width: min(480px, 96vw); background: var(--panel); border: 1px solid var(--line-2); border-bottom: none;
     border-radius: 16px 16px 0 0; box-shadow: 0 -14px 40px rgba(10,40,39,.18);
     transition: transform .24s cubic-bezier(.4,0,.2,1);
   }
   .share-modal.open { transform: translate(-50%, 0); }
-  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #EBE7DA; background: #fff; border-radius: 16px 16px 0 0; }
+  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--line); background: #fff; border-radius: 16px 16px 0 0; }
   .sh-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
   .sh-head .x { border: none; background: rgba(13,110,110,.08); color: var(--brand); width: 28px; height: 28px; border-radius: 9px; cursor: pointer; font-size: 13px; }
   .sh-body { padding: 16px 20px 18px; }
   .sh-desc { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
   .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
   .vis-pick button {
-    font-size: 13px; border: 1px solid #CBE3E1; background: #fff; color: var(--ink-2);
+    font-size: 13px; border: 1px solid var(--line-2); background: #fff; color: var(--ink-2);
     padding: 9px 14px; border-radius: 999px; cursor: pointer; transition: all .16s; font-family: inherit;
   }
   .vis-pick button[data-v="public"][aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
   .vis-pick button[data-v="friends"][aria-pressed="true"] { background: #3A7FA5; border-color: #3A7FA5; color: #fff; }
   .vis-pick button[data-v="private"][aria-pressed="true"] { background: #4A6068; border-color: #4A6068; color: #fff; }
   .sh-note { margin: 12px 0 0; font-size: 12.5px; color: var(--mute); }
-  .sh-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid #EBE7DA; background: #fff; }
-  .btn-plain { border: 1px solid #DDD9CB; background: #fff; color: var(--ink-2); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; }
+  .sh-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--line); background: #fff; }
+  .btn-plain { border: 1px solid var(--line-2); background: #fff; color: var(--ink-2); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; }
   .btn-primary-sm { border: none; background: var(--brand); color: #fff; font-weight: 600; font-size: 13.5px; padding: 10px 18px; border-radius: 10px; cursor: pointer; }
   .btn-primary-sm:hover { background: #0A5A5A; }
   .btn-primary-sm[disabled] { opacity: .6; cursor: wait; }
 
   .skeleton {
-    background: linear-gradient(90deg, #F2FAF9 0%, #E8F6F5 50%, #F2FAF9 100%);
+    background: linear-gradient(90deg, var(--panel) 0%, var(--side-a) 50%, var(--panel) 100%);
     background-size: 200% 100%; animation: skel 1.4s infinite linear;
     border-radius: 8px; color: transparent;
   }
@@ -438,6 +434,7 @@
   }
   @media (max-width: 860px) {
     .pass { grid-template-columns: 1fr; }
+    .route .pt-name { font-size: 30px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .pass-stub { padding: 22px 24px; }
     .pass-stub::before { left: 18px; right: 18px; top: 0; bottom: auto; border-left: none; border-top: 1.5px dashed #A9D8D5; }
     .pass-stub::after { display: none; }
@@ -448,7 +445,7 @@
   }
   @media (max-width: 720px) {
     .shell { grid-template-columns: 1fr !important; }
-    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid #C9E8E6; }
+    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-right: none; border-bottom: 1px solid var(--line-2); }
     .side .nav { flex: none; overflow: visible; }
     .rail-toggle { display: none; }
     .brand { display: block !important; padding: 0; }
