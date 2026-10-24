@@ -50,7 +50,7 @@ start "" http://127.0.0.1:3001/
 echo.
 echo ============================================
 echo   Travel OS is ready!  http://127.0.0.1:3001
-echo   Login: admin / admin123
+echo   Login: admin / (password from SEED_ADMIN_PASSWORD in .env)
 echo ============================================
 ping -n 6 127.0.0.1 >nul
 endlocal

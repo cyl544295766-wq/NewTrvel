@@ -231,14 +231,20 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
 <script>
-  (function () {
+  (async function () {
     if (!requireLogin('/login/')) return;
     var user = getCurrentUser() || {};
     document.getElementById('who').textContent = user.displayName || user.username || '旅行者';
     document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
 
-    /* 权限门禁：仅超级管理员可见本页 */
-    if (user.role !== 'super_admin') {
+    /* 权限门禁（P2-4）：以服务端 /auth/me 返回的 role 为准，避免本地缓存角色过期；
+       服务端不可达时退回本地缓存判断 */
+    var effectiveRole = user.role;
+    try {
+      var me = await apiGet('/auth/me');
+      if (me && me.user && me.user.role) effectiveRole = me.user.role;
+    } catch (err) { /* fallback to cached role */ }
+    if (effectiveRole !== 'super_admin') {
       document.getElementById('pageBody').innerHTML =
         '<div class="state-box"><div class="ic">🔒</div><div class="t">需要超级管理员权限</div>'
         + '<div class="d">当前账户是普通用户，无法访问管理后台 · <a href="/home/">返回首页</a></div></div>';

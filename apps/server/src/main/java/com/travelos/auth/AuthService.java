@@ -116,6 +116,7 @@ public class AuthService {
     }
     user.setStatus("deleted");
     user.setDeletedAt(new Date());
+    user.setTokenValidAfter(new Date()); // P2-1：作废全部存量令牌（防复活的边界场景）
     userService.updateUser(user);
     auditService.record(user.getId(), null, "account_deactivated", "user", user.getId(),
         Map.of("username", user.getUsername()));
@@ -123,7 +124,8 @@ public class AuthService {
 
   /**
    * 修改密码：验证当前密码 → 校验新密码规则 → 拒绝与当前相同 → BCrypt 保存。
-   * 已签发的 JWT 在有效期内仍然可用（无状态令牌），其他设备不会被强制下线。
+   * P2-1：同时把 token_valid_after 刷新为当前时间——所有早于该时刻签发的 JWT
+   * （包括其他设备与可能已泄露的令牌）立即失效，需重新登录；当前设备也会被登出。
    */
   @Transactional
   public void changePassword(UserContext currentUser, String oldPassword, String newPassword) {
@@ -141,6 +143,7 @@ public class AuthService {
       throw ApiException.badRequest("新密码不能与当前密码相同");
     }
     user.setPasswordHash(passwordEncoder.encode(newPassword));
+    user.setTokenValidAfter(new Date());
     userService.updateUser(user);
     auditService.record(user.getId(), null, "password_changed", "user", user.getId(),
         Map.of("username", user.getUsername()));

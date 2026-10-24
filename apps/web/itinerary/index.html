@@ -261,6 +261,20 @@
   }
   .btn-add:hover { transform: translateY(-1px); }
 
+  /* 地点联想下拉（P0-4） */
+  .sg-wrap { position: relative; flex: 1; min-width: 180px; }
+  .sg-wrap input[type="text"] { width: 100%; }
+  .sg {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40;
+    background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 28px rgba(23,58,53,.12); overflow: hidden;
+  }
+  .sg-item { padding: 9px 13px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .sg-item:hover { background: var(--cloud); }
+  .sg-item .n { font-size: 13.5px; color: var(--ink); }
+  .sg-item .a { font-size: 12px; color: var(--mute); }
+  .sg-note { padding: 10px 13px; font-size: 12.5px; color: var(--mute); line-height: 1.6; }
+
   /* 行内编辑面板 */
   .p-edit {
     grid-column: 3 / -1; background: #F0F8F7; border-radius: 12px;
@@ -647,7 +661,10 @@
       }).join('');
       return ''
         + '<div class="add-row" data-addrow="' + escapeHtml(d.id) + '">'
-        +   '<input type="text" placeholder="输入地点名称（如：玉龙沙湖）" aria-label="地点名称">'
+        +   '<div class="sg-wrap">'
+        +     '<input type="text" placeholder="输入地点名称（支持联想）" aria-label="地点名称" autocomplete="off">'
+        +     '<div class="sg" hidden></div>'
+        +   '</div>'
         +   '<select aria-label="地点类型">' + opts + '</select>'
         +   '<input type="time" aria-label="开始时间（可选）" title="开始时间（可选）">'
         +   '<input type="time" aria-label="结束时间（可选）" title="结束时间（可选）">'
@@ -833,14 +850,18 @@
         var type = addRow.querySelector('select').value;
         var t1 = addRow.querySelector('input[type="time"]'), t2 = addRow.querySelectorAll('input[type="time"]')[1];
         var dOnly2 = dayDateOnly(day.date);
+        var pick = sgPicks.get(dId) || null; // 联想选中的地址与坐标
         var body = {
           tripDayId: dId,
           name: name,
           type: type,
-          address: null,
+          address: pick && pick.address ? pick.address : null,
+          latitude: pick ? pick.latitude : null,
+          longitude: pick ? pick.longitude : null,
           startTime: (t1.value && dOnly2) ? dOnly2 + ' ' + t1.value + ':00' : null,
           endTime: (t2.value && dOnly2) ? dOnly2 + ' ' + t2.value + ':00' : null
         };
+        sgPicks.delete(dId);
         if (!(await grabDay(dId))) return; // 取天锁（他人持锁 → 409 提示）
         try {
           var created = await apiPost('/trips/' + tripId + '/places', body);
@@ -968,6 +989,89 @@
     window.addEventListener('travelos:ai-applied', function (e) {
       var tid = e && e.detail && e.detail.tripId;
       if (!tid || tid === tripId) load();
+    });
+
+    /* ===== 地点联想（P0-4）：GET /api/places/suggestions，未配置/不可用时显性提示 ===== */
+    var sgPicks = new Map();      // dayId -> { address, latitude, longitude }
+    var sgTimers = new Map();     // dayId -> debounce timer
+    var sgNoteShown = false;      // 服务未配置提示只完整展示一次
+
+    function sgBoxOf(input) { return input.parentElement.querySelector('.sg'); }
+    function sgHideAll(except) {
+      document.querySelectorAll('.add-row .sg').forEach(function (b) {
+        if (b !== except) b.hidden = true;
+      });
+    }
+    async function sgFetch(input) {
+      var box = sgBoxOf(input);
+      var kw = input.value.trim();
+      var row = input.closest('.add-row');
+      var key = row ? row.getAttribute('data-addrow') : null;
+      if (kw.length < 2) {
+        box.hidden = true;
+        if (key) sgPicks.delete(key);
+        return;
+      }
+      var d;
+      try {
+        d = await apiGet('/places/suggestions?keyword=' + encodeURIComponent(kw));
+      } catch (err) {
+        if (err && err.status === 503) {
+          if (!sgNoteShown) {
+            sgNoteShown = true;
+            box.innerHTML = '<div class="sg-note">📍 地点联想服务未配置（需要高德 Web 服务 Key，见 app.env 的 AMAP 相关配置），本次可继续手动输入。</div>';
+            box.hidden = false;
+            return;
+          }
+        }
+        box.hidden = true; // 其余错误静默，不打扰手动输入
+        return;
+      }
+      var list = (d && d.suggestions) || [];
+      if (!list.length) { box.hidden = true; return; }
+      box.innerHTML = list.map(function (s, i) {
+        var addr = [s.district, s.address].filter(Boolean).join(' · ');
+        return '<div class="sg-item" data-i="' + i + '">'
+          + '<span class="n">' + escapeHtml(s.name) + '</span>'
+          + (addr ? '<span class="a">' + escapeHtml(addr) + '</span>' : '')
+          + '</div>';
+      }).join('');
+      box._list = list;
+      box.hidden = false;
+    }
+    $('dayList').addEventListener('input', function (e) {
+      var input = e.target.closest('.add-row input[type="text"]');
+      if (!input) return;
+      var row = input.closest('.add-row');
+      var key = row.getAttribute('data-addrow');
+      clearTimeout(sgTimers.get(key));
+      sgTimers.set(key, setTimeout(function () { sgFetch(input); }, 300));
+    });
+    $('dayList').addEventListener('mousedown', function (e) {
+      var item = e.target.closest('.sg-item');
+      if (!item) return;
+      e.preventDefault(); // 阻止 input 先失焦导致下拉被隐藏
+      var box = item.closest('.sg');
+      var input = box.parentElement.querySelector('input[type="text"]');
+      var row = input.closest('.add-row');
+      var s = (box._list || [])[Number(item.getAttribute('data-i'))];
+      if (!s || !row) return;
+      input.value = s.name;
+      sgPicks.set(row.getAttribute('data-addrow'), {
+        address: [s.district, s.address].filter(Boolean).join(' ') || null,
+        latitude: s.latitude || null,
+        longitude: s.longitude || null
+      });
+      box.hidden = true;
+    });
+    $('dayList').addEventListener('focusout', function (e) {
+      var input = e.target.closest('.add-row input[type="text"]');
+      if (!input) return;
+      var box = sgBoxOf(input);
+      setTimeout(function () { if (box) box.hidden = true; }, 180);
+    });
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.sg-wrap')) sgHideAll();
     });
 
     /* ===== 启动 ===== */

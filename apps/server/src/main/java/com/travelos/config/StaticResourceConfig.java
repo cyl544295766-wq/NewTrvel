@@ -27,9 +27,12 @@ public class StaticResourceConfig implements WebMvcConfigurer {
   private static final String[] CANDIDATES = { "apps/web", "../web", "../../web" };
 
   private final File staticDir;
+  private final com.travelos.service.FileStorageService fileStorageService;
 
-  public StaticResourceConfig(@Value("${travelos.static.dir:}") String configured) {
+  public StaticResourceConfig(@Value("${travelos.static.dir:}") String configured,
+      com.travelos.service.FileStorageService fileStorageService) {
     this.staticDir = resolveStaticDir(configured);
+    this.fileStorageService = fileStorageService;
   }
 
   private static File resolveStaticDir(String configured) {
@@ -50,6 +53,18 @@ public class StaticResourceConfig implements WebMvcConfigurer {
 
   @Override
   public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
+    // P3-1 文件出库：上传的照片/证件/小票落盘在 FileStorageService.baseDir()，
+    // 以 /files/** 暴露（须先于 /** 注册才会优先命中）；访问鉴权见 WebConfig 拦截器。
+    var filesDir = fileStorageService.baseDir();
+    if (java.nio.file.Files.isDirectory(filesDir)) {
+      String filesLocation = filesDir.toUri().toString();
+      if (!filesLocation.endsWith("/")) {
+        filesLocation = filesLocation + "/";
+      }
+      registry.addResourceHandler("/files/**")
+          .addResourceLocations(filesLocation)
+          .setCachePeriod(3600);
+    }
     if (!staticDir.exists() || !staticDir.isDirectory()) {
       System.err.println("[StaticResourceConfig] Directory not found: " + staticDir.getAbsolutePath());
       return;

@@ -131,6 +131,10 @@ public class TravelStatsService {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("primaryCurrency", PRIMARY_CURRENCY);
     body.put("totalExpenseAmount", centsToString(total));
+    // P2-3 币种口径：非 CNY 花费单列透出，避免"外币花费凭空消失"
+    List<Map<String, Object>> foreign = foreignCurrencySummary(trips);
+    body.put("foreignCurrency", foreign);
+    body.put("hasForeignCurrency", !foreign.isEmpty());
     body.put("categories", categories);
     return body;
   }
@@ -184,6 +188,10 @@ public class TravelStatsService {
     body.put("tripCount", tripCount);
     body.put("totalDays", totalDays);
     body.put("totalExpenseAmount", centsToString(totalExpenseCents));
+    // P2-3 币种口径：非 CNY 花费未折算、不并入主口径，显式透出让前端提示"另有外币未计入"
+    List<Map<String, Object>> foreign = foreignCurrencySummary(trips);
+    body.put("foreignCurrency", foreign);
+    body.put("hasForeignCurrency", !foreign.isEmpty());
     body.put("destinationCount", destinationCounts.size());
     body.put("averageTripDays", tripCount > 0
         ? BigDecimal.valueOf(totalDays * 1.0 / tripCount).setScale(1, RoundingMode.HALF_UP).doubleValue()
@@ -455,6 +463,28 @@ public class TravelStatsService {
       }
     }
     return total;
+  }
+
+  /** P2-3 币种口径：按币种汇总未折算的非 CNY 花费（原币金额，不做汇率换算）。 */
+  private List<Map<String, Object>> foreignCurrencySummary(List<StatsTrip> trips) {
+    Map<String, Long> byCurrency = new LinkedHashMap<>();
+    for (StatsTrip statsTrip : trips) {
+      for (TripExpense expense : statsTrip.expenses()) {
+        if (expense.getCurrency() == null || PRIMARY_CURRENCY.equals(expense.getCurrency())) {
+          continue;
+        }
+        long cents = Math.round(expense.getAmount().doubleValue() * 100);
+        byCurrency.merge(expense.getCurrency(), cents, Long::sum);
+      }
+    }
+    List<Map<String, Object>> rows = new ArrayList<>();
+    for (Map.Entry<String, Long> entry : byCurrency.entrySet()) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("currency", entry.getKey());
+      row.put("amount", centsToString(entry.getValue()));
+      rows.add(row);
+    }
+    return rows;
   }
 
   private List<StatsTrip> findTripsForUser(String userId) {

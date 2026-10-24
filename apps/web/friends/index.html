@@ -475,7 +475,7 @@
         var incoming = d.incoming || [];
         $('friendIncomingBox').hidden = incoming.length === 0;
         $('friendIncoming').innerHTML = incoming.map(function (u) {
-          var act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">回加</button></div>';
+          var act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" data-friend-accept="' + u.id + '">同意</button></div>';
           return friendRow(u, act);
         }).join('');
       } catch (err) {
@@ -502,10 +502,11 @@
           if (u.relation === 'mutual') {
             act = '<div style="flex:none;"><span class="fr-tag mutual">已是好友</span></div>';
           } else if (u.relation === 'added') {
-            act = '<div style="flex:none;"><span class="fr-tag added">已添加</span></div>';
+            act = '<div style="flex:none;"><span class="fr-tag added">已发送请求</span></div>';
           } else {
-            var label = u.relation === 'incoming' ? '回加' : '添加';
-            act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" data-friend-add="' + u.id + '">' + label + '</button></div>';
+            var label = u.relation === 'incoming' ? '同意' : '添加';
+            var attr = u.relation === 'incoming' ? 'data-friend-accept' : 'data-friend-add';
+            act = '<div style="flex:none;"><button type="button" class="btn-primary-sm" ' + attr + '="' + u.id + '">' + label + '</button></div>';
           }
           return friendRow(u, act);
         }).join('');
@@ -523,6 +524,16 @@
         await Promise.all([loadFriends(), searchFriends()]);
       } catch (err) {
         friendHint(humanError(err), 'err');
+        showToast(humanError(err));
+      }
+    }
+
+    async function acceptFriend(userId) {
+      try {
+        var d = await apiPost('/friends/' + encodeURIComponent(userId) + '/accept', {});
+        showToast(d.message || '已同意好友请求');
+        await loadFriends();
+      } catch (err) {
         showToast(humanError(err));
       }
     }
@@ -552,6 +563,8 @@
       }
       var add = e.target.closest('[data-friend-add]');
       if (add) { addFriend(add.getAttribute('data-friend-add')); return; }
+      var acc = e.target.closest('[data-friend-accept]');
+      if (acc) { acceptFriend(acc.getAttribute('data-friend-accept')); return; }
       var del = e.target.closest('[data-friend-del]');
       if (del) { removeFriend(del.getAttribute('data-friend-del')); }
     });

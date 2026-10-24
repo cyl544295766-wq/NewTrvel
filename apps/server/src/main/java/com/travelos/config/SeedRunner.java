@@ -65,7 +65,13 @@ public class SeedRunner implements ApplicationRunner {
       User toSave = admin == null ? new User() : admin;
       toSave.setUsername(adminUsername);
       toSave.setDisplayName(adminDisplayName);
-      toSave.setPasswordHash(new BCryptPasswordEncoder().encode(adminPassword));
+      BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+      // P2-4：仅首次创建时写入种子密码；已存在的 admin 不再每次启动被重置回配置值
+      if (admin == null) {
+        toSave.setPasswordHash(encoder.encode(adminPassword));
+      } else if (encoder.matches(adminPassword, admin.getPasswordHash())) {
+        log.warn("管理员账户 {} 仍在使用种子/默认密码，请尽快在「账户设置」中修改", adminUsername);
+      }
       if (toSave.getStatus() == null) {
         toSave.setStatus("active");
       }

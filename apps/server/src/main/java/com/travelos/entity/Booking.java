@@ -63,6 +63,10 @@ public class Booking {
   /** jsonb：类型特有字段（航班号/舱位/酒店名/车次/场次等） */
   private String extra;
 
+  /** 一键核销：转为费用后记录 trip_expenses.id；非空表示已入账（退出预估占用） */
+  @TableField("expense_id")
+  private String expenseId;
+
   @TableField("creator_id")
   private String creatorId;
 
@@ -106,6 +110,8 @@ public class Booking {
   public void setReminderSentAt(Date reminderSentAt) { this.reminderSentAt = reminderSentAt; }
   public String getExtra() { return extra; }
   public void setExtra(String extra) { this.extra = extra; }
+  public String getExpenseId() { return expenseId; }
+  public void setExpenseId(String expenseId) { this.expenseId = expenseId; }
   public String getCreatorId() { return creatorId; }
   public void setCreatorId(String creatorId) { this.creatorId = creatorId; }
   public Date getCreatedAt() { return createdAt; }

@@ -140,6 +140,10 @@ public class AdminService {
     }
     User target = requireTarget(operatorId, targetId);
     target.setStatus(status);
+    if ("disabled".equals(status)) {
+      // P2-1：禁用时刷新令牌吊销水位——即使后续被重新启用，禁用前签发的令牌也不会复活
+      target.setTokenValidAfter(new Date());
+    }
     target.setUpdatedAt(new Date());
     userMapper.updateById(target);
     return Map.of("success", true, "message",

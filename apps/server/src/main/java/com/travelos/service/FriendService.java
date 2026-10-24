@@ -29,12 +29,14 @@ public class FriendService {
   private final UserFriendMapper userFriendMapper;
   private final UserMapper userMapper;
   private final FriendMessageMapper friendMessageMapper;
+  private final NotificationService notificationService;
 
   public FriendService(UserFriendMapper userFriendMapper, UserMapper userMapper,
-      FriendMessageMapper friendMessageMapper) {
+      FriendMessageMapper friendMessageMapper, NotificationService notificationService) {
     this.userFriendMapper = userFriendMapper;
     this.userMapper = userMapper;
     this.friendMessageMapper = friendMessageMapper;
+    this.notificationService = notificationService;
   }
 
   // ==================== 搜索 ====================
@@ -105,12 +107,54 @@ public class FriendService {
     userFriendMapper.insert(row);
 
     boolean mutual = hasDirection(target.getId(), currentUserId);
+    // P0-3 好友回执：请求方动作后，通知对方（互为好友达成时也告知对方）
+    User me = userMapper.selectById(currentUserId);
+    String myName = me == null ? "有人" : me.getDisplayName();
+    if (mutual) {
+      notificationService.createFriendAccepted(target.getId(), currentUserId, myName);
+    } else {
+      notificationService.createFriendRequest(target.getId(), currentUserId, myName);
+    }
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("friend", toUserResponse(currentUserId, target));
     body.put("relation", mutual ? "mutual" : "added");
     body.put("message", mutual
         ? "已互为好友，现在可以把 TA 邀请进账本啦"
         : "已发送添加请求，对方也添加你后即可一起记账");
+    return body;
+  }
+
+  /**
+   * 同意好友请求（P0-3）：对方已添加我（incoming），我回加一条记录即互为好友。
+   * 统一返回 { friend, relation, message }，并通知请求方「好友添加成功」。
+   */
+  public Map<String, Object> accept(String currentUserId, String requesterId) {
+    if (currentUserId.equals(requesterId)) {
+      throw ApiException.badRequest("不能添加自己为好友");
+    }
+    User requester = userMapper.selectById(requesterId);
+    if (requester == null || !"active".equals(requester.getStatus())) {
+      throw ApiException.notFound("未找到该用户对应的账户");
+    }
+    boolean iAdded = hasDirection(currentUserId, requesterId);
+    boolean addedMe = hasDirection(requesterId, currentUserId);
+    if (!addedMe) {
+      throw ApiException.notFound(iAdded ? "你们已经是好友了" : "没有收到该用户的好友请求");
+    }
+    if (!iAdded) {
+      UserFriend row = new UserFriend();
+      row.setUserId(currentUserId);
+      row.setFriendId(requesterId);
+      row.setCreatedAt(new Date());
+      userFriendMapper.insert(row);
+      User me = userMapper.selectById(currentUserId);
+      String myName = me == null ? "对方" : me.getDisplayName();
+      notificationService.createFriendAccepted(requesterId, currentUserId, myName);
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("friend", toUserResponse(currentUserId, requester));
+    body.put("relation", "mutual");
+    body.put("message", "已同意好友请求，你们现在互为好友了");
     return body;
   }
 

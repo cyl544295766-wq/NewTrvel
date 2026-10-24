@@ -58,16 +58,18 @@ public class TripPdfService {
   private final TripExpenseMapper expenseMapper;
   private final PhotoMapper photoMapper;
   private final TripMemberService tripMemberService;
+  private final FileStorageService fileStorageService;
 
   public TripPdfService(TripMapper tripMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripExpenseMapper expenseMapper, PhotoMapper photoMapper,
-      TripMemberService tripMemberService) {
+      TripMemberService tripMemberService, FileStorageService fileStorageService) {
     this.tripMapper = tripMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.expenseMapper = expenseMapper;
     this.photoMapper = photoMapper;
     this.tripMemberService = tripMemberService;
+    this.fileStorageService = fileStorageService;
   }
 
   public Map<String, Object> export(String tripId, String userId) throws java.io.IOException {
@@ -423,11 +425,19 @@ public class TripPdfService {
 
     private PDImageXObject tryLoadImage(String dataUrl) {
       try {
-        String[] parts = dataUrl.split(",", 2);
-        if (parts.length != 2) {
+        // P3-1 文件出库：支持 /files/ 受管路径（磁盘）与 data URL 两种来源
+        byte[] bytes = null;
+        if (fileStorageService.isManagedFileUrl(dataUrl)) {
+          bytes = fileStorageService.readManagedFile(dataUrl);
+        } else {
+          String[] parts = dataUrl.split(",", 2);
+          if (parts.length == 2) {
+            bytes = Base64.getDecoder().decode(parts[1].replaceAll("\\s", ""));
+          }
+        }
+        if (bytes == null) {
           return null;
         }
-        byte[] bytes = Base64.getDecoder().decode(parts[1].replaceAll("\\s", ""));
         return PDImageXObject.createFromByteArray(document, bytes, null);
       } catch (Exception ex) {
         return null;

@@ -16,9 +16,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NotificationService {
 
   private final NotificationMapper notificationMapper;
+  private final NotificationStreamService streamService;
 
-  public NotificationService(NotificationMapper notificationMapper) {
+  public NotificationService(NotificationMapper notificationMapper,
+      NotificationStreamService streamService) {
     this.notificationMapper = notificationMapper;
+    this.streamService = streamService;
   }
 
   public Map<String, Object> findAll(String userId, String pageValue, String pageSizeValue) {
@@ -42,6 +45,11 @@ public class NotificationService {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("notifications", items);
     body.put("total", total);
+    // P2-4 口径补充：total 仅统计未过期通知（会随过期变少），totalUnfiltered 为该用户全部通知数，
+    // 供需要稳定总数的调用方使用
+    Long totalUnfiltered = notificationMapper.selectCount(new LambdaQueryWrapper<Notification>()
+        .eq(Notification::getUserId, userId));
+    body.put("totalUnfiltered", totalUnfiltered);
     body.put("page", page);
     body.put("pageSize", pageSize);
     body.put("totalPages", (int) Math.ceil((double) total / pageSize));
@@ -67,6 +75,7 @@ public class NotificationService {
     notification.setIsRead(true);
     notification.setReadAt(new Date());
     notificationMapper.updateById(notification);
+    streamService.notifyUnreadChanged(userId, "read"); // P3-2
     return Map.of("success", true);
   }
 
@@ -80,6 +89,7 @@ public class NotificationService {
       notification.setReadAt(now);
       notificationMapper.updateById(notification);
     }
+    streamService.notifyUnreadChanged(userId, "read_all"); // P3-2
     return Map.of("success", true, "count", unread.size());
   }
 
@@ -88,6 +98,31 @@ public class NotificationService {
         .eq(Notification::getUserId, userId)
         .eq(Notification::getIsRead, true));
     return Map.of("success", true, "count", count);
+  }
+
+  /** 删除单条通知（仅本人可删）。 */
+  public Map<String, Object> delete(String notificationId, String userId) {
+    Notification notification = notificationMapper.selectById(notificationId);
+    if (notification == null || !notification.getUserId().equals(userId)) {
+      throw ApiException.notFound("通知不存在");
+    }
+    notificationMapper.deleteById(notificationId);
+    streamService.notifyUnreadChanged(userId, "deleted"); // P3-2
+    return Map.of("success", true);
+  }
+
+  /** 好友请求：A 添加 B（尚未互为好友）时通知 B。 */
+  public void createFriendRequest(String toUserId, String fromUserId, String fromDisplayName) {
+    create(toUserId, "friend", "收到好友请求",
+        fromDisplayName + " 想添加你为好友，回加后即可互为好友、一起记账。",
+        "/friends/", Map.of("kind", "friend_request", "fromUserId", fromUserId), "normal", null);
+  }
+
+  /** 好友达成：一侧回加后通知另一侧。 */
+  public void createFriendAccepted(String toUserId, String otherUserId, String otherDisplayName) {
+    create(toUserId, "friend", "好友添加成功",
+        "你与 " + otherDisplayName + " 已互为好友，现在可以互发私信、互相邀请进账本了。",
+        "/friends/", Map.of("kind", "friend_accepted", "fromUserId", otherUserId), "normal", null);
   }
 
   public void createMemberInvited(String userId, String tripId, String tripTitle, String role) {
@@ -190,6 +225,7 @@ public class NotificationService {
     notification.setPriority(priority);
     notification.setExpiresAt(expiresAt);
     notificationMapper.insert(notification);
+    streamService.notifyUnreadChanged(userId, type); // P3-2：实时推送未读变化
   }
 
   private Map<String, Object> toResponse(Notification notification) {

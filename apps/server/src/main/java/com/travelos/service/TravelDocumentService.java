@@ -28,15 +28,17 @@ public class TravelDocumentService {
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
+  private final FileStorageService fileStorageService;
 
   public TravelDocumentService(TravelDocumentMapper documentMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
-      AuditService auditService) {
+      AuditService auditService, FileStorageService fileStorageService) {
     this.documentMapper = documentMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
+    this.fileStorageService = fileStorageService;
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -55,6 +57,10 @@ public class TravelDocumentService {
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
     String url = string(dto.get("url"));
     validateDocumentUrl(url);
+    // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
+    if (fileStorageService.isDataUrl(url)) {
+      url = fileStorageService.storeDataUrl(url);
+    }
     long count = documentMapper.selectCount(new LambdaQueryWrapper<TravelDocument>()
         .eq(TravelDocument::getTripId, tripId));
     if (count >= MAX_DOCUMENTS_PER_TRIP) {
@@ -92,7 +98,13 @@ public class TravelDocumentService {
     tripMemberService.requireOwnerOrManager(tripId, document.getUploaderId(), userId, "上传者");
     if (dto.containsKey("url") && dto.get("url") != null) {
       validateDocumentUrl(dto.get("url").toString());
-      document.setUrl(dto.get("url").toString());
+      String newUrl = dto.get("url").toString();
+      // P3-1：data URL 落盘替换，并清理被替换的旧受管文件
+      if (fileStorageService.isDataUrl(newUrl)) {
+        newUrl = fileStorageService.storeDataUrl(newUrl);
+        fileStorageService.deleteIfManaged(document.getUrl());
+      }
+      document.setUrl(newUrl);
     }
     if (dto.containsKey("tripDayId")) {
       String tripDayId = optionalString(dto.get("tripDayId"));
@@ -134,6 +146,7 @@ public class TravelDocumentService {
     TravelDocument document = requireDocument(tripId, documentId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, document.getUploaderId(), userId, "上传者");
+    fileStorageService.deleteIfManaged(document.getUrl()); // P3-1：清理磁盘文件（data URL 自动跳过）
     documentMapper.deleteById(documentId);
     auditService.record(userId, tripId, "document_deleted", "travel_document", documentId,
         Map.of("title", document.getTitle()));

@@ -29,20 +29,27 @@ public class BookingService {
   private static final Map<String, Integer> DEFAULT_REMINDER_MINUTES = Map.of(
       "flight", 24 * 60, "hotel", 24 * 60, "train", 2 * 60, "ticket", 24 * 60, "other", 60);
 
+  /** P1-1 一键核销：预订类型 → 费用类别（与 TripExpenseService 的口径一致） */
+  private static final Map<String, String> TYPE_TO_EXPENSE_CATEGORY = Map.of(
+      "flight", "transport", "train", "transport", "hotel", "hotel",
+      "ticket", "ticket", "other", "other");
+
   private final BookingMapper bookingMapper;
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
+  private final TripExpenseService tripExpenseService;
 
   public BookingService(BookingMapper bookingMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
-      AuditService auditService) {
+      AuditService auditService, TripExpenseService tripExpenseService) {
     this.bookingMapper = bookingMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
+    this.tripExpenseService = tripExpenseService;
   }
 
   @Transactional
@@ -109,6 +116,54 @@ public class BookingService {
     auditService.record(userId, tripId, "booking_deleted", "booking", bookingId,
         Map.of("title", booking.getTitle(), "type", booking.getType()));
     return Map.of("success", true);
+  }
+
+  /**
+   * P1-1 一键核销：把预订金额转为一笔费用（消除预订/费用双录）。
+   * 规则：金额 = bookings.amount；类别按类型映射（flight/train→transport、hotel→hotel、
+   * ticket→ticket、other→other）；花费时间取预订开始时间（缺省当前）；分摊默认行程成员均分；
+   * 成功后在 booking 上记 expense_id，已核销的预订退出预算"预估占用"。
+   */
+  @Transactional
+  public Map<String, Object> convertToExpense(String tripId, String bookingId, String userId) {
+    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
+    Booking booking = requireBooking(tripId, bookingId);
+    tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
+    if (booking.getExpenseId() != null && !booking.getExpenseId().isBlank()) {
+      throw ApiException.conflict("该预订已转为费用，无需重复操作");
+    }
+    if (booking.getAmount() == null || booking.getAmount().signum() <= 0) {
+      throw ApiException.badRequest("该预订未填写金额，请先补全金额再转为费用");
+    }
+    List<String> memberIds = tripMemberService.listMembers(tripId).stream()
+        .map(com.travelos.entity.TripMember::getUserId)
+        .toList();
+    Map<String, Object> dto = new LinkedHashMap<>();
+    dto.put("title", booking.getTitle());
+    dto.put("amount", booking.getAmount().toPlainString());
+    dto.put("category", TYPE_TO_EXPENSE_CATEGORY.getOrDefault(
+        booking.getType() == null ? "other" : booking.getType(), "other"));
+    if (booking.getStartTime() != null) {
+      dto.put("spentAt", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+          .format(booking.getStartTime()));
+    }
+    String memo = "由预订「" + booking.getTitle() + "」一键核销";
+    if (booking.getOrderNo() != null && !booking.getOrderNo().isBlank()) {
+      memo += "（订单号 " + booking.getOrderNo() + "）";
+    }
+    dto.put("notes", memo);
+    dto.put("shareUserIds", memberIds);
+    Map<String, Object> created = tripExpenseService.create(tripId, userId, dto);
+    @SuppressWarnings("unchecked")
+    Map<String, Object> expense = (Map<String, Object>) created.get("expense");
+    booking.setExpenseId(String.valueOf(expense.get("id")));
+    booking.setUpdatedAt(new Date());
+    bookingMapper.updateById(booking);
+    auditService.record(userId, tripId, "booking_converted", "booking", bookingId,
+        Map.of("title", booking.getTitle(),
+            "amount", Fmt.money(booking.getAmount()),
+            "expenseId", booking.getExpenseId()));
+    return Map.of("booking", toResponse(booking, true), "expense", expense);
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -315,6 +370,7 @@ public class BookingService {
     map.put("reminderEnabled", booking.getReminderEnabled());
     map.put("reminderSentAt", booking.getReminderSentAt());
     map.put("creatorId", booking.getCreatorId());
+    map.put("expenseId", booking.getExpenseId());
     map.put("createdAt", booking.getCreatedAt());
     map.put("updatedAt", booking.getUpdatedAt());
     map.put("extra", parseExtra(booking.getExtra()));

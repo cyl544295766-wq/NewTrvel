@@ -961,8 +961,13 @@
         var btn = $('bdSave');
         btn.disabled = true;
         try {
-          await apiPut('/trips/' + tripId + '/budget', { budgets: budgets });
-          showToast('类别预算已保存');
+          var saved = await apiPut('/trips/' + tripId + '/budget', { budgets: budgets });
+          // P1-2 预算归一：Σ类别预算超过行程总预算时后端返回 overTotal 提示
+          if (saved && saved.overTotal && saved.overTotalMessage) {
+            showToast(saved.overTotalMessage);
+          } else {
+            showToast('类别预算已保存');
+          }
           budgetEdit = false;
           state.budget = await apiGet('/trips/' + tripId + '/expenses/budget');
           renderBudget();

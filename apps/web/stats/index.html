@@ -549,7 +549,8 @@
         : '还没有行程记录';
       $('sCostFoot').innerHTML = num(y.tripCount) > 0
         ? '平均每趟 <b>' + money(y.averageExpensePerTrip) + '</b>'
-        : '—';
+          + (y.hasForeignCurrency ? '<br><span style="font-size:11px;color:#B8830F;">另有外币花费未折算计入</span>' : '')
+        : (y.hasForeignCurrency ? '<span style="font-size:11px;color:#B8830F;">另有外币花费未折算计入</span>' : '—');
       $('sDaysFoot').innerHTML = num(y.tripCount) > 0
         ? '平均每趟 <b>' + num(y.averageTripDays) + ' 天</b>'
         : '—';

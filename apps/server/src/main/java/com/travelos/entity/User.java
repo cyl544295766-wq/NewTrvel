@@ -37,6 +37,10 @@ public class User {
   @TableField("deleted_at")
   private Date deletedAt;
 
+  /** JWT 吊销水位（P2-1）：签发时间（iat）早于该值的令牌一律拒绝；改密/注销/禁用时刷新 */
+  @TableField("token_valid_after")
+  private Date tokenValidAfter;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -62,6 +66,8 @@ public class User {
   public void setLastLoginAt(Date lastLoginAt) { this.lastLoginAt = lastLoginAt; }
   public Date getDeletedAt() { return deletedAt; }
   public void setDeletedAt(Date deletedAt) { this.deletedAt = deletedAt; }
+  public Date getTokenValidAfter() { return tokenValidAfter; }
+  public void setTokenValidAfter(Date tokenValidAfter) { this.tokenValidAfter = tokenValidAfter; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

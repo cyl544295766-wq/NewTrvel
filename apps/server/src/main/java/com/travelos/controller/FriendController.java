@@ -45,6 +45,13 @@ public class FriendController {
     return friendService.add(user.id(), dto);
   }
 
+  /** 同意好友请求：对方已添加我，我回加后互为好友（P0-3）。{ friend, relation, message } */
+  @PostMapping("/{userId}/accept")
+  public Map<String, Object> accept(@PathVariable String userId,
+      @CurrentUser UserContext user) {
+    return friendService.accept(user.id(), userId);
+  }
+
   /** 移除我添加的好友：{ success, message } */
   @DeleteMapping("/{friendId}")
   public Map<String, Object> remove(@PathVariable String friendId,

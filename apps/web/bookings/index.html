@@ -208,6 +208,11 @@
   .bk-ops button { width: 27px; height: 27px; border: none; border-radius: 8px; background: none; color: var(--mute); font-size: 12.5px; cursor: pointer; }
   .bk-ops button:hover { background: var(--cloud); color: var(--brand); }
   .bk-ops button.del:hover { color: #D2543A; background: #FFF3F0; }
+  .bk-ops button.cv:hover { color: var(--brand); background: var(--cloud); }
+  .bk-paid {
+    font-size: 11px; font-weight: 600; color: #2A8055; background: #E9F8EE;
+    border: 1px solid #BFE5CC; border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+  }
 
   /* 航线（机票 / 火车） */
   .route { margin-top: 14px; display: flex; align-items: center; gap: 10px; }
@@ -338,7 +343,10 @@
         <h1>预订管理<span class="en">Bookings</span></h1>
         <p class="meta" id="pageMeta">正在加载…</p>
       </div>
-      <button class="btn-add" id="btnToggleForm">＋ 新建预订</button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn-plain" id="btnGoVouchers" title="查看本次行程的全部登机凭证" style="height:44px;padding:0 18px;">🎫 我的凭证</button>
+        <button class="btn-add" id="btnToggleForm">＋ 新建预订</button>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -677,7 +685,9 @@
         +     '<div class="bk-type-line">'
         +       '<span class="bk-ic">' + t.ic + '</span>'
         +       '<span class="bk-type-nm">' + t.label + '</span>'
+        +       (b.expenseId ? '<span class="bk-paid" title="金额已转入费用页，不再计入预算预估占用">已入账</span>' : '')
         +       '<span class="bk-ops">'
+        +         (!b.expenseId ? '<button type="button" class="cv" title="转为费用（等分给全部成员）">¥</button>' : '')
         +         '<button type="button" class="ed" title="编辑">✎</button>'
         +         '<button type="button" class="del" title="删除">×</button>'
         +       '</span>'
@@ -843,6 +853,9 @@
     }
     function closeForm() { $('formPanel').hidden = true; state.editingId = null; }
     $('btnToggleForm').addEventListener('click', function () { openForm(null); });
+    $('btnGoVouchers').addEventListener('click', function () {
+      location.href = '/vouchers/' + (tripId ? '?trip=' + encodeURIComponent(tripId) : '');
+    });
     $('btnCloseForm').addEventListener('click', closeForm);
     $('btnCancelForm').addEventListener('click', closeForm);
 
@@ -911,6 +924,26 @@
 
       /* 编辑 */
       if (e.target.closest('.bk-ops .ed')) { openForm(bk); return; }
+
+      /* 转为费用（P1-1 一键核销） */
+      if (e.target.closest('.bk-ops .cv')) {
+        if (!confirm('将预订「' + (bk.title || typeOf(bk.type).label) + '」的金额'
+          + (bk.amount ? ' ' + bk.amount + ' ' + (bk.currency || 'CNY') : '')
+          + ' 转为一笔费用？分摊默认等分给全部成员，可在账目页修改。')) return;
+        try {
+          var cvd = await apiPost('/trips/' + tripId + '/bookings/' + id + '/convert-expense', {});
+          if (cvd && cvd.booking) {
+            Object.assign(bk, cvd.booking);
+          } else {
+            bk.expenseId = '1'; // 触发徽标，待下次 load 校准
+          }
+          buildFilters();
+          render();
+          refreshReminders();
+          showToast('已转为费用，可在「账目」页查看明细');
+        } catch (err) { showToast(humanError(err)); }
+        return;
+      }
 
       /* 删除（票根按钮或 hover × 都可） */
       if (e.target.closest('.stub-del') || e.target.closest('.bk-ops .del')) {

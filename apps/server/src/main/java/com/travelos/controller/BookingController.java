@@ -66,4 +66,12 @@ public class BookingController {
       @CurrentUser UserContext user) {
     return bookingService.delete(tripId, bookingId, user.id());
   }
+
+  /** P1-1 一键核销：预订金额转为费用（等分给全部成员），booking 记 expense_id 并退出预估占用。 */
+  @RequireTripRole({"owner", "admin", "member"})
+  @PostMapping("/{bookingId}/convert-expense")
+  public Map<String, Object> convertExpense(@PathVariable String tripId,
+      @PathVariable String bookingId, @CurrentUser UserContext user) {
+    return bookingService.convertToExpense(tripId, bookingId, user.id());
+  }
 }

@@ -27,15 +27,17 @@ public class PhotoService {
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
+  private final FileStorageService fileStorageService;
 
   public PhotoService(PhotoMapper photoMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
-      AuditService auditService) {
+      AuditService auditService, FileStorageService fileStorageService) {
     this.photoMapper = photoMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
+    this.fileStorageService = fileStorageService;
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -57,6 +59,10 @@ public class PhotoService {
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
     String url = string(dto.get("url"));
     validatePhotoUrl(url);
+    // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
+    if (fileStorageService.isDataUrl(url)) {
+      url = fileStorageService.storeDataUrl(url);
+    }
     long count = photoMapper.selectCount(new LambdaQueryWrapper<Photo>()
         .eq(Photo::getTripId, tripId));
     if (count >= MAX_PHOTOS_PER_TRIP) {
@@ -128,6 +134,7 @@ public class PhotoService {
     Photo photo = requirePhoto(tripId, photoId);
     // 数据隔离：仅上传者本人或行程 owner/admin 可删除（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
+    fileStorageService.deleteIfManaged(photo.getUrl()); // P3-1：清理磁盘文件（data URL 自动跳过）
     photoMapper.deleteById(photoId);
     auditService.record(userId, tripId, "photo_deleted", "photo", photoId,
         Map.of("caption", photo.getCaption() == null ? "" : photo.getCaption()));

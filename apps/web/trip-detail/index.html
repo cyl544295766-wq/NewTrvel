@@ -833,6 +833,7 @@
         { name: '文档',     hint: '证件票据', badge: cnt(c.documents, '份'), bg: '#EFEAFB', fg: '#6B4FC0', icon: '▤', link: '/documents/?trip=' + encodeURIComponent(tripId) },
         { name: '打包清单', hint: '行囊准备', badge: cnt(c.packing, '单'), bg: '#E6F4EC', fg: '#3D8B64', icon: '◫', link: '/packing/?trip=' + encodeURIComponent(tripId) },
         { name: '预订',     hint: '机票酒店', badge: bookingsCount + ' 单', bg: '#FCECE4', fg: '#C1704A', icon: '▷', link: '/bookings/?trip=' + encodeURIComponent(tripId) },
+        { name: '凭证',     hint: '票面速查', badge: bookingsCount + ' 张', bg: '#F0F5F4', fg: '#4A6B62', icon: '▦', link: '/vouchers/?trip=' + encodeURIComponent(tripId) },
         { name: '游记',     hint: '记录时刻', badge: cnt(c.journals, '篇'), bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
       ];
 

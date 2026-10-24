@@ -29,7 +29,17 @@ jwt:
 
 auth:
   cookie-name: ${AUTH_COOKIE_NAME:access_token}
-  secure-cookie: false
+  # P2-2：生产（HTTPS）务必置 true，令牌 Cookie 不再走明文
+  secure-cookie: ${AUTH_SECURE_COOKIE:false}
+
+cors:
+  # P2-2：跨域白名单（逗号分隔）；留空 = 仅同源可用（默认安全态）
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+travelos:
+  files:
+    # P3-1：上传文件落盘目录（相对路径基于工作目录；生产建议绝对路径并纳入备份）
+    dir: ${FILES_DIR:}
 
 amap:
   web-service-key: ${AMAP_WEB_SERVICE_KEY:}

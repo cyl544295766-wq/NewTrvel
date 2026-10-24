@@ -59,6 +59,15 @@ public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumen
     if (user == null || !"active".equals(user.getStatus())) {
       throw ApiException.unauthorized("账户已注销或不可用");
     }
+    // P2-1 JWT 吊销：改密/注销/禁用时刷新 token_valid_after 水位，
+    // 签发时间早于水位的旧令牌（含泄露/他人设备的）立即失效
+    if (user.getTokenValidAfter() != null) {
+      Object iat = payload.get("iat");
+      long issuedSeconds = iat instanceof Number n ? n.longValue() : 0L;
+      if (issuedSeconds < user.getTokenValidAfter().getTime() / 1000L) {
+        throw ApiException.unauthorized("登录凭证已失效，请重新登录");
+      }
+    }
     // 桥接 MyBatis-Plus 数据权限拦截器（afterCompletion 清理，防线程复用串号）
     com.travelos.common.TripScopeContext.setUserId(user.getId());
     request.setAttribute(USER_ATTRIBUTE, new UserContext(sub.toString(), username.toString(), user.getRole()));

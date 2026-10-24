@@ -345,13 +345,14 @@
       toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
     }
 
-    /* ===== 类型定义（DB 枚举 6 值） ===== */
+    /* ===== 类型定义（DB 枚举 7 值） ===== */
     var TYPES = [
       { value: 'trip_upcoming',     label: '行程临近', ic: '🧳', c: '#FF8A4C' },
       { value: 'document_expiring', label: '文档到期', ic: '📄', c: '#B8830F' },
       { value: 'packing_pending',   label: '打包待办', ic: '🎒', c: '#2A8055' },
       { value: 'member_invited',    label: '成员邀请', ic: '✉', c: '#6B4FC0' },
       { value: 'role_changed',      label: '角色变更', ic: '👤', c: '#2F6FB5' },
+      { value: 'friend',            label: '好友',     ic: '🤝', c: '#C2566C' },
       { value: 'system',            label: '系统通知', ic: '🔔', c: '#5B6B7C' }
     ];
     function typeOf(v) {
@@ -364,7 +365,9 @@
       booking_reminder: '🎫',
       precheck: '✅',
       member_invited: '✉',
-      role_changed: '👤'
+      role_changed: '👤',
+      friend_request: '🤝',
+      friend_accepted: '🤝'
     };
     var $ = function (id) { return document.getElementById(id); };
     var PAGE_SIZE = 20;
@@ -524,6 +527,7 @@
         +     '<span class="n-ops">'
         +       (n.isRead ? '' : '<button type="button" class="rd" title="标记已读">✓</button>')
         +       (href ? '<button type="button" class="go" title="跳转">↗</button>' : '')
+        +       '<button type="button" class="del" title="删除">✕</button>'
         +     '</span>'
         +   '</div>'
         + '</article>';
@@ -617,6 +621,17 @@
           refreshUnreadCount();
           showToast('已标记为已读');
         } catch (err) { showToast(humanError(err)); }
+        return;
+      }
+      if (e.target.closest('.del')) {
+        if (!confirm('删除这条通知？此操作不可恢复。')) return;
+        try {
+          await apiDelete('/notifications/' + encodeURIComponent(id));
+          state.items = state.items.filter(function (x) { return x.id !== id; });
+          render();
+          refreshUnreadCount();
+          showToast('已删除通知');
+        } catch (err) { showToast(humanError(err)); }
       }
     });
 
@@ -644,6 +659,25 @@
       state.page = 1;
       try { await loadPage(false); showToast('已刷新'); } catch (err) { showToast(humanError(err)); }
     });
+
+    /* ===== 实时订阅（P3-2 SSE）：未读变化即时刷新徽标与列表；失败静默回落轮询/手动刷新 ===== */
+    (function subscribeLive() {
+      if (!window.EventSource) return;
+      try {
+        var es = new EventSource('/api/notifications/stream');
+        var pending = false;
+        es.addEventListener('unread', async function () {
+          if (pending) return; // 合并短窗口内的连续推送
+          pending = true;
+          setTimeout(async function () {
+            pending = false;
+            refreshUnreadCount();
+            try { state.page = 1; await loadPage(false); } catch (err) { /* 保持现有内容 */ }
+          }, 400);
+        });
+        es.onerror = function () { /* EventSource 自动重连；重连失败则维持原有轮询节奏 */ };
+      } catch (err) { /* 浏览器不支持则忽略 */ }
+    })();
 
     boot();
   })();

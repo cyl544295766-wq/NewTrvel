@@ -73,13 +73,14 @@ public class TripExpenseService {
   private final TripBudgetMapper budgetMapper;
   private final TripSettlementMapper settlementMapper;
   private final NotificationService notificationService;
+  private final FileStorageService fileStorageService;
 
   public TripExpenseService(TripExpenseMapper expenseMapper, TripExpenseShareMapper shareMapper,
       TripMemberService tripMemberService, TripMapper tripMapper,
       com.travelos.mapper.UserMapper userMapper, AuditService auditService,
       TripDayMapper tripDayMapper, TripPlaceMapper tripPlaceMapper, BookingMapper bookingMapper,
       TripBudgetMapper budgetMapper, TripSettlementMapper settlementMapper,
-      NotificationService notificationService) {
+      NotificationService notificationService, FileStorageService fileStorageService) {
     this.expenseMapper = expenseMapper;
     this.shareMapper = shareMapper;
     this.tripMemberService = tripMemberService;
@@ -92,6 +93,7 @@ public class TripExpenseService {
     this.budgetMapper = budgetMapper;
     this.settlementMapper = settlementMapper;
     this.notificationService = notificationService;
+    this.fileStorageService = fileStorageService;
   }
 
   public Map<String, Object> findAll(String tripId, String userId) {
@@ -337,6 +339,10 @@ public class TripExpenseService {
       if (booking.getAmount() == null) {
         continue;
       }
+      // P1-1：已核销（转为费用）的预订计入"已花费"，不再计入预估占用，避免双算
+      if (booking.getExpenseId() != null && !booking.getExpenseId().isBlank()) {
+        continue;
+      }
       long cents = toCentsQuiet(booking.getAmount());
       String category = BOOKING_TYPE_TO_CATEGORY.getOrDefault(booking.getType(), "other");
       estimatedByCategory.merge(category, cents, Long::sum);
@@ -428,7 +434,24 @@ public class TripExpenseService {
         budgetMapper.updateById(existing);
       }
     }
-    return getBudget(tripId, userId);
+    // P1-2 预算归一：trips.budget 是总预算唯一来源，Σ类别预算超过总预算时提示（不阻断保存）
+    java.math.BigDecimal totalCategoryBudget = java.math.BigDecimal.ZERO;
+    for (TripBudget budget : budgetMapper.selectList(new LambdaQueryWrapper<TripBudget>()
+        .eq(TripBudget::getTripId, tripId))) {
+      if (budget.getAmount() != null) {
+        totalCategoryBudget = totalCategoryBudget.add(budget.getAmount());
+      }
+    }
+    Map<String, Object> body = new LinkedHashMap<>(getBudget(tripId, userId));
+    Trip trip = tripMapper.selectById(tripId);
+    if (trip != null && trip.getBudget() != null && trip.getBudget().signum() > 0
+        && totalCategoryBudget.compareTo(trip.getBudget()) > 0) {
+      body.put("overTotal", true);
+      body.put("overTotalMessage", "类别预算合计 " + Fmt.money(totalCategoryBudget)
+          + " 已超过行程总预算 " + Fmt.money(trip.getBudget())
+          + "，建议调整各项使合计不超过总预算");
+    }
+    return body;
   }
 
   // ==================== 需求 3：多人分摊与结算 ====================
@@ -829,6 +852,10 @@ public class TripExpenseService {
     if (url == null) {
       return null;
     }
+    // P3-1：受管文件路径（此前已落盘的 URL）直接放行
+    if (fileStorageService.isManagedFileUrl(url)) {
+      return url;
+    }
     if (url.startsWith("data:")) {
       String[] parts = PhotoUtil.parsePhotoDataUrl(url);
       if (parts == null) {
@@ -837,7 +864,8 @@ public class TripExpenseService {
       if (PhotoUtil.base64Bytes(parts[1]) > PhotoUtil.MAX_PHOTO_BYTES) {
         throw ApiException.badRequest("小票图片不能超过 5MB");
       }
-      return url;
+      // P3-1 文件出库：data URL 落盘，DB 只存访问路径
+      return fileStorageService.storeDataUrl(url);
     }
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       throw ApiException.badRequest("小票地址格式不正确");

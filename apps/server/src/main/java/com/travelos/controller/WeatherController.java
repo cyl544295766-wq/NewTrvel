@@ -26,9 +26,7 @@ public class WeatherController {
     return weatherService.getTripWeather(tripId, user.id());
   }
 
-  @GetMapping("/{tripDayId}")
-  public Map<String, Object> tripDayWeather(@PathVariable String tripId,
-      @PathVariable String tripDayId, @CurrentUser UserContext user) {
-    return weatherService.getTripDayWeather(tripId, tripDayId, user.id());
-  }
+  /** P1-4 冗余路由下线（2026-10-24）：
+   *  原 GET /{tripDayId} 单日预报与整程预报返回同一份数据，前端从未接入
+   *  （见 docs/architecture/未接入清单.md），故移除，仅保留整程预报。 */
 }

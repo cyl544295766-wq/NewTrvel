@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travel OS（D:/NewTrevl）流程诊断与优化方案</title>
+<style>
+  :root {
+    --ink:#1d3a34; --ink-2:#4a6b62; --ink-3:#7d968e;
+    --teal:#0f8a6d; --teal-deep:#0a5c4a; --teal-soft:#e3f5ef; --teal-mist:#f2faf7;
+    --line:#dcebe5; --card:#fff; --bg:#f6fbf9;
+    --red:#d4574e; --red-soft:#fdeeec;
+    --amber:#b97e1c; --amber-soft:#fdf5e6;
+    --blue:#2f7bbf; --blue-soft:#eaf4fb;
+    --purple:#6b4fc0; --purple-soft:#f1ecfb;
+    --radius:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;background:var(--bg);color:var(--ink);line-height:1.75;font-size:15px}
+  .page{max-width:1020px;margin:0 auto;padding:48px 32px 80px}
+  header.hero{text-align:center;padding:24px 0 40px}
+  .hero .kicker{display:inline-block;font-size:13px;letter-spacing:4px;color:var(--teal);background:var(--teal-soft);padding:6px 18px;border-radius:999px;margin-bottom:20px}
+  .hero h1{font-size:32px;font-weight:600;letter-spacing:1px}
+  .hero p.sub{color:var(--ink-2);margin-top:12px}
+  .hero .meta{color:var(--ink-3);font-size:13px;margin-top:8px}
+  section{margin-top:48px}
+  h2{font-size:22px;font-weight:600;color:var(--teal-deep);display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  h2 .no{font-size:13px;font-weight:600;color:var(--teal);background:var(--teal-soft);border-radius:8px;padding:2px 10px}
+  .lead{color:var(--ink-2);margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px 28px;box-shadow:0 6px 24px rgba(15,138,109,.06);margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;color:var(--teal-deep);font-weight:600;padding:9px 12px;border-bottom:2px solid var(--teal-soft);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;font-size:12px;padding:2px 10px;border-radius:999px;white-space:nowrap}
+  .tag.red{background:var(--red-soft);color:var(--red)}
+  .tag.amber{background:var(--amber-soft);color:var(--amber)}
+  .tag.blue{background:var(--blue-soft);color:var(--blue)}
+  .tag.teal{background:var(--teal-soft);color:var(--teal-deep)}
+  .tag.purple{background:var(--purple-soft);color:var(--purple)}
+  .tag.green{background:var(--teal-soft);color:var(--teal-deep)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .metric{background:var(--teal-mist);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;text-align:center}
+  .metric .num{font-size:28px;font-weight:600;color:var(--teal)}
+  .metric .lab{font-size:13px;color:var(--ink-2);margin-top:4px}
+  .flow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+  .flow .step{background:var(--teal-soft);color:var(--teal-deep);font-size:13px;padding:6px 14px;border-radius:10px;font-weight:500}
+  .flow .step.bad{background:var(--red-soft);color:var(--red)}
+  .flow .step.mute{background:#eef3f1;color:var(--ink-3)}
+  .flow .arr{color:var(--ink-3);font-size:14px}
+  .note{background:var(--amber-soft);border-left:3px solid var(--amber);border-radius:8px;padding:12px 16px;font-size:14px;color:#6b5417;margin-top:12px}
+  .good{background:var(--teal-mist);border-left:3px solid var(--teal);border-radius:8px;padding:12px 16px;font-size:14px;color:var(--teal-deep);margin-top:12px}
+  ul.plain{list-style:none}
+  ul.plain li{padding:6px 0 6px 24px;position:relative}
+  ul.plain li::before{content:"";position:absolute;left:4px;top:15px;width:7px;height:7px;border-radius:50%;background:var(--teal)}
+  ul.plain li b{color:var(--teal-deep)}
+  code{background:var(--teal-mist);color:var(--teal-deep);padding:1px 7px;border-radius:6px;font-size:13px;font-family:Consolas,monospace}
+  .phase{border-top:3px solid var(--teal)}
+  .phase.p0{border-color:var(--red)}
+  .phase.p1{border-color:var(--amber)}
+  .phase.p2{border-color:var(--blue)}
+  footer{text-align:center;color:var(--ink-3);font-size:13px;margin-top:64px}
+  @media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <span class="kicker">流程优化专家 · 顺路</span>
+  <h1>Travel OS（D:/NewTrevl）流程诊断与优化方案</h1>
+  <p class="sub">Spring Boot（24 Controller / 27 Entity / 28 迁移脚本）× 多页前端（22 页面目录）× PostgreSQL 16</p>
+  <p class="meta">走查日期 2026-10-24 · 10 条核心旅程 · 22 项问题（断点 5 / 返工 5 / 等待 3 / 口径 3 / 安全 6）</p>
+</header>
+
+<!-- 01 全景 -->
+<section>
+  <h2><span class="no">01</span>运行架构与流程全景</h2>
+  <p class="lead">后端既是 API 又是静态服务器，同源部署无跨域；JWT 双通道（Bearer 优先、Cookie 回落）；MyBatis-Plus 行级数据权限 + 行程四角色（owner/admin/member/viewer）。文档体系完备，<code>docs/architecture/未接入清单.md</code> 是现成的断链台账。</p>
+  <div class="card">
+    <table>
+      <tr><th>旅程</th><th>链路</th><th>状态</th></tr>
+      <tr><td><b>J1</b> 注册登录</td><td>login → /auth/register|login → JWT → home（/dashboard 聚合）</td><td><span class="tag green">通</span></td></tr>
+      <tr><td><b>J2</b> 行程 CRUD</td><td>trip-form → /trips → trips 列表 → trip-detail（枢纽）→ 8 磁贴</td><td><span class="tag green">通</span></td></tr>
+      <tr><td><b>J3</b> 行程规划</td><td>itinerary（天/地点/换天/排序/编辑锁）+ map + packing</td><td><span class="tag green">通</span><span class="tag amber">联想未接 UI</span></td></tr>
+      <tr><td><b>J4</b> 预订凭证</td><td>bookings CRUD → vouchers（实时聚合，自动生成）</td><td><span class="tag red">凭证页无入口</span></td></tr>
+      <tr><td><b>J5</b> 费用结算</td><td>expenses（三分摊）→ settlement 确认 → 快照+全员通知</td><td><span class="tag amber">预订不转费用</span></td></tr>
+      <tr><td><b>J6</b> 记录沉淀</td><td>photos（data URL）+ journals → journal-detail（编辑锁）</td><td><span class="tag green">通</span></td></tr>
+      <tr><td><b>J7</b> 社交</td><td>friends（搜索/添加/私信）+ square（公开/好友攻略、复制）</td><td><span class="tag red">无同意流程</span></td></tr>
+      <tr><td><b>J8</b> 管理</td><td>admin（概览/用户禁用/CI 状态），requireSuperAdmin 兜底</td><td><span class="tag green">通</span></td></tr>
+      <tr><td><b>J9</b> 通知</td><td>8 处产生源 → notifications → 已读/清空；定时器：预订提醒+天气</td><td><span class="tag amber">无实时推送/单条删除</span></td></tr>
+      <tr><td><b>J10</b> 统计</td><td>stats 六接口，按"参与的全部行程"口径</td><td><span class="tag amber">硬编码 CNY</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 02 瓶颈归因 -->
+<section>
+  <h2><span class="no">02</span>瓶颈归因（22 项问题五类归因）</h2>
+
+  <div class="card phase p0">
+    <b style="font-size:16px;color:var(--red)">A · 断点（5 项）—— 链路存在但用户走不进去</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>#1 凭证页几乎无入口（最高优先）：</b>trip-detail 8 磁贴没有"凭证"（<code>trip-detail/index.html</code> L829-836），bookings 页也无任何链接指向 vouchers。唯一入口藏在预订提醒通知的 staticLink 里——功能做得好（凭证=bookings 实时聚合，自动生成），但用户发现不了。</li>
+      <li><b>#2 地点联想未接 UI：</b>后端 <code>GET /api/places/suggestions</code>（高德 Web Key）实测可用，itinerary 添加地点仍是纯手输。</li>
+      <li><b>#3 通知无单条删除：</b>只有 clear-read，历史通知无法逐条清理。</li>
+      <li><b>#4 好友无"接受/拒绝"：</b>user_friends 单向记录，A 加 B 只算"已发送"，互加全靠对方主动撞见，且加好友后对方零通知。</li>
+      <li><b>#5 数据导入缺失：</b>账户页有导出 JSON，导入按钮存在但禁用、后端无接口。</li>
+    </ul>
+  </div>
+
+  <div class="card phase p1">
+    <b style="font-size:16px;color:var(--amber)">B · 返工（5 项）—— 同一数据多处维护 / 重复建设</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>#6 预订→费用不流转：</b>bookings.amount 记过，实际花费还要在 expenses 再录一笔；预算对比只用"预估占用"桥接（booking 金额直接拼进 getBudget），"预估→实付"无核销动作。用户视角是<b>同一笔钱录两次</b>。</li>
+      <li><b>#7 两套预算并行：</b><code>trips.budget</code>（总预算）与 <code>trip_budgets</code>（类别预算）无勾稽关系，容易对不上。</li>
+      <li><b>#8 冗余路由 3 个：</b>GET <code>/trips/{id}/budget</code> 与 <code>/expenses/budget</code> 同 service；weather 单日端点前端有意不接。</li>
+      <li><b>#9 两套编辑锁表：</b><code>journal_edit_locks</code> 与 <code>edit_locks</code>（天级）结构相似分表而建。</li>
+      <li><b>#10 二维码是假的：</b><code>assets/js/qr.js</code> 自绘 finder+伪随机点，扫不出数据——现场值机/入住场景不可用，凭证页的实用价值被腰斩。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px;color:var(--blue)">C · 等待（3 项）—— 依赖异步但未闭环</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>#11 外部依赖静默降级：</b>LLM 三元组未配则 AI 整体不可用、高德 Key 缺失联想 503，均无强提示。</li>
+      <li><b>#12 通知无实时性：</b>无 WebSocket/SSE，预订/天气提醒靠定时器写库，用户须刷新才看到。</li>
+      <li><b>#13 路线规划失败静默回落：</b>map 页驾车路线失败仅 routeNotice 轻提示，成败口径不显性。</li>
+    </ul>
+    <b style="font-size:16px;color:var(--purple);display:block;margin-top:16px">D · 口径（3 项）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>#14 统计硬编码 CNY：</b>bookings 支持任意币种，但统计/结算按 CNY 直加（<code>TravelStatsService</code> 的 PRIMARY_CURRENCY），外币花费直接失真。</li>
+      <li><b>#15 通知分页 total 会变小：</b>过滤已过期行导致 total 与表内行数不一致，前端按 total 翻页会跳变（api-design.md 已自述）。</li>
+      <li><b>#16 角色命名两套：</b>行程 owner/admin/member/viewer vs 平台 user/super_admin；admin 页硬编码 <code>role!=="super_admin"</code>，后端扩展角色会漏判。</li>
+    </ul>
+    <b style="font-size:16px;color:var(--red);display:block;margin-top:16px">E · 安全（6 项）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>#17 JWT 不可吊销：</b>logout 只清 Cookie，改密不强制下线，无 refresh/blacklist，泄露后 7 天窗口无法作废。</li>
+      <li><b>#18 CORS 过宽：</b>allowedOriginPatterns <code>*</code> + allowCredentials(true)。</li>
+      <li><b>#19 secure-cookie=false 且部署模板缺该变量。</b></li>
+      <li><b>#20 页面骨架无服务端鉴权：</b>数据靠 API 401 兜底，admin 入口仅 CSS 隐藏（后端有兜底，风险可控）。</li>
+      <li><b>#21 文件以 data URL 入库：</b>照片/证件 base64 直存 PostgreSQL，无对象存储分离，500 张/行程上限下压力可观。</li>
+      <li><b>#22 种子管理员弱口令 admin123 且每次启动重置。</b></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 03 优化方案 -->
+<section>
+  <h2><span class="no">03</span>优化方案：四阶段实施</h2>
+  <p class="lead">顺序：先补入口（用户找得到）→ 再通流转（数据自己跑）→ 然后治理横切风险 → 最后做架构升级。每阶段独立可验收，并可直接登记进 <code>docs/architecture/未接入清单.md</code>。</p>
+
+  <div class="card phase p0">
+    <b style="font-size:16px">P0 · 补断点入口（约 1 天，全部是前端 + 一两个轻端点）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>凭证入口 ×2：</b>trip-detail 模块数组加入 vouchers 磁贴（第 9 格，或并入 bookings 磁贴副链接）；bookings 页头部加「🎫 我的凭证」按钮链到 <code>/vouchers/?trip=</code>。</li>
+      <li><b>好友请求闭环：</b>加好友时向对方发 notifications（type=friend_request，metadata 带 fromUserId）；friends 页区分「已发送/待对方确认/已是好友」三态；后端补 <code>POST /api/friends/{id}/accept</code>（互加成功才成为好友，向双方发通知）。保持 user_friends 表结构不变即可实现。</li>
+      <li><b>通知单条删除：</b>后端补 <code>DELETE /api/notifications/{id}</code>（校验 recipient），通知页操作区加删除。</li>
+      <li><b>地点联想接 UI：</b>itinerary「添加地点」输入框接 <code>GET /api/places/suggestions</code>，防抖 300ms 下拉选择，回填地名+经纬度（trip_places 已有坐标字段）。</li>
+      <li><b>外部依赖显性提示：</b>AI 抽屉与联想接口 503/降级时给出「服务未配置」的明确空态，不再静默。</li>
+    </ul>
+  </div>
+
+  <div class="card phase p1">
+    <b style="font-size:16px">P1 · 数据自动流转，消灭双录（2–3 天）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>预订→费用一键核销：</b>bookings 卡片加「转为费用」——POST expenses 自动带金额/类别映射（flight→交通、hotel→住宿、ticket→门票）/日期（出发日）/分摊默认均分，并在 booking 上记 <code>expense_id</code>；已核销的预订显示「已入账」徽标且不再计入"预估占用"（消除 getBudget 的双算）。"实付与预付差额"可后续做补差编辑。</li>
+      <li><b>预算归一：</b>确立 <code>trips.budget</code> 为总预算唯一来源，expenses 页"类别预算"改为总预算的分项视图（trip_budgets 行在保存时校验 Σ类别 ≤ 总预算，超额给提示），消除两套预算打架。</li>
+      <li><b>真二维码：</b>凭证页改用真实二维码（值机码/订单号文本，或 booking.attachment_url 里的原始二维码图），优先方案：bookings 上传附件时保留原始二维码图并在 vouchers 页直接展示原图；无附件时退化为文本码并明确标注「示例码，不可扫描」。</li>
+      <li><b>清理冗余：</b>下线 <code>GET /trips/{id}/budget</code> 与单日 weather 端点（前端已确认不接）；<code>edit_locks</code> 与 <code>journal_edit_locks</code> 合并为一张表（加 scope 列），迁移脚本按项目惯例写成幂等 SQL。</li>
+    </ul>
+  </div>
+
+  <div class="card phase p2">
+    <b style="font-size:16px">P2 · 横切治理：口径与安全（2–3 天）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>JWT 可吊销：</b>最小方案——users 表加 <code>token_valid_after</code> 时间戳，改密/注销/禁用时刷新该值，AuthInterceptor 校验 iat ≥ token_valid_after；logout 后续可加短期黑名单（Redis 可选）。改密强制其他设备下线随之成立。</li>
+      <li><b>CORS 收紧：</b>allowedOriginPatterns 由 <code>*</code> 改为配置白名单（app.env 注入），生产关闭 allowCredentials 或固定域名。</li>
+      <li><b>Cookie 安全：</b>secure-cookie 生产强制 true（app.env.example 补变量），部署清单加检查项。</li>
+      <li><b>币种口径：</b>短期——统计接口按 currency 分组返回，非 CNY 标注"原币"；中期——引入汇率表（手动汇率即可起步），结算与年度统计统一折算，前端明确标注折算口径。</li>
+      <li><b>通知分页口径：</b>total 改为过滤后计数或响应加 <code>totalUnfiltered</code>，前端按返回 total 翻页。</li>
+      <li><b>admin 前后端口径统一：</b>admin 页改为读 <code>/auth/me</code> 的 role 判断，删掉硬编码字符串比较。</li>
+      <li><b>种子口令：</b>SeedRunner 仅在 admin 密码为默认值且非首次启动时告警；start.cmd 不再回显密码；生产部署强制改密。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px">P3 · 架构升级（按 roadmap 排期）</b>
+    <ul class="plain" style="margin-top:10px">
+      <li><b>文件出库：</b>照片/证件从 data URL 迁到对象存储（本地磁盘目录起步即可：后端提供 <code>/api/files/*</code> 静态映射 + 上传接口），DB 只存 URL——容量、备份、内存压力同时解决。</li>
+      <li><b>通知实时化：</b>Web 端 SSE（Spring SseEmitter）推送未读数变化，比 WebSocket 成本低；预订提醒触发时可即时送达。</li>
+      <li><b>数据导入：</b>与导出对称的 <code>POST /api/account/import</code>（JSON 校验 + 冲突策略：跳过/覆盖），账户页解禁导入按钮。</li>
+      <li><b>工具脚本对齐：</b>工作区 <code>api-audit.js</code>/<code>list-routes.js</code> 硬编码的 <code>apps/web-vue</code>/<code>apps/api-spring</code> 路径改为 <code>apps/web</code>/<code>apps/server</code> 并参数化，纳入 CI 与 <code>未接入清单.md</code> 联动（比对结果自动刷新台账）。</li>
+    </ul>
+    <div class="note">
+      <b>风险提示：</b>① P1「预订转费用」会改变预算口径（已核销不再计入预估占用），需同步更新 <code>docs/architecture/api-design.md</code> 的预算一节；② 编辑锁表合并涉及存量数据，务必在迁移脚本里做数据搬迁并回滚预案；③ JWT token_valid_after 方案会使改密前签发的 token 全部失效（这正是目的），但需在发布说明中告知用户重新登录；④ 所有新端点沿用 <code>@RequireTripRole</code>/行级权限框架，勿绕过。
+    </div>
+  </div>
+</section>
+
+<!-- 04 收益 -->
+<section>
+  <h2><span class="no">04</span>量化收益</h2>
+  <div class="grid3">
+    <div class="metric"><div class="num">0 → 3</div><div class="lab">凭证页入口数<br>（磁贴+bookings+通知）</div></div>
+    <div class="metric"><div class="num">2 → 1</div><div class="lab">同一笔预订金额的录入次数<br>（一键核销转费用）</div></div>
+    <div class="metric"><div class="num">靠撞见 → 通知</div><div class="lab">好友互加回执<br>（请求-同意闭环）</div></div>
+  </div>
+  <div class="grid3" style="margin-top:16px">
+    <div class="metric"><div class="num">7 天 → 即时</div><div class="lab">JWT 泄露风险窗口<br>（token_valid_after）</div></div>
+    <div class="metric"><div class="num">3 条路由</div><div class="lab">冗余端点清理<br>（budget×2/weather 单日）</div></div>
+    <div class="metric"><div class="num">1 套</div><div class="lab">预算与编辑锁归一<br>（两套→一套）</div></div>
+  </div>
+</section>
+
+<!-- 05 TO-BE -->
+<section>
+  <h2><span class="no">05</span>优化后的目标价值流（TO-BE）</h2>
+  <div class="card">
+    <b style="color:var(--teal-deep)">预订主线（用户只录一次）</b>
+    <div class="flow">
+      <span class="step">录预订</span><span class="arr">⇢</span>
+      <span class="step">凭证自动聚合</span><span class="arr">＋</span>
+      <span class="step">定时提醒</span><span class="arr">⇢</span>
+      <span class="step">一键转费用</span><span class="arr">⇢</span>
+      <span class="step">分摊/结算</span><span class="arr">⇢</span>
+      <span class="step">统计（口径统一）</span>
+    </div>
+    <b style="color:var(--teal-deep)">社交主线（有回执）</b>
+    <div class="flow">
+      <span class="step">搜索好友</span><span class="arr">→</span>
+      <span class="step">发送请求</span><span class="arr">⇢</span>
+      <span class="step">对方收通知</span><span class="arr">→</span>
+      <span class="step">同意/拒绝</span><span class="arr">→</span>
+      <span class="step">互为好友 · 可私信 · 可见 friends 攻略</span>
+    </div>
+    <div class="good">
+      <b>一句话总结：</b>这套系统的骨架很好（主链路全通、权限分层、文档齐备），当前的主要损耗不在"功能缺失"而在<b>"数据不流转、入口藏得深"</b>——让预订的金额自动流向费用、让凭证和好友请求长出入口，就是投入产出比最高的四天。
+    </div>
+  </div>
+</section>
+
+<footer>Travel OS（D:/NewTrevl）流程诊断与优化方案 · 顺路 · 2026-10-24 · 建议登记至 docs/architecture/未接入清单.md 联动管理</footer>
+</div>
+</body>
+</html>
