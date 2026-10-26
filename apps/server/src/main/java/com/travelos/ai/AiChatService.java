@@ -13,6 +13,7 @@ import com.travelos.mapper.AiMessageMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.service.AuditService;
+import com.travelos.service.AiPreferenceService;
 import com.travelos.service.BookingService;
 import com.travelos.service.PlacesService;
 import com.travelos.service.TripDayService;
@@ -119,13 +120,15 @@ public class AiChatService {
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
   private final WeatherService weatherService;
+  private final AiPreferenceService preferenceService;
 
   public AiChatService(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       LlmGatewayService llm, TripService tripService, TripDayService tripDayService,
       TripPlaceService tripPlaceService, TripPlaceMapper tripPlaceMapper, TripDayMapper tripDayMapper,
       PlacesService placesService, BookingService bookingService,
       TripExpenseService tripExpenseService, TripMemberService tripMemberService,
-      AuditService auditService, WeatherService weatherService) {
+      AuditService auditService, WeatherService weatherService,
+      AiPreferenceService preferenceService) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.llm = llm;
@@ -140,6 +143,7 @@ public class AiChatService {
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
     this.weatherService = weatherService;
+    this.preferenceService = preferenceService;
   }
 
   // ==================== 会话管理 ====================
@@ -873,6 +877,9 @@ public class AiChatService {
             requireArg(args, "keyword"), resolveCity(args, conversation), "attraction", 6));
         case "search_hotels" -> searchHotels(args, conversation, userId);
         case "get_weather" -> getWeather(args, conversation, userId);
+        case "remember_preference" -> rememberPreference(args, userId);
+        case "forget_preference" -> forgetPreference(args, userId);
+        case "list_preferences" -> listPreferences(userId);
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
@@ -965,6 +972,49 @@ public class AiChatService {
     } catch (Exception ex) {
       log.warn("get_weather 查询失败 tripId={}", tripId, ex);
       return "{\"error\":\"天气查询暂时不可用，请稍后再试；规划时先不要引用天气信息\"}";
+    }
+  }
+
+  /** 记住偏好（remember_preference 工具）：保存一条持久旅行偏好。 */
+  private String rememberPreference(Map<String, Object> args, String userId) {
+    Object content = args.get("content");
+    if (content == null || content.toString().isBlank()) {
+      return "{\"error\":\"content 不能为空，请传用户偏好的自然语言短句（如「不吃辣」）\"}";
+    }
+    try {
+      return JsonUtil.write(preferenceService.remember(userId,
+          content.toString(), stringValue(args.get("category"))));
+    } catch (ApiException ex) {
+      return "{\"error\":\"" + ex.getMessage() + "\"}";
+    } catch (Exception ex) {
+      log.warn("remember_preference 失败 userId={}", userId, ex);
+      return "{\"error\":\"偏好保存失败，请稍后再试\"}";
+    }
+  }
+
+  /** 忘记偏好（forget_preference 工具）：按内容关键词或 ID 移除。 */
+  private String forgetPreference(Map<String, Object> args, String userId) {
+    Object target = args.get("target");
+    if (target == null || target.toString().isBlank()) {
+      return "{\"error\":\"target 不能为空，传要忘记的偏好内容关键词或 ID\"}";
+    }
+    try {
+      return JsonUtil.write(preferenceService.forget(userId, target.toString()));
+    } catch (ApiException ex) {
+      return "{\"error\":\"" + ex.getMessage() + "\"}";
+    } catch (Exception ex) {
+      log.warn("forget_preference 失败 userId={}", userId, ex);
+      return "{\"error\":\"偏好移除失败，请稍后再试\"}";
+    }
+  }
+
+  /** 偏好列表（list_preferences 工具）：用户询问「我的偏好」时返回。 */
+  private String listPreferences(String userId) {
+    try {
+      return JsonUtil.write(Map.of("preferences", preferenceService.list(userId)));
+    } catch (Exception ex) {
+      log.warn("list_preferences 失败 userId={}", userId, ex);
+      return "{\"error\":\"偏好读取失败，请稍后再试\"}";
     }
   }
 
@@ -1822,6 +1872,26 @@ public class AiChatService {
         + "(b) 温差大（≥12℃）或气温极端（≥35℃/≤-5℃）时提醒携带衣物/防晒/保暖；\n"
         + "(c) 规划草稿的 notes 里可注明当天天气与提醒；\n"
         + "(d) 预报未覆盖的日期（过去、或超出预报范围）无法预知天气，直接说明即可，绝不编造天气。\n");
+    prompt.append("18. 偏好记忆（重要）：系统上下文中的「用户旅行偏好」是用户让 AI 长期记住的持久偏好，"
+        + "所有推荐（餐厅/景点/酒店）、规划（单天/整趟）与回答都必须遵守——例如用户不吃辣就绝不推荐辣味餐厅，"
+        + "并可在合适时自然提及「按您的偏好」让用户感到被记住。规则：\n"
+        + "(a) 用户表达持久偏好（忌口、玩法喜好、预算档、住宿档次、节奏、同行人群等）时，"
+        + "调用 remember_preference 保存，并用一句话简短确认（如「好的，已记住您不吃辣，之后推荐都会避开辣味」）；"
+        + "内容已保存过时工具会返回 alreadyKnown=true，此时直接说「这条我已经记着啦」；\n"
+        + "(b) 单次性/临时性要求（如「这次想去看海」）不要保存，本次遵守即可；\n"
+        + "(c) 用户要求忘记/删除某条偏好时调用 forget_preference；用户问「我的偏好」时调用 list_preferences；\n"
+        + "(d) 偏好与实际情况冲突时（如用户不吃辣但行程目的地以辣为主），如实提醒用户并提供替代方案。\n");
+    try {
+      List<String> preferenceLines = preferenceService.promptLines(conversation.getUserId());
+      if (!preferenceLines.isEmpty()) {
+        prompt.append("\n用户旅行偏好（持久记忆，推荐与规划必须遵守）：\n");
+        for (int i = 0; i < preferenceLines.size(); i++) {
+          prompt.append(i + 1).append(") ").append(preferenceLines.get(i)).append("\n");
+        }
+      }
+    } catch (Exception ignore) {
+      // 偏好读取失败不影响对话
+    }
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
@@ -2024,6 +2094,18 @@ public class AiChatService {
             + "规划行程、推荐景点/餐厅/酒店前先调用，把户外项目排在晴好天、雨雪天安排室内并提醒用户；"
             + "仅覆盖未来日期，过去的日期与超出范围的日期无数据。对话未关联行程时默认查最近行程",
         Map.of("tripId", stringProp("行程 ID，可空（默认当前对话关联行程或最近行程）"))));
+    tools.add(function("remember_preference",
+        "记住用户的一条持久旅行偏好（口味忌口/玩法喜好/预算档/住宿档次/节奏快慢/同行人群等），"
+            + "保存后所有推荐与规划都会自动遵守。仅当用户表达的是持久偏好时调用（如「我不吃辣」「带孩子出行」「住宿控制在300/晚」）；"
+            + "单次性、临时性的要求（如「这次想去海边」）不要保存，直接在本次规划遵守即可。content 用一句话短句",
+        Map.of("content", stringProp("偏好内容，一句话短句，如「不吃辣」「喜欢博物馆」「住宿 300 元/晚以内」"),
+            "category", stringProp("分类：food/activity/budget/accommodation/pace/companion/general，可空"))));
+    tools.add(function("forget_preference",
+        "忘记用户的一条旅行偏好：用户要求删除/忘记某条偏好时调用，target 传偏好内容关键词或其 ID",
+        Map.of("target", stringProp("要忘记的偏好内容关键词或 ID"))));
+    tools.add(function("list_preferences",
+        "读取当前用户已保存的全部旅行偏好（用户问「我的偏好/你记住了什么」时调用）",
+        Map.of()));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
     tools.add(function("add_booking",
