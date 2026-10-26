@@ -5,6 +5,7 @@ import com.travelos.auth.UserContext;
 import com.travelos.trip.RequireTripRole;
 import com.travelos.service.JournalCollabService;
 import com.travelos.service.TripJournalService;
+import com.travelos.service.TripRecapService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -23,10 +24,20 @@ public class TripJournalController {
 
   private final TripJournalService journalService;
   private final JournalCollabService collabService;
+  private final TripRecapService recapService;
 
-  public TripJournalController(TripJournalService journalService, JournalCollabService collabService) {
+  public TripJournalController(TripJournalService journalService, JournalCollabService collabService,
+      TripRecapService recapService) {
     this.journalService = journalService;
     this.collabService = collabService;
+    this.recapService = recapService;
+  }
+
+  /** AI 行程回顾：基于行程安排/花费/照片生成一篇私密草稿游记。 */
+  @RequireTripRole({"owner", "admin", "member"})
+  @PostMapping("/recap")
+  public Map<String, Object> recap(@PathVariable String tripId, @CurrentUser UserContext user) {
+    return recapService.generate(tripId, user.id());
   }
 
   @GetMapping

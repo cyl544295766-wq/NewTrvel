@@ -25,6 +25,12 @@ public class TravelStatsController {
     return statsService.getOverview(user.id());
   }
 
+  /** 足迹地图：按目的地聚合用户全部行程（城市/次数/天数/坐标）。 */
+  @GetMapping("/footprints")
+  public Map<String, Object> footprints(@CurrentUser UserContext user) {
+    return statsService.footprints(user.id());
+  }
+
   @GetMapping("/yearly")
   public Map<String, Object> yearly(@RequestParam(value = "year", required = false) String year,
       @CurrentUser UserContext user) {

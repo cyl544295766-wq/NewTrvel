@@ -237,6 +237,17 @@
     .stl-row { flex-wrap: wrap; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ===== 我的足迹 ===== */
+  .foot-summary { font-size: 13px; color: var(--ink); margin: 4px 0 12px; }
+  .foot-summary b { color: var(--brand); font-size: 15px; }
+  .foot-cities { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 10px; vertical-align: middle; }
+  .foot-chip { display: inline-flex; align-items: center; gap: 5px; background: #E8F6F5; color: #0D6E6E; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .foot-chip i { font-style: normal; color: #6B9C99; }
+  .foot-map { height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line, #D8ECEA); }
+  .foot-empty { color: var(--mute); font-size: 13px; padding: 14px 0; }
+  .foot-pin { display: flex; align-items: center; gap: 5px; background: #fff; border: 1.5px solid #0D6E6E; color: #0D6E6E; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,.18); white-space: nowrap; }
+  .foot-pin i { font-style: normal; background: #0D6E6E; color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -337,6 +348,14 @@
       <div class="t">年度明细 <small>· 全部年份</small></div>
       <div id="yearTable"></div>
     </div>
+
+    <!-- 我的足迹 -->
+    <div class="card" style="margin-top:16px;">
+      <div class="t">我的足迹 <small>· 去过的城市</small></div>
+      <div id="footSummary" class="foot-summary" hidden></div>
+      <div id="footMap" class="foot-map" hidden></div>
+      <div id="footEmpty" class="foot-empty" hidden>还没有可展示的足迹——创建行程并添加带坐标的地点后，这里会点亮你去过的城市。</div>
+    </div>
   </main>
 </div>
 
@@ -344,6 +363,7 @@
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
+<script src="../assets/js/amap.js"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -413,6 +433,7 @@
         buildYearPill(years.length ? years : [new Date().getFullYear()]);
         loadBudget();
         loadSettle();
+        loadFootprints();
         await loadYear(state.year);
         renderYearTable();
       } catch (err) {
@@ -472,6 +493,53 @@
               + '<div class="track-lg ' + cls + '"><i style="width:' + w.toFixed(1) + '%"></i></div>'
               + '</div>';
           }).join('') + '</div>';
+    }
+
+    /* ===== 我的足迹（足迹地图） ===== */
+    var footState = { map: null, markers: [] };
+    async function loadFootprints() {
+      var summaryBox = $('footSummary');
+      var mapBox = $('footMap');
+      var emptyBox = $('footEmpty');
+      try {
+        var d = await apiGet('/stats/footprints');
+        var cities = d.cities || [];
+        var totals = d.totals || {};
+        if (!cities.length) {
+          emptyBox.hidden = false;
+          return;
+        }
+        summaryBox.hidden = false;
+        summaryBox.innerHTML =
+          '<b>' + totals.cityCount + '</b> 个城市 · <b>' + totals.tripCount + '</b> 次出发 · 共 <b>'
+          + totals.totalDays + '</b> 天 · <b>' + totals.totalPlaces + '</b> 个行程点'
+          + '<span class="foot-cities">'
+          + cities.map(function (c) {
+              return '<span class="foot-chip">' + escapeHtml(c.destination)
+                + '<i>' + c.tripCount + ' 次</i></span>';
+            }).join('') + '</span>';
+        mapBox.hidden = false;
+        var AMap = await TravelOSAmap.load([]);
+        if (!footState.map) {
+          footState.map = new AMap.Map('footMap', { zoom: 4, center: [104.0, 35.5], mapStyle: 'amap://styles/whitesmoke' });
+        }
+        footState.markers.forEach(function (m) { footState.map.remove(m); });
+        footState.markers = cities.map(function (c) {
+          var marker = new AMap.Marker({
+            position: [Number(c.lng), Number(c.lat)],
+            title: c.destination,
+            content: '<div class="foot-pin"><span>' + escapeHtml(c.destination) + '</span><i>'
+              + c.tripCount + '</i></div>',
+            anchor: 'bottom-center',
+            offset: new AMap.Pixel(0, -6)
+          });
+          footState.map.add(marker);
+          return marker;
+        });
+        footState.map.setFitView(footState.markers, false, [60, 60, 60, 60]);
+      } catch (err) {
+        /* 足迹失败不影响统计页其余面板 */
+      }
     }
 
     /* ===== 结算建议 ===== */

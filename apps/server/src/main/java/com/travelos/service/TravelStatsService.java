@@ -9,17 +9,20 @@ import com.travelos.entity.TripDay;
 import com.travelos.entity.TripExpense;
 import com.travelos.entity.TripExpenseShare;
 import com.travelos.entity.TripMember;
+import com.travelos.entity.TripPlace;
 import com.travelos.entity.User;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripExpenseMapper;
 import com.travelos.mapper.TripExpenseShareMapper;
 import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripMemberMapper;
+import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -49,16 +52,105 @@ public class TravelStatsService {
   private final TripExpenseMapper expenseMapper;
   private final TripExpenseShareMapper shareMapper;
   private final UserMapper userMapper;
+  private final TripPlaceMapper tripPlaceMapper;
 
   public TravelStatsService(TripMemberMapper tripMemberMapper, TripMapper tripMapper,
       TripDayMapper tripDayMapper, TripExpenseMapper expenseMapper,
-      TripExpenseShareMapper shareMapper, UserMapper userMapper) {
+      TripExpenseShareMapper shareMapper, UserMapper userMapper,
+      TripPlaceMapper tripPlaceMapper) {
     this.tripMemberMapper = tripMemberMapper;
     this.tripMapper = tripMapper;
     this.tripDayMapper = tripDayMapper;
     this.expenseMapper = expenseMapper;
     this.shareMapper = shareMapper;
     this.userMapper = userMapper;
+    this.tripPlaceMapper = tripPlaceMapper;
+  }
+
+  /** 足迹地图：按目的地聚合用户全部未删除行程（城市/次数/天数/地点数/平均坐标/首末到访）。 */
+  public Map<String, Object> footprints(String userId) {
+    List<StatsTrip> trips = findTripsForUser(userId);
+    Map<String, Map<String, Object>> byCity = new LinkedHashMap<>();
+    int totalDays = 0;
+    int totalPlaces = 0;
+    for (StatsTrip statsTrip : trips) {
+      Trip trip = statsTrip.trip();
+      if (trip.getDestination() == null || trip.getDestination().isBlank()) {
+        continue;
+      }
+      List<TripPlace> places = tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
+          .eq(TripPlace::getTripId, trip.getId()));
+      totalDays += statsTrip.days().size();
+      totalPlaces += places.size();
+      double latSum = 0;
+      double lngSum = 0;
+      int coordCount = 0;
+      for (TripPlace place : places) {
+        if (place.getLatitude() != null && place.getLongitude() != null) {
+          latSum += place.getLatitude().doubleValue();
+          lngSum += place.getLongitude().doubleValue();
+          coordCount++;
+        }
+      }
+      if (coordCount == 0) {
+        continue; // 无坐标无法上图（纯计划行程）
+      }
+      String key = trip.getDestination().trim();
+      Map<String, Object> city = byCity.computeIfAbsent(key, k -> {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("destination", k);
+        m.put("tripCount", 0);
+        m.put("totalDays", 0);
+        m.put("placeCount", 0);
+        m.put("lat", 0.0);
+        m.put("lng", 0.0);
+        m.put("coordCount", 0);
+        m.put("firstDate", null);
+        m.put("lastDate", null);
+        return m;
+      });
+      city.put("tripCount", (int) city.get("tripCount") + 1);
+      city.put("totalDays", (int) city.get("totalDays") + statsTrip.days().size());
+      city.put("placeCount", (int) city.get("placeCount") + places.size());
+      city.put("lat", (double) city.get("lat") + latSum);
+      city.put("lng", (double) city.get("lng") + lngSum);
+      city.put("coordCount", (int) city.get("coordCount") + coordCount);
+      Date tripStart = trip.getStartDate();
+      Date tripEnd = trip.getEndDate() != null ? trip.getEndDate() : trip.getStartDate();
+      if (city.get("firstDate") == null
+          || (tripStart != null && tripStart.before((Date) city.get("firstDate")))) {
+        city.put("firstDate", tripStart);
+      }
+      if (city.get("lastDate") == null
+          || (tripEnd != null && tripEnd.after((Date) city.get("lastDate")))) {
+        city.put("lastDate", tripEnd);
+      }
+    }
+    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+    format.setTimeZone(TimeZone.getTimeZone("UTC"));
+    List<Map<String, Object>> cities = new ArrayList<>();
+    for (Map<String, Object> city : byCity.values()) {
+      int coordCount = (int) city.get("coordCount");
+      city.put("lat", Math.round((double) city.get("lat") / coordCount * 10000.0) / 10000.0);
+      city.put("lng", Math.round((double) city.get("lng") / coordCount * 10000.0) / 10000.0);
+      city.remove("coordCount");
+      Object first = city.get("firstDate");
+      Object last = city.get("lastDate");
+      city.put("firstDate", first == null ? null : format.format((Date) first));
+      city.put("lastDate", last == null ? null : format.format((Date) last));
+      cities.add(city);
+    }
+    // 按首次到访排序（足迹时间线）
+    cities.sort((a, b) -> String.valueOf(a.get("firstDate"))
+        .compareTo(String.valueOf(b.get("firstDate"))));
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("cities", cities);
+    body.put("totals", Map.of(
+        "cityCount", cities.size(),
+        "tripCount", trips.size(),
+        "totalDays", totalDays,
+        "totalPlaces", totalPlaces));
+    return body;
   }
 
   public Map<String, Object> getOverview(String userId) {

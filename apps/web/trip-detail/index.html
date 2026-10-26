@@ -834,11 +834,26 @@
         { name: '游记',     hint: '记录时刻', badge: cnt(c.journals, '篇'), bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
       ];
 
+      /* 行程已结束：显示「AI 行程回顾」一键生成卡片（点击走 recap 接口生成私密草稿游记） */
+      var tripEnded = state.trip && state.trip.endDate && new Date(state.trip.endDate).getTime() < Date.now();
+      if (tripEnded) {
+        modules.unshift({ name: 'AI 行程回顾', hint: '一键生成回顾游记', badge: '✨ 新',
+          bg: '#E8F6F5', fg: '#0D6E6E', icon: '✦', recap: true });
+      }
+
       var target = document.getElementById('modules');
       target.innerHTML = modules.map(function (m) {
         var badge = m.badge != null
           ? '<span class="badge">' + escapeHtml(m.badge) + '</span>'
           : '<span class="badge dim">–</span>';
+        if (m.recap) {
+          return ''
+            + '<button class="module" id="recapModule" onclick="generateRecap(this)">'
+            + '<span class="ic" style="background:' + m.bg + ';color:' + m.fg + ';">' + m.icon + '</span>'
+            + '<span class="nm">' + m.name + badge + '</span>'
+            + '<span class="hint" id="recapHint">' + m.hint + '</span>'
+            + '</button>';
+        }
         return ''
           + '<button class="module" data-link="' + escapeHtml(m.link) + '">'
           + '<span class="ic" style="background:' + m.bg + ';color:' + m.fg + ';">' + m.icon + '</span>'
@@ -847,6 +862,25 @@
           + '</button>';
       }).join('');
     }
+
+    /* AI 行程回顾：生成私密草稿游记后跳转游记详情编辑 */
+    async function generateRecap(btn) {
+      var hint = document.getElementById('recapHint');
+      if (btn) btn.disabled = true;
+      if (hint) hint.textContent = 'AI 正在撰写回顾…（约 10-30 秒）';
+      try {
+        var r = await apiPost('/trips/' + encodeURIComponent(tripId) + '/journals/recap', {});
+        var journal = (r.journal || {});
+        showToast('回顾游记已生成（私密草稿），正在打开…');
+        location.href = '/journal-detail/?id=' + encodeURIComponent(journal.id)
+          + '&trip=' + encodeURIComponent(tripId);
+      } catch (err) {
+        if (btn) btn.disabled = false;
+        if (hint) hint.textContent = '一键生成回顾游记';
+        showToast(humanError(err));
+      }
+    }
+    window.generateRecap = generateRecap;
 
     /* 天气：后端字段是 condition / tempLow / tempHigh / rainChance / iconCode */
     var WICON = { sun: '☀', cloud: '☁', 'cloud-rain': '🌧', snowflake: '❄', 'cloud-lightning': '⛈' };
