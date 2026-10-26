@@ -481,6 +481,24 @@
     .panel-head .sub { max-width: 130px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ===== AI 一键生成行程 + 新手示例 ===== */
+  .ai-gen { display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 22px; }
+  .ag-t { font-family: var(--slab); font-weight: 700; font-size: 19px; color: var(--brand); }
+  .ag-s { font-size: 12.5px; color: var(--mute); margin-top: 4px; }
+  .ag-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .ag-form input, .ag-form select { height: 40px; padding: 0 12px; border: 1px solid var(--line, #D8ECEA); border-radius: 10px; background: #fff; font-size: 13px; color: var(--ink); }
+  .ag-form input#aiGenDest { width: 180px; }
+  .ag-btn { height: 40px; padding: 0 18px; border: none; border-radius: 10px; background: var(--brand, #0D6E6E); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .ag-btn:hover { filter: brightness(1.06); }
+  .ag-btn:disabled { opacity: .6; cursor: default; }
+  .sample-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .sample-card { border: 1px solid var(--line, #D8ECEA); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px; background: #FBFDFD; }
+  .sc-t { font-weight: 700; font-size: 15px; color: var(--ink); }
+  .sc-meta { font-size: 12px; color: var(--brand); }
+  .sc-desc { font-size: 12.5px; color: var(--mute); line-height: 1.6; flex: 1; }
+  .sc-btn { align-self: flex-start; height: 34px; padding: 0 14px; font-size: 12.5px; }
+  .sample-empty { color: var(--mute); font-size: 13px; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -574,6 +592,38 @@
         </a>
       </section>
     </header>
+
+    <!-- ===== AI 一键生成行程（30 秒魔法时刻入口） ===== -->
+    <section class="panel ai-gen" aria-label="AI 一键生成行程">
+      <div class="ag-info">
+        <div class="ag-t">✨ AI 一键生成行程</div>
+        <div class="ag-s">说出目的地和日期，AI 帮你把景点、用餐、住宿全部安排好</div>
+      </div>
+      <form class="ag-form" id="aiGenForm" onsubmit="return aiGenTrip(event)">
+        <input type="text" id="aiGenDest" placeholder="目的地，如 成都" maxlength="20" autocomplete="off">
+        <input type="date" id="aiGenStart" aria-label="出发日期">
+        <select id="aiGenDays" aria-label="行程天数">
+          <option value="3">3 天</option><option value="4">4 天</option>
+          <option value="5" selected>5 天</option><option value="6">6 天</option>
+          <option value="7">7 天</option>
+        </select>
+        <button type="submit" class="ag-btn" id="aiGenBtn">AI 帮我生成行程</button>
+      </form>
+    </section>
+
+    <!-- ===== 新手示例行程（仅无行程用户可见） ===== -->
+    <section class="panel" id="sampleSection" hidden>
+      <div class="panel-head">
+        <span class="bar"></span>
+        <span class="title">新手示例行程</span>
+        <span class="sub">一键复制成自己的，随意修改</span>
+      </div>
+      <div class="panel-body">
+        <div id="sampleCards" class="sample-cards">
+          <div class="sample-empty">示例行程加载中…</div>
+        </div>
+      </div>
+    </section>
 
     <!-- ===== 行程地图：通栏 ===== -->
     <section class="panel">
@@ -1238,8 +1288,101 @@
       renderTrips(dash.recentTrips, !!trip);
       renderExpenses(dash.recentExpenses, trip);
       renderPhotos(dash.recentPhotos, trip);
+
+      /* ===== 新手示例行程 + AI 生成入口 ===== */
+      loadSampleTrips();
+      var genStart = document.getElementById('aiGenStart');
+      if (genStart && !genStart.value) {
+        var t = new Date(Date.now() + 86400000);
+        genStart.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0')
+          + '-' + String(t.getDate()).padStart(2, '0');
+        genStart.min = genStart.value;
+      }
+
       renderJournals(dash.recentJournals, trip);
     });
+  }
+
+  /* ================= AI 一键生成行程 + 新手示例 ================= */
+  function notify(msg) {
+    if (typeof showToast === 'function') { showToast(msg); } else { alert(msg); }
+  }
+
+  window.aiGenTrip = function (ev) {
+    if (ev) ev.preventDefault();
+    var dest = document.getElementById('aiGenDest').value.trim();
+    var start = document.getElementById('aiGenStart').value;
+    var days = parseInt(document.getElementById('aiGenDays').value, 10) || 5;
+    var btn = document.getElementById('aiGenBtn');
+    if (!dest) { notify('请填写目的地'); return false; }
+    if (!start) { notify('请选择出发日期'); return false; }
+    var endMs = new Date(start + 'T00:00:00Z').getTime() + (days - 1) * 86400000;
+    var endStr = new Date(endMs).toISOString().slice(0, 10);
+    btn.disabled = true; btn.textContent = 'AI 正在准备…';
+    apiPost('/trips', { title: dest + '之旅', destination: dest, startDate: start, endDate: endStr })
+      .then(function (r) {
+        var trip = r.trip || {};
+        return apiPost('/trips/' + encodeURIComponent(trip.id) + '/days/generate', {})
+          .then(function () { return trip; });
+      })
+      .then(function (trip) {
+        try {
+          sessionStorage.setItem('travelos.ai.autoMsg',
+            '请帮我规划这次' + dest + '之旅的整趟行程（' + start + ' 至 ' + endStr + '，共 ' + days + ' 天）。'
+            + '请结合天气预报，把每天的景点、用餐与住宿安排好（最后一天也安排住宿），先给出逐天概览。');
+        } catch (e) { /* ignore */ }
+        location.href = '/trip-detail/?id=' + encodeURIComponent(trip.id) + '&aiAuto=1';
+      })
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'AI 帮我生成行程';
+        notify(typeof humanError === 'function' ? humanError(err) : '创建失败，请稍后再试');
+      });
+    return false;
+  };
+
+  window.copySample = function (id, btn) {
+    if (btn) btn.disabled = true;
+    apiPost('/square/' + encodeURIComponent(id) + '/copy', {}).then(function (r) {
+      var trip = r.trip || {};
+      notify('已复制为「' + (trip.title || '我的副本') + '」，正在打开…');
+      location.href = '/trip-detail/?id=' + encodeURIComponent(trip.id);
+    }).catch(function (err) {
+      if (btn) btn.disabled = false;
+      notify(typeof humanError === 'function' ? humanError(err) : '复制失败，请稍后再试');
+    });
+  };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function loadSampleTrips() {
+    apiGet('/trips').then(function (r) {
+      if ((r.trips || []).length) return; /* 已有行程的用户不打扰 */
+      var sec = document.getElementById('sampleSection');
+      if (!sec) return;
+      sec.hidden = false;
+      return apiGet('/square?scope=public&keyword=' + encodeURIComponent('示例') + '&pageSize=4')
+        .then(function (s) {
+          var items = (s.items || []).slice(0, 4);
+          var box = document.getElementById('sampleCards');
+          if (!box) return;
+          if (!items.length) {
+            box.innerHTML = '<div class="sample-empty">示例内容准备中，先去创建一个行程吧～</div>';
+            return;
+          }
+          box.innerHTML = items.map(function (it) {
+            var days = it.dayCount || it.days || '';
+            return '<div class="sample-card">'
+              + '<div class="sc-t">' + esc(it.title) + '</div>'
+              + '<div class="sc-meta">' + esc(it.destination || '') + (days ? ' · ' + days + ' 天' : '') + '</div>'
+              + (it.description ? '<div class="sc-desc">' + esc(it.description) + '</div>' : '')
+              + '<button type="button" class="ag-btn sc-btn" onclick="copySample(\'' + esc(it.id) + '\', this)">一键复制为我的行程</button>'
+              + '</div>';
+          }).join('');
+        });
+    }).catch(function () { /* 示例加载失败不影响首页 */ });
   }
 })();
 </script>

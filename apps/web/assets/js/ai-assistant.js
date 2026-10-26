@@ -976,10 +976,23 @@
 
   /* ---- 自动初始化：引本文件即生效 ----
    * 需要禁用的页面在引脚本前设置：window.TravelOSPetAuto = false;
+   * 跨页自动发消息：跳转前在 sessionStorage 写入 travelos.ai.autoMsg（如首页「AI 一键生成行程」），
+   * 初始化后自动打开抽屉并发送该消息，用完即清除。
    */
   function autoInit() {
     if (global.TravelOSPetAuto === false) return;
     init({ tripId: resolvePageTripId() });
+    var autoMsg = '';
+    try { autoMsg = global.sessionStorage.getItem('travelos.ai.autoMsg') || ''; } catch (e) { /* ignore */ }
+    if (autoMsg) {
+      try { global.sessionStorage.removeItem('travelos.ai.autoMsg'); } catch (e) { /* ignore */ }
+      setTimeout(function () {
+        try {
+          open();
+          send(autoMsg);
+        } catch (e) { /* ignore */ }
+      }, 700);
+    }
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoInit);
