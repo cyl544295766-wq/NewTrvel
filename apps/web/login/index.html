@@ -11,316 +11,359 @@
 <link rel="stylesheet" href="../assets/css/theme.css">
 <link rel="stylesheet" href="../assets/css/pet.css">
 <style>
-  /* 令牌统一取自 theme.css（本页无页面特有变量） */
-  .auth { display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh; }
+  /* ===== 设计令牌（山湖清晨）=====
+     晨雾 #F4FBFA · 湖松绿 #0B6E6E · 湖水青 #2FA8A0
+     高天蓝 #8FD4F0 · 破晓金 #FFE3B3 · 墨松 #15332F */
 
-  /* ===== 左侧：登机牌票面意象（青绿山水背景 + 渐变叠层保证文字可读） ===== */
-  .visual {
-    position: relative; overflow: hidden;
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    font-family: var(--grot), 'Noto Sans SC', sans-serif;
+    color: #15332F;
+    background: linear-gradient(180deg, #F4FBFA 0%, #EAF7F5 58%, #DDF2EE 100%);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* ===== 场景层：弥散光斑 / 立体气泡 / 云 / 山峦（纯装饰） ===== */
+  .scene { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+
+  /* 弥散光斑 */
+  .blob { position: absolute; border-radius: 50%; filter: blur(90px); }
+  .b1 { width: 560px; height: 560px; left: -160px; top: -180px;
+        background: radial-gradient(circle, rgba(47,168,160,.5) 0%, rgba(47,168,160,0) 70%); }
+  .b2 { width: 620px; height: 620px; right: -200px; top: -160px;
+        background: radial-gradient(circle, rgba(143,212,240,.55) 0%, rgba(143,212,240,0) 70%); }
+  .b3 { width: 420px; height: 420px; right: 6%; bottom: 4%;
+        background: radial-gradient(circle, rgba(169,232,222,.6) 0%, rgba(169,232,222,0) 70%); }
+  .b4 { width: 300px; height: 300px; left: 18%; bottom: -80px;
+        background: radial-gradient(circle, rgba(255,227,179,.5) 0%, rgba(255,227,179,0) 70%); }
+
+  /* 立体气泡：左上高光 + 内侧暗缘 + 底部投影，缓慢上浮 */
+  .bubble {
+    position: absolute; border-radius: 50%;
     background:
-      linear-gradient(180deg, rgba(9,66,66,0) 52%, rgba(9,66,66,.38) 100%),
-      linear-gradient(150deg, rgba(13,110,110,.88) 0%, rgba(19,124,121,.76) 42%, rgba(30,154,147,.62) 100%),
-      url("../assets/img/login-bg.jpg") center / cover no-repeat;
-    color: #fff; padding: 48px 52px;
-    display: flex; flex-direction: column;
+      radial-gradient(circle at 30% 26%, rgba(255,255,255,.96) 0 7%, rgba(255,255,255,0) 32%),
+      radial-gradient(circle at 70% 80%, rgba(255,255,255,.4), rgba(255,255,255,0) 56%),
+      radial-gradient(circle at 50% 50%, rgba(150,222,214,.62), rgba(58,148,158,.34));
+    border: 1px solid rgba(255,255,255,.55);
+    box-shadow: inset -8px -12px 26px rgba(11,90,90,.16), 0 20px 44px rgba(11,90,90,.13);
+    animation: bubbleFloat 24s ease-in-out infinite;
   }
-  .visual::before {
-    content: ""; position: absolute; right: -120px; top: -120px;
-    width: 520px; height: 520px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(91,197,192,.5) 0%, rgba(91,197,192,0) 66%);
+  .u1 { width: 92px;  height: 92px;  left: 8%;  top: 24%; }
+  .u2 { width: 52px;  height: 52px;  left: 20%; top: 62%; animation-delay: -6s;  animation-duration: 28s; }
+  .u3 { width: 120px; height: 120px; right: 10%; top: 16%; animation-delay: -11s; animation-duration: 30s; }
+  .u4 { width: 64px;  height: 64px;  right: 22%; bottom: 30%; animation-delay: -3s; }
+  .u5 { width: 38px;  height: 38px;  left: 42%; top: 12%; animation-delay: -15s; animation-duration: 26s; }
+  @keyframes bubbleFloat {
+    0%, 100% { transform: translate(0, 0); }
+    33%      { transform: translate(14px, -26px); }
+    66%      { transform: translate(-12px, -10px); }
   }
-  .visual::after {
-    content: ""; position: absolute; left: -160px; bottom: -140px;
-    width: 460px; height: 460px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,138,76,.22) 0%, rgba(255,138,76,0) 68%);
-  }
-  .v-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; }
-  .v-logo {
-    width: 38px; height: 38px; border-radius: 11px; flex: none;
-    background: rgba(255,255,255,.16); border: 1.5px solid rgba(255,255,255,.3);
-    display: grid; place-items: center; font-size: 17px;
-  }
-  .v-brand { font-family: var(--slab); font-weight: 700; font-size: 23px; }
-  .v-brand small {
-    display: block; font-family: var(--grot); font-weight: 500; font-size: 10.5px;
-    letter-spacing: .16em; color: rgba(255,255,255,.62); margin-top: 1px;
-  }
-  .v-mid {
-    position: relative; z-index: 1; margin: auto 0;
-    display: flex; justify-content: center;
-  }
-  .pass-demo {
-    width: 100%; max-width: 400px;
-    background: rgba(255,255,255,.13);
-    border: 1.5px solid rgba(255,255,255,.24);
-    border-radius: 16px;
-    backdrop-filter: blur(10px);
-    padding: 26px 26px 22px;
-    position: relative;
-  }
-  .pass-demo::after {
-    content: ""; position: absolute; left: 26px; right: 26px; bottom: 62px;
-    border-top: 1.5px dashed rgba(255,255,255,.3);
-  }
-  .pd-label { font-size: 10px; letter-spacing: .2em; color: rgba(255,255,255,.6); }
-  .pd-route {
-    display: flex; align-items: baseline; gap: 14px; margin-top: 4px;
-  }
-  .pd-route .from, .pd-route .to {
-    font-family: var(--slab); font-weight: 700; font-size: 30px; letter-spacing: .02em;
-  }
-  .pd-route .to { color: var(--brand-tint); }
-  .pd-route .arrow { color: rgba(255,255,255,.5); font-size: 17px; }
-  .pd-fields { display: flex; gap: 26px; margin-top: 20px; }
-  .pd-fields .f .k { font-size: 9.5px; letter-spacing: .16em; color: rgba(255,255,255,.55); }
-  .pd-fields .f .v { font-family: var(--slab); font-weight: 600; font-size: 15px; margin-top: 2px; }
-  .pd-foot {
-    display: flex; align-items: flex-end; justify-content: space-between;
-    margin-top: 32px; padding-top: 16px;
-  }
-  .pd-barcode {
-    flex: 1; height: 20px; max-width: 190px; opacity: .7;
-    background: repeating-linear-gradient(90deg,
-      #fff 0 1.5px, transparent 1.5px 4px,
-      #fff 4px 6.5px, transparent 6.5px 9px,
-      #fff 9px 10px, transparent 10px 14px);
-  }
-  .pd-stamp {
-    font-size: 11px; font-weight: 600; color: #FFD9C2;
-    border: 1.5px solid #FFD9C2; border-radius: 5px;
-    padding: 3px 10px; transform: rotate(-5deg);
-  }
-  .v-foot { position: relative; z-index: 1; }
-  .v-slogan {
-    font-family: var(--slab); font-weight: 600; font-size: 25px; line-height: 1.4;
-    margin-bottom: 10px;
-  }
-  .v-slogan em { font-style: normal; color: var(--brand-tint); }
-  .v-desc { font-size: 13.5px; color: rgba(255,255,255,.72); }
 
-  /* ===== 右侧：表单 ===== */
-  .panel {
-    display: flex; align-items: center; justify-content: center;
-    padding: 48px 40px;
-    background: var(--cloud);
-    position: relative;
+  /* 云：叠圆椭圆，缓慢水平漂移 */
+  .cloud { position: absolute; height: 26px; border-radius: 999px;
+           background: rgba(255,255,255,.85); filter: blur(1px);
+           box-shadow: 0 10px 30px rgba(11,90,90,.08); }
+  .cloud::before, .cloud::after {
+    content: ""; position: absolute; border-radius: 50%; background: inherit;
   }
-  .panel::before {
-    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px;
-    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-soft) 50%, var(--brand-tint) 100%);
+  .cloud::before { width: 46%; height: 170%; left: 16%; bottom: 28%; }
+  .cloud::after  { width: 34%; height: 130%; right: 18%; bottom: 30%; }
+  .c1 { width: 150px; left: 12%; top: 18%; animation: cloudDrift 46s linear infinite; }
+  .c2 { width: 110px; right: 14%; top: 40%; animation: cloudDrift 58s linear infinite reverse; }
+  @keyframes cloudDrift {
+    from { transform: translateX(-6vw); }
+    to   { transform: translateX(6vw); }
   }
-  .card { width: 100%; max-width: 400px; }
-  .card-logo { display: none; align-items: center; gap: 10px; margin-bottom: 26px; }
-  .card-logo .lg {
-    width: 34px; height: 34px; border-radius: 10px; flex: none;
-    background: var(--brand); color: #fff; display: grid; place-items: center; font-size: 16px;
+
+  /* 山峦：三层 SVG 剪影，固定页底 */
+  .mountains { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 190px; display: block; }
+
+  /* ===== 页面主体：顶部品牌区 + 毛玻璃登录卡 ===== */
+  .page {
+    position: relative; z-index: 1;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 52px 20px 120px;
   }
-  .card-logo .tx { font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); }
+
+  .brand { text-align: center; margin-bottom: 30px; }
+  .mark {
+    width: 62px; height: 62px; margin: 0 auto 14px;
+    border-radius: 18px; display: grid; place-items: center;
+    background: linear-gradient(150deg, #ffffff 0%, #E4F6F3 100%);
+    box-shadow: 0 14px 30px rgba(11,90,90,.16), inset 0 1px 0 rgba(255,255,255,.9);
+  }
+  .mark svg { width: 34px; height: 34px; display: block; }
+  .b-name {
+    font-family: var(--slab); font-weight: 700; font-size: 36px; line-height: 1.1;
+    color: #0B6E6E; letter-spacing: .01em;
+  }
+  .b-name small {
+    display: block; font-family: var(--grot); font-weight: 500;
+    font-size: 11px; letter-spacing: .22em; color: #6E8C88; margin-top: 5px;
+  }
+  .slogan {
+    margin: 14px 0 0; font-size: 15px; color: #3E5B56; line-height: 1.6;
+  }
+  .slogan em { font-style: normal; color: #0B6E6E; font-weight: 600; }
+
+  .card {
+    width: 100%; max-width: 430px;
+    background: rgba(255,255,255,.78);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,.9);
+    border-radius: 22px;
+    box-shadow: 0 24px 60px rgba(11,90,90,.14), 0 4px 14px rgba(11,90,90,.06);
+    padding: 30px 30px 26px;
+  }
+
   h1 {
-    font-family: var(--slab); font-weight: 600; font-size: 33px; line-height: 1.2;
-    color: var(--brand);
+    font-family: var(--slab); font-weight: 600; font-size: 27px; line-height: 1.2;
+    color: #0B6E6E; margin: 0;
   }
-  .subtitle { font-size: 14px; color: var(--mute); margin-top: 8px; }
+  .subtitle { font-size: 13.5px; color: #6E8C88; margin: 6px 0 0; }
 
   .mode-tabs {
-    display: flex; gap: 4px; margin: 26px 0 24px;
-    background: #fff; padding: 5px; border-radius: 12px;
-    box-shadow: var(--card-shadow); width: fit-content;
+    display: flex; gap: 4px; margin: 22px 0 20px;
+    background: rgba(232,246,244,.9); padding: 5px; border-radius: 12px;
+    width: fit-content;
   }
   .mode-tabs button {
-    font-family: var(--grot); font-size: 14px; color: var(--ink-2);
-    background: none; border: none; padding: 9px 26px; border-radius: 9px;
+    font-family: var(--grot); font-size: 14px; color: #3E5B56;
+    background: none; border: none; padding: 8px 26px; border-radius: 9px;
     cursor: pointer; transition: background .16s, color .16s;
   }
-  .mode-tabs button:hover { background: var(--panel); color: var(--brand); }
-  .mode-tabs button[aria-selected="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+  .mode-tabs button:hover { background: rgba(255,255,255,.85); color: #0B6E6E; }
+  .mode-tabs button[aria-selected="true"] {
+    background: linear-gradient(135deg, #0B6E6E, #2FA8A0);
+    color: #fff; font-weight: 600;
+    box-shadow: 0 6px 16px rgba(11,110,110,.28);
+  }
 
-  .form { display: flex; flex-direction: column; gap: 17px; }
+  .form { display: flex; flex-direction: column; gap: 16px; }
   .field { display: flex; flex-direction: column; gap: 7px; }
-  .field label { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
+  .field label { font-size: 12.5px; color: #3E5B56; font-weight: 500; }
   .input-wrap { position: relative; display: flex; align-items: center; }
   .input-wrap .ico {
-    position: absolute; left: 15px; color: var(--mute); font-size: 15px;
+    position: absolute; left: 15px; color: #6E8C88; font-size: 15px;
     pointer-events: none; transition: color .16s;
   }
   .input-wrap input {
     width: 100%;
-    font-family: var(--grot); font-size: 14.5px; color: var(--ink);
-    background: #fff; border: 1.5px solid var(--line); border-radius: 11px;
-    padding: 14px 44px 14px 42px; outline: none;
-    box-shadow: var(--card-shadow);
+    font-family: var(--grot); font-size: 14.5px; color: #15332F;
+    background: rgba(255,255,255,.92); border: 1.5px solid #D9ECEA; border-radius: 12px;
+    padding: 13px 44px 13px 42px; outline: none;
     transition: border-color .16s, box-shadow .16s;
   }
-  .input-wrap input::placeholder { color: var(--mute); font-size: 13.5px; }
-  .input-wrap input:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
-  .input-wrap:focus-within .ico { color: var(--brand); }
+  .input-wrap input::placeholder { color: #9BB5B1; font-size: 13px; }
+  .input-wrap input:focus {
+    border-color: #2FA8A0;
+    box-shadow: 0 0 0 4px rgba(47,168,160,.16);
+  }
+  .input-wrap:focus-within .ico { color: #0B6E6E; }
 
   .toggle-pw {
     position: absolute; right: 13px;
-    background: none; border: none; color: var(--mute); cursor: pointer;
+    background: none; border: none; color: #6E8C88; cursor: pointer;
     font-size: 14px; padding: 4px; line-height: 1;
     transition: color .16s;
   }
-  .toggle-pw:hover { color: var(--brand); }
+  .toggle-pw:hover { color: #0B6E6E; }
 
-  .hint { font-size: 11.5px; color: var(--mute); }
+  .hint { font-size: 11.5px; color: #6E8C88; }
   .row-between {
     display: flex; align-items: center; justify-content: space-between;
     gap: 14px; flex-wrap: wrap;
   }
   .check {
     display: inline-flex; align-items: center; gap: 8px;
-    font-size: 13.5px; color: var(--ink-2); cursor: pointer;
+    font-size: 13px; color: #3E5B56; cursor: pointer;
   }
-  .check input { accent-color: var(--brand); width: 16px; height: 16px; }
+  .check input { accent-color: #0B6E6E; width: 16px; height: 16px; }
 
+  .link {
+    background: none; border: none; padding: 0;
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    color: #0B6E6E; cursor: pointer; text-decoration: none;
+    border-bottom: 1px solid transparent; transition: border-color .16s;
+  }
+  .link:hover { border-bottom-color: #2FA8A0; }
+
+  .alert {
+    display: flex; align-items: center; gap: 9px;
+    background: #FDEFF2; color: #A63D52;
+    border: 1px solid #F5D3DA; border-radius: 11px;
+    padding: 11px 14px; font-size: 13px;
+  }
   .alert .ic { font-size: 15px; flex: none; }
-  .divider {
-    display: flex; align-items: center; gap: 12px;
-    margin: 22px 0 18px; color: var(--mute); font-size: 12px;
+
+  /* 渐变圆角主按钮 */
+  .btn-stamp {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 50px;
+    font-family: var(--grot); font-size: 15.5px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, #0B6E6E 0%, #2FA8A0 100%);
+    border: none; border-radius: 14px; cursor: pointer;
+    box-shadow: 0 12px 26px rgba(11,110,110,.32), inset 0 1px 0 rgba(255,255,255,.28);
+    transition: transform .16s, box-shadow .16s, filter .16s;
   }
-  .divider::before, .divider::after {
-    content: ""; flex: 1; border-top: 1px solid var(--line);
+  .btn-stamp:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 34px rgba(11,110,110,.38), inset 0 1px 0 rgba(255,255,255,.28);
   }
-  .alt-note {
-    font-size: 13px; color: var(--mute); text-align: center;
-  }
+  .btn-stamp:active:not(:disabled) { transform: translateY(0); filter: brightness(.97); }
+  .btn-stamp:disabled { opacity: .65; cursor: default; }
+  .btn-stamp:focus-visible { outline: 3px solid rgba(47,168,160,.45); outline-offset: 2px; }
+
+  .alt-note { font-size: 13px; color: #6E8C88; text-align: center; margin: 4px 0 0; }
 
   .register-only { display: none; }
   body[data-mode="register"] .register-only { display: flex; }
   body[data-mode="register"] .login-only { display: none; }
 
-  @media (max-width: 960px) {
-    .auth { grid-template-columns: 1fr; }
-    .visual { padding: 26px 26px 30px; min-height: auto; display: block; }
-    .v-mid { display: none; }
-    .v-foot { margin-top: 22px; }
-    .v-slogan { font-size: 21px; }
-    .panel { padding: 34px 24px 44px; }
-    .card-logo { display: flex; }
+  :is(a, button, input, select):focus-visible {
+    outline: 3px solid rgba(47,168,160,.45); outline-offset: 2px;
   }
-  @media (max-width: 480px) {
-    .visual { padding: 22px 20px 26px; }
-    .v-slogan { font-size: 19px; }
-    .panel { padding: 28px 18px 36px; }
-    h1 { font-size: 27px; }
-    .mode-tabs { width: 100%; }
-    .mode-tabs button { flex: 1; padding: 9px 12px; }
+
+  @media (max-width: 640px) {
+    .page { padding: 38px 18px 100px; }
+    .card { padding: 24px 20px 22px; }
+    .b-name { font-size: 30px; }
+    .slogan { font-size: 14px; }
+    .mountains { height: 130px; }
+    .bubble.u3 { width: 84px; height: 84px; }
+    .bubble.u1 { width: 64px; height: 64px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bubble, .cloud { animation: none !important; }
   }
 </style>
 </head>
 <body data-mode="login">
 
-<div class="auth">
-
-  <!-- ===== 左：登机牌意象 ===== -->
-  <div class="visual">
-    <div class="v-top">
-      <span class="v-logo" aria-hidden="true">✈</span>
-      <span class="v-brand">Travel OS<small>行程驾驶舱</small></span>
-    </div>
-
-    <div class="v-mid">
-      <div class="pass-demo" aria-hidden="true">
-        <div class="pd-label">BOARDING PASS</div>
-        <div class="pd-route">
-          <span class="from">此处</span>
-          <span class="arrow">✈</span>
-          <span class="to">远方</span>
-        </div>
-        <div class="pd-fields">
-          <div class="f"><div class="k">FLIGHT</div><div class="v">TO-OS 001</div></div>
-          <div class="f"><div class="k">SEAT</div><div class="v">01A</div></div>
-          <div class="f"><div class="k">GATE</div><div class="v">A6</div></div>
-        </div>
-        <div class="pd-foot">
-          <span class="pd-barcode"></span>
-          <span class="pd-stamp">ON TIME</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="v-foot">
-      <p class="v-slogan">把每一次出发<br>都收进<em>同一本行程簿</em></p>
-      <p class="v-desc">行程 · 费用 · 地图 · 游记 · 相册，一处管好</p>
-    </div>
-  </div>
-
-  <!-- ===== 右：表单 ===== -->
-  <div class="panel">
-    <div class="card">
-
-      <div class="card-logo">
-        <span class="lg" aria-hidden="true">✈</span>
-        <span class="tx">Travel OS</span>
-      </div>
-
-      <h1 id="authTitle">欢迎回来</h1>
-      <p class="subtitle" id="authSubtitle">登录你的 Travel OS 账户</p>
-
-      <div class="mode-tabs" role="tablist" aria-label="登录或注册">
-        <button role="tab" id="tabLogin" aria-selected="true" aria-controls="form">登录</button>
-        <button role="tab" id="tabRegister" aria-selected="false" aria-controls="form">注册</button>
-      </div>
-
-      <form class="form" id="form" novalidate>
-
-        <div class="alert" id="alert" role="alert" hidden>
-          <span class="ic" aria-hidden="true">⚠</span>
-          <span id="alertText">用户名或密码不正确，请重新输入</span>
-        </div>
-
-        <div class="field">
-          <label for="username">用户名</label>
-          <span class="input-wrap">
-            <span class="ico" aria-hidden="true">◯</span>
-            <input id="username" name="username" type="text" autocomplete="username"
-              placeholder="3–20 位字母、数字或下划线" required>
-          </span>
-        </div>
-
-        <div class="field">
-          <label for="password">密码</label>
-          <span class="input-wrap">
-            <span class="ico" aria-hidden="true">▮</span>
-            <input id="password" name="password" type="password" autocomplete="current-password"
-              placeholder="登录：任意 / 注册：8 位以上且含字母与数字" required>
-            <button class="toggle-pw" type="button" id="togglePw" aria-label="显示密码">👁</button>
-          </span>
-          <span class="hint login-only">忘记密码请联系行程管理员重置</span>
-        </div>
-
-        <div class="field register-only">
-          <label for="confirm">确认密码</label>
-          <span class="input-wrap">
-            <span class="ico" aria-hidden="true">▮</span>
-            <input id="confirm" name="confirm" type="password" autocomplete="new-password"
-              placeholder="再输一次密码">
-          </span>
-          <span class="hint">两次输入需要一致</span>
-        </div>
-
-        <div class="row-between login-only">
-          <label class="check"><input type="checkbox" id="remember" checked> 记住我</label>
-          <button class="link" type="button">忘记密码？</button>
-        </div>
-
-        <button class="btn-stamp" type="submit" id="submitBtn">
-          <span id="submitText">进入我的行程</span>
-          <span aria-hidden="true">→</span>
-        </button>
-
-        <p class="alt-note">
-          <span id="altText">还没有账户？</span>
-          <button class="link" type="button" id="altLink">立即注册</button>
-        </p>
-
-      </form>
-
-    </div>
-  </div>
-
+<!-- 装饰场景：弥散光斑 / 气泡 / 云 / 山峦（aria-hidden 纯装饰） -->
+<div class="scene" aria-hidden="true">
+  <span class="blob b1"></span>
+  <span class="blob b2"></span>
+  <span class="blob b3"></span>
+  <span class="blob b4"></span>
+  <span class="bubble u1"></span>
+  <span class="bubble u2"></span>
+  <span class="bubble u3"></span>
+  <span class="bubble u4"></span>
+  <span class="bubble u5"></span>
+  <span class="cloud c1"></span>
+  <span class="cloud c2"></span>
+  <svg class="mountains" viewBox="0 0 1440 190" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="mFar" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#CDEBE7"/><stop offset="1" stop-color="#B4E1DB"/>
+      </linearGradient>
+      <linearGradient id="mMid" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#9BD8D1"/><stop offset="1" stop-color="#7FCAC2"/>
+      </linearGradient>
+      <linearGradient id="mNear" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#63B9B0"/><stop offset="1" stop-color="#4FAAA1"/>
+      </linearGradient>
+    </defs>
+    <path fill="url(#mFar)" opacity=".8"
+      d="M0 150 L120 96 L240 132 L360 70 L480 120 L620 58 L760 118 L900 80 L1040 126 L1180 66 L1320 116 L1440 88 L1440 190 L0 190 Z"/>
+    <path fill="url(#mMid)" opacity=".92"
+      d="M0 172 L150 118 L300 158 L460 100 L620 152 L780 92 L940 150 L1100 108 L1260 156 L1440 112 L1440 190 L0 190 Z"/>
+    <path fill="url(#mNear)"
+      d="M0 190 L180 142 L340 176 L520 128 L700 172 L880 134 L1060 176 L1240 140 L1440 172 L1440 190 L0 190 Z"/>
+  </svg>
 </div>
+
+<main class="page">
+
+  <!-- 顶部品牌区：Logo + Slogan -->
+  <header class="brand">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" role="img" aria-label="Travel OS 山形标志">
+        <defs>
+          <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#0B6E6E"/><stop offset="1" stop-color="#2FA8A0"/>
+          </linearGradient>
+        </defs>
+        <path d="M2.5 18 L9 8.2 L12.6 13 L15.4 9.4 L21.5 18 Z" fill="url(#mk)"/>
+        <circle cx="17.6" cy="5.6" r="2.1" fill="#F3C988"/>
+      </svg>
+    </span>
+    <div class="b-name">Travel OS<small>行程驾驶舱</small></div>
+    <p class="slogan">把每一次出发，都收进<em>同一本行程簿</em></p>
+  </header>
+
+  <!-- 登录卡 -->
+  <section class="card">
+    <h1 id="authTitle">欢迎回来</h1>
+    <p class="subtitle" id="authSubtitle">登录你的 Travel OS 账户</p>
+
+    <div class="mode-tabs" role="tablist" aria-label="登录或注册">
+      <button role="tab" id="tabLogin" aria-selected="true" aria-controls="form">登录</button>
+      <button role="tab" id="tabRegister" aria-selected="false" aria-controls="form">注册</button>
+    </div>
+
+    <form class="form" id="form" novalidate>
+
+      <div class="alert" id="alert" role="alert" hidden>
+        <span class="ic" aria-hidden="true">⚠</span>
+        <span id="alertText">用户名或密码不正确，请重新输入</span>
+      </div>
+
+      <div class="field">
+        <label for="username">用户名</label>
+        <span class="input-wrap">
+          <span class="ico" aria-hidden="true">◯</span>
+          <input id="username" name="username" type="text" autocomplete="username"
+            placeholder="3–20 位字母、数字或下划线" required>
+        </span>
+      </div>
+
+      <div class="field">
+        <label for="password">密码</label>
+        <span class="input-wrap">
+          <span class="ico" aria-hidden="true">▮</span>
+          <input id="password" name="password" type="password" autocomplete="current-password"
+            placeholder="登录：任意 / 注册：8 位以上且含字母与数字" required>
+          <button class="toggle-pw" type="button" id="togglePw" aria-label="显示密码">👁</button>
+        </span>
+        <span class="hint login-only">忘记密码？<button class="link" type="button" id="forgotLink">联系管理员重置</button></span>
+      </div>
+
+      <div class="field register-only">
+        <label for="confirm">确认密码</label>
+        <span class="input-wrap">
+          <span class="ico" aria-hidden="true">▮</span>
+          <input id="confirm" name="confirm" type="password" autocomplete="new-password"
+            placeholder="再输一次密码">
+        </span>
+        <span class="hint">两次输入需要一致</span>
+      </div>
+
+      <div class="row-between login-only">
+        <label class="check"><input type="checkbox" id="remember" checked> 记住我</label>
+        <button class="link" type="button" id="forgotBtn">忘记密码？</button>
+      </div>
+
+      <button class="btn-stamp" type="submit" id="submitBtn">
+        <span id="submitText">进入我的行程</span>
+        <span aria-hidden="true">→</span>
+      </button>
+
+      <p class="alt-note">
+        <span id="altText">还没有账户？</span>
+        <button class="link" type="button" id="altLink">立即注册</button>
+      </p>
+
+    </form>
+  </section>
+
+</main>
 
 <script src="../assets/js/api.js"></script>
 <script src="../assets/js/pet.js"></script>
@@ -342,6 +385,8 @@
     var togglePw = document.getElementById('togglePw');
     var usernameInput = document.getElementById('username');
     var confirmInput = document.getElementById('confirm');
+    var forgotBtn = document.getElementById('forgotBtn');
+    var forgotLink = document.getElementById('forgotLink');
 
     // 已登录则直接跳走（避免重复登录）
     if (isLoggedIn()) {
@@ -372,6 +417,14 @@
     altLink.addEventListener('click', function () {
       setMode(body.getAttribute('data-mode') === 'login' ? 'register' : 'login');
     });
+
+    // 忘记密码：给出指引（账户由行程管理员重置）
+    function forgotHint() {
+      alertText.textContent = '请把用户名发给行程管理员，由管理员在后台重置密码。';
+      alertBox.hidden = false;
+    }
+    forgotBtn.addEventListener('click', forgotHint);
+    forgotLink.addEventListener('click', forgotHint);
 
     // 密码可见切换
     togglePw.addEventListener('click', function () {
