@@ -24,6 +24,8 @@ public class PlacesService {
 
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(6);
   private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
+  /** 缓存条目上限：达到后先清过期条目，仍超限则整体清空（仅 10 分钟 TTL 缓存，全清代价可忽略）。 */
+  private static final int CACHE_MAX_ENTRIES = 256;
 
   /** 高德 POI typecode：餐饮服务 / 风景名胜|科教文化（含博物馆）/ 住宿服务（酒店、民宿、旅馆）。 */
   private static final String RESTAURANT_TYPES = "050000";
@@ -47,6 +49,7 @@ public class PlacesService {
     int normalizedLimit = limit == null || limit <= 0 ? 8 : limit;
     String cacheKey = normalizedKeyword.toLowerCase(java.util.Locale.ROOT) + "|"
         + (normalizedCity == null ? "" : normalizedCity) + "|" + normalizedLimit;
+    evictIfNeeded();
     CachedSuggestions cached = cache.get(cacheKey);
     if (cached != null && cached.expiresAt() > System.currentTimeMillis()) {
       return Map.of("suggestions", cached.suggestions());
@@ -104,6 +107,7 @@ public class PlacesService {
     int normalizedLimit = limit == null || limit <= 0 ? 6 : Math.min(limit, 15);
     String cacheKey = normalizedKeyword.toLowerCase(java.util.Locale.ROOT) + "|"
         + (normalizedCity == null ? "" : normalizedCity) + "|" + normalizedCategory + "|" + normalizedLimit;
+    evictIfNeeded();
     CachedPlaces cached = poiCache.get(cacheKey);
     if (cached != null && cached.expiresAt() > System.currentTimeMillis()) {
       return Map.of("places", cached.places());
@@ -142,8 +146,7 @@ public class PlacesService {
       }
       List<Map<String, Object>> places = normalizePois(pois(data), normalizedCity, normalizedCategory);
       poiCache.put(cacheKey, new CachedPlaces(System.currentTimeMillis() + CACHE_TTL_MS, places));
-      return Map.of("places", places);
-    } catch (ApiException ex) {
+      return Map.of("places", places);    } catch (ApiException ex) {
       throw ex;
     } catch (Exception ex) {
       throw ApiException.serviceUnavailable("地点搜索暂时不可用");
@@ -378,5 +381,24 @@ public class PlacesService {
   }
 
   private record CachedPlaces(long expiresAt, List<Map<String, Object>> places) {
+  }
+
+  /**
+   * 缓存容量治理：历史实现只写不删，长期运行会缓慢吃内存（历史审查遗留问题）。
+   * 达到上限先清过期条目；仍超限则整体清空——缓存只有 10 分钟 TTL，全清仅多一次上游请求。
+   */
+  private void evictIfNeeded() {
+    if (cache.size() < CACHE_MAX_ENTRIES && poiCache.size() < CACHE_MAX_ENTRIES) {
+      return;
+    }
+    long now = System.currentTimeMillis();
+    cache.values().removeIf(c -> c.expiresAt() <= now);
+    poiCache.values().removeIf(c -> c.expiresAt() <= now);
+    if (cache.size() >= CACHE_MAX_ENTRIES) {
+      cache.clear();
+    }
+    if (poiCache.size() >= CACHE_MAX_ENTRIES) {
+      poiCache.clear();
+    }
   }
 }

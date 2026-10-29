@@ -26,6 +26,8 @@ mybatis-plus:
 
 jwt:
   secret: ${JWT_SECRET:change_me_in_local_env}
+  # P2-4：true=默认密钥仅警告（本地开发）；生产置 false——仍为默认密钥则拒绝启动
+  allow-default-secret: ${JWT_ALLOW_DEFAULT:true}
 
 auth:
   cookie-name: ${AUTH_COOKIE_NAME:access_token}
