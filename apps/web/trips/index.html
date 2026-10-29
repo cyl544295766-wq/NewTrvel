@@ -74,7 +74,8 @@
     white-space: nowrap;
     transition: background .16s, color .16s;
   }
-  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a .ico { flex: none; width: 24px; height: 24px; display: grid; place-items: center; }
+  .nav a .ico svg { width: 22px; height: 22px; display: block; filter: drop-shadow(0 1.5px 2px rgba(13,110,110,.28)); }
   .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
   .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,0.10); }
   .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
@@ -155,7 +156,8 @@
     color: var(--ink); background: none; width: 100%;
   }
   .search input::placeholder { color: var(--mute); }
-  .search .si { color: var(--mute); font-size: 15px; }
+  .search .si { color: var(--mute); display: grid; place-items: center; }
+  .search .si svg { width: 17px; height: 17px; display: block; }
 
   /* ===== 登机牌卡组 ===== */
   .board {
@@ -169,6 +171,7 @@
     position: relative; box-shadow: var(--card-shadow);
     transition: transform .18s ease, box-shadow .18s ease;
     cursor: pointer;
+    transform-style: preserve-3d;
   }
   .ticket:hover { transform: translateY(-4px); box-shadow: 0 16px 36px rgba(13,110,110,0.16), 0 2px 4px rgba(13,110,110,0.08); }
   .ticket:focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
@@ -199,10 +202,10 @@
     flex: 1; height: 1.5px; background: repeating-linear-gradient(90deg, var(--brand-soft) 0 5px, transparent 5px 10px);
     position: relative; min-width: 26px;
   }
-  .route .line::after {
-    content: "✈"; position: absolute; left: 50%; top: 50%;
-    transform: translate(-50%,-50%); font-size: 13px; color: var(--brand-soft);
-    background: #fff; padding: 0 5px;
+  .route .line svg {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 20px; height: 20px; background: #fff; border-radius: 6px; padding: 1px;
+    box-shadow: 0 1px 5px rgba(13,110,110,.22);
   }
 
   .ticket-title { font-size: 15.5px; font-weight: 500; margin-top: 9px; }
@@ -262,11 +265,14 @@
     margin-top: auto; width: 40px; height: 40px; border-radius: 50%;
     border: 1.5px solid var(--brand-soft); background: #fff;
     display: grid; place-items: center; cursor: pointer;
-    color: var(--brand-soft); font-size: 16px;
+    color: var(--brand-soft);
     transition: all .16s ease;
   }
+  .stub .fav svg { width: 18px; height: 18px; display: block; }
+  .stub .fav svg path { transition: fill .16s ease; }
   .stub .fav:hover { border-color: var(--stamp); color: var(--stamp); }
   .stub .fav[aria-pressed="true"] { border-color: var(--stamp); color: var(--stamp); background: var(--stamp-bg); }
+  .stub .fav[aria-pressed="true"] svg path { fill: currentColor; }
 
   .barcode {
     position: absolute; left: 26px; bottom: 9px; width: 120px; height: 14px;
@@ -298,7 +304,8 @@
     grid-column: 1 / -1; background: #fff; border-radius: 15px;
     text-align: center; padding: 62px 24px; box-shadow: var(--card-shadow);
   }
-  .empty .ill { font-size: 46px; margin-bottom: 14px; }
+  .empty .ill { margin-bottom: 14px; }
+  .empty .ill svg { width: 58px; height: 58px; display: block; margin: 0 auto; filter: drop-shadow(0 6px 12px rgba(13,110,110,.28)); }
   .empty strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 22px; color: var(--brand); margin-bottom: 7px; }
   .empty p { font-size: 14px; color: var(--mute); margin-bottom: 22px; }
 
@@ -328,9 +335,11 @@
   .sh-desc { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink); }
   .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
   .vis-pick button {
+    display: inline-flex; align-items: center; gap: 7px;
     font-size: 13px; border: 1px solid var(--line-2); background: #fff; color: var(--ink);
-    padding: 9px 14px; border-radius: 999px; cursor: pointer; transition: all .16s; font-family: inherit;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: all .16s; font-family: inherit;
   }
+  .vis-pick .vp-ic { width: 19px; height: 19px; flex: none; filter: drop-shadow(0 1.5px 2px rgba(13,110,110,.25)); }
   .vis-pick button[data-v="public"][aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
   .vis-pick button[data-v="friends"][aria-pressed="true"] { background: #3A7FA5; border-color: #3A7FA5; color: #fff; }
   .vis-pick button[data-v="private"][aria-pressed="true"] { background: #4A6068; border-color: #4A6068; color: #fff; }
@@ -369,6 +378,7 @@
 </style>
 </head>
 <body>
+<script src="../assets/js/icons3d.js"></script>
 <div class="shell">
 
   <aside class="side">
@@ -377,17 +387,17 @@
     <div class="brand-mark" aria-hidden="true">T</div>
     <nav class="nav" id="sideNav" aria-label="主导航">
       <div class="nav-label">总览</div>
-      <a href="/home/"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span></a>
-      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span><span class="dot"></span></a>
-      <a href="/square/"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span></a>
-      <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
+      <a href="/home/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-home"></use></svg></span><span class="txt">首页</span></a>
+      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></span><span class="txt">我的旅行</span><span class="dot"></span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-globe"></use></svg></span><span class="txt">攻略广场</span></a>
+      <a href="/friends/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-friends"></use></svg></span><span class="txt">好友</span></a>
       <div class="nav-label">洞察</div>
-      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
-      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span></a>
+      <a href="/stats/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-stats"></use></svg></span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-bell"></use></svg></span><span class="txt">通知中心</span></a>
       <div class="nav-label">行程</div>
-      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
-      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
-      <a href="/admin/"><span class="ico" aria-hidden="true">&#9881;</span><span class="txt">管理后台</span></a>
+      <a href="/map/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-pin"></use></svg></span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-account"></use></svg></span><span class="txt">账户</span></a>
+      <a href="/admin/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-admin"></use></svg></span><span class="txt">管理后台</span></a>
     </nav>
     <div class="side-foot">
       <span class="avatar" id="avatar">A</span>
@@ -415,7 +425,7 @@
         <button data-status="archived"  aria-pressed="false">已归档<span class="n" data-count="archived">0</span></button>
       </div>
       <label class="search">
-        <span class="si" aria-hidden="true">&#8981;</span>
+        <span class="si" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-search"></use></svg></span>
         <input type="search" placeholder="搜索目的地或旅程名称" aria-label="搜索旅程" id="search">
       </label>
     </div>
@@ -435,9 +445,9 @@
   <div class="sh-body">
     <p class="sh-desc">选择这份行程在「攻略广场」（<a href="/square/" target="_blank" rel="noopener">打开广场</a>）对别人可见的程度。公开后别人可以直接把这份行程复制成自己的。</p>
     <div class="vis-pick" id="sharePick" role="group" aria-label="可见性">
-      <button type="button" data-v="public" aria-pressed="false">🌐 公开</button>
-      <button type="button" data-v="friends" aria-pressed="false">👥 好友可见</button>
-      <button type="button" data-v="private" aria-pressed="false">🔒 私有</button>
+      <button type="button" data-v="public" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-globe"></use></svg>公开</button>
+      <button type="button" data-v="friends" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-friends"></use></svg>好友可见</button>
+      <button type="button" data-v="private" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-lock"></use></svg>私有</button>
     </div>
     <p class="sh-note" id="shareNote"></p>
   </div>
@@ -551,7 +561,7 @@
         +   '<div class="ticket-main">'
         +     '<div class="route">'
         +       '<span class="pt-name">' + escapeHtml(t.destination || '待定') + '</span>'
-        +       '<span class="line" aria-hidden="true"></span>'
+        +       '<span class="line" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></span>'
         +     '</div>'
         +     '<p class="ticket-title">' + escapeHtml(t.title || '未命名旅程') + '<span class="code">' + escapeHtml(codeText) + '</span></p>'
         +     '<div class="dates" role="group" aria-label="行程日期">'
@@ -570,7 +580,7 @@
         +     '<span class="stamp-badge ' + st.cls + '">' + st.label + '</span>'
         +     '<span class="days-label">DAYS</span>'
         +     '<span class="days">' + (days === '–' ? '–' : days + '<small>天</small>') + '</span>'
-        +     '<button class="fav" aria-pressed="' + (t.isFavorite ? 'true' : 'false') + '" aria-label="' + (t.isFavorite ? '已收藏，点击取消收藏' : '点击收藏') + '" data-act="fav">' + (t.isFavorite ? '★' : '☆') + '</button>'
+        +     '<button class="fav" aria-pressed="' + (t.isFavorite ? 'true' : 'false') + '" aria-label="' + (t.isFavorite ? '已收藏，点击取消收藏' : '点击收藏') + '" data-act="fav"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-star"></use></svg></button>'
         +   '</div>'
         + '</article>';
     }
@@ -606,7 +616,7 @@
       if (rows.length === 0) {
         board.innerHTML =
           '<div class="empty">'
-          + '<div class="ill">✈</div>'
+          + '<div class="ill" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></div>'
           + '<strong>还没有匹配的旅程</strong>'
           + '<p>试试切换状态筛选，或者直接签发下一张</p>'
           + '<button class="btn-new" id="emptyNew">＋ 新建旅程</button>'
@@ -638,7 +648,6 @@
             var on = act.getAttribute('aria-pressed') === 'true';
             await apiPatch('/trips/' + id + '/favorite', {});
             act.setAttribute('aria-pressed', on ? 'false' : 'true');
-            act.textContent = on ? '☆' : '★';
             act.setAttribute('aria-label', on ? '点击收藏' : '已收藏，点击取消收藏');
             var t = state.trips.find(function (x) { return x.id === id; });
             if (t) t.isFavorite = !on;
@@ -673,6 +682,27 @@
       }
     });
 
+    /* ===== 3D 倾斜：登机牌随鼠标透视（事件委托，重渲染后依然生效） ===== */
+    (function initTilt() {
+      if (!window.matchMedia || !matchMedia('(pointer: fine)').matches) return; /* 触屏不启用 */
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;       /* 尊重减动效设置 */
+      var active = null;
+      board.addEventListener('pointermove', function (e) {
+        var card = e.target.closest ? e.target.closest('.ticket') : null;
+        if (active && active !== card) { active.style.transform = ''; active = null; }
+        if (!card) return;
+        active = card;
+        var r = card.getBoundingClientRect();
+        var px = (e.clientX - r.left) / r.width - 0.5;
+        var py = (e.clientY - r.top) / r.height - 0.5;
+        card.style.transform = 'perspective(1000px) rotateX(' + (-py * 5).toFixed(2)
+          + 'deg) rotateY(' + (px * 5).toFixed(2) + 'deg) translateY(-4px)';
+      });
+      board.addEventListener('pointerleave', function () {
+        if (active) { active.style.transform = ''; active = null; }
+      });
+    })();
+
     async function reload() {
       try {
         var data = await apiGet('/trips');
@@ -682,7 +712,7 @@
       } catch (err) {
         board.innerHTML =
           '<div class="empty">'
-          + '<div class="ill">⚠</div>'
+          + '<div class="ill" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-alert"></use></svg></div>'
           + '<strong>加载失败</strong>'
           + '<p>' + escapeHtml(humanError(err)) + '</p>'
           + '</div>';
