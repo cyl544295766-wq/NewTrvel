@@ -73,13 +73,17 @@ public class DashboardService {
         .eq(TripMember::getUserId, userId)
         .inSql(TripMember::getTripId, "SELECT id FROM trips WHERE deleted_at IS NULL"));
 
+    // 一次批量取回用户全部关联行程，后续排序 / 组装 / 统计全部走内存 Map，避免逐条 selectById
+    Map<String, Trip> tripMap = loadTrips(memberships);
+    Map<String, User> userMapByPayer = new LinkedHashMap<>();
+
     List<TripMember> recent = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
         .eq(TripMember::getUserId, userId)
         .inSql(TripMember::getTripId, "SELECT id FROM trips WHERE deleted_at IS NULL")
         .last("LIMIT 8"));
     recent.sort((left, right) -> {
-      Trip leftTrip = tripMapper.selectById(left.getTripId());
-      Trip rightTrip = tripMapper.selectById(right.getTripId());
+      Trip leftTrip = tripMap.get(left.getTripId());
+      Trip rightTrip = tripMap.get(right.getTripId());
       Date leftKey = leftTrip == null ? new Date(0) : leftTrip.getUpdatedAt();
       Date rightKey = rightTrip == null ? new Date(0) : rightTrip.getUpdatedAt();
       int byFavorite = Boolean.compare(
@@ -88,7 +92,7 @@ public class DashboardService {
       return byFavorite != 0 ? byFavorite : rightKey.compareTo(leftKey);
     });
     List<Map<String, Object>> recentTrips = recent.stream().limit(3)
-        .map(member -> tripResponse(tripMapper.selectById(member.getTripId())))
+        .map(member -> tripResponse(tripMap.get(member.getTripId())))
         .toList();
 
     List<TripMember> upcoming = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
@@ -97,7 +101,7 @@ public class DashboardService {
             "SELECT id FROM trips WHERE deleted_at IS NULL AND status <> 'archived' AND archived_at IS NULL AND start_date >= '"
                 + localDateKey(today) + "'"));
     List<Map<String, Object>> upcomingTrips = upcoming.stream()
-        .map(member -> tripMapper.selectById(member.getTripId()))
+        .map(member -> tripMap.get(member.getTripId()))
         .filter(trip -> trip != null && trip.getStartDate() != null)
         .sorted((left, right) -> left.getStartDate().compareTo(right.getStartDate()))
         .limit(3)
@@ -120,29 +124,41 @@ public class DashboardService {
     List<Map<String, Object>> recentJournals = new ArrayList<>();
 
     if (!tripIds.isEmpty()) {
-      for (PackingList list : packingListMapper.selectList(new LambdaQueryWrapper<PackingList>()
-          .in(PackingList::getTripId, tripIds))) {
-        pendingPackingItemCount += packingItemMapper.selectCount(new LambdaQueryWrapper<PackingItem>()
-            .eq(PackingItem::getPackingListId, list.getId())
+      List<PackingList> packingLists = packingListMapper.selectList(new LambdaQueryWrapper<PackingList>()
+          .in(PackingList::getTripId, tripIds));
+      if (!packingLists.isEmpty()) {
+        pendingPackingItemCount = packingItemMapper.selectCount(new LambdaQueryWrapper<PackingItem>()
+            .in(PackingItem::getPackingListId,
+                packingLists.stream().map(PackingList::getId).toList())
             .eq(PackingItem::getIsPacked, false));
       }
       for (TripExpense expense : expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
           .in(TripExpense::getTripId, tripIds))) {
         totalExpenseCents += Math.round(expense.getAmount().doubleValue() * 100);
       }
-      recentExpenses = expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
+      List<TripExpense> recentExpenseRows = expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
           .in(TripExpense::getTripId, tripIds)
           .orderByDesc(TripExpense::getSpentAt)
-          .last("LIMIT 5"))
-          .stream()
-          .map(this::expenseResponse)
+          .last("LIMIT 5"));
+      List<String> payerIds = recentExpenseRows.stream()
+          .map(TripExpense::getPayerUserId)
+          .filter(java.util.Objects::nonNull)
+          .distinct()
+          .toList();
+      if (!payerIds.isEmpty()) {
+        for (User payer : userMapper.selectBatchIds(payerIds)) {
+          userMapByPayer.put(payer.getId(), payer);
+        }
+      }
+      recentExpenses = recentExpenseRows.stream()
+          .map(expense -> expenseResponse(expense, tripMap, userMapByPayer))
           .toList();
       List<Photo> photos = photoMapper.selectList(new LambdaQueryWrapper<Photo>()
           .in(Photo::getTripId, tripIds)
           .orderByDesc(Photo::getShotAt, Photo::getCreatedAt)
           .last("LIMIT 6"));
       for (Photo photo : photos) {
-        Trip trip = tripMapper.selectById(photo.getTripId());
+        Trip trip = tripMap.get(photo.getTripId());
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", photo.getId());
         map.put("tripId", photo.getTripId());
@@ -166,7 +182,7 @@ public class DashboardService {
           .orderByAsc(TravelDocument::getExpiredAt))
           .stream()
           .map(document -> {
-            Trip trip = tripMapper.selectById(document.getTripId());
+            Trip trip = tripMap.get(document.getTripId());
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("id", document.getId());
             map.put("tripId", document.getTripId());
@@ -184,7 +200,7 @@ public class DashboardService {
           .last("LIMIT 3"))
           .stream()
           .map(journal -> {
-            Trip trip = tripMapper.selectById(journal.getTripId());
+            Trip trip = tripMap.get(journal.getTripId());
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("id", journal.getId());
             map.put("tripId", journal.getTripId());
@@ -207,7 +223,7 @@ public class DashboardService {
     stats.put("tripCount", memberships.size());
     stats.put("totalExpenseAmount", String.format(java.util.Locale.ROOT, "%.2f",
         totalExpenseCents / 100.0));
-    stats.put("totalDays", sumTripDays(tripIds));
+    stats.put("totalDays", sumTripDays(tripMap));
     stats.put("pendingPackingItemCount", pendingPackingItemCount);
     stats.put("unreadNotificationCount", unreadCount);
 
@@ -239,9 +255,10 @@ public class DashboardService {
     return map;
   }
 
-  private Map<String, Object> expenseResponse(TripExpense expense) {
-    Trip trip = tripMapper.selectById(expense.getTripId());
-    User payer = userMapper.selectById(expense.getPayerUserId());
+  private Map<String, Object> expenseResponse(TripExpense expense, Map<String, Trip> tripMap,
+      Map<String, User> payerMap) {
+    Trip trip = tripMap.get(expense.getTripId());
+    User payer = payerMap.get(expense.getPayerUserId());
     Map<String, Object> map = new LinkedHashMap<>();
     map.put("id", expense.getId());
     map.put("tripId", expense.getTripId());
@@ -256,10 +273,9 @@ public class DashboardService {
     return map;
   }
 
-  private long sumTripDays(List<String> tripIds) {
+  private long sumTripDays(Map<String, Trip> tripMap) {
     long total = 0;
-    for (String tripId : tripIds) {
-      Trip trip = tripMapper.selectById(tripId);
+    for (Trip trip : tripMap.values()) {
       if (trip == null || trip.getStartDate() == null || trip.getEndDate() == null) {
         continue;
       }
@@ -269,6 +285,18 @@ public class DashboardService {
       total += Math.max(diff, 0);
     }
     return total;
+  }
+
+  private Map<String, Trip> loadTrips(List<TripMember> memberships) {
+    List<String> ids = memberships.stream().map(TripMember::getTripId).distinct().toList();
+    if (ids.isEmpty()) {
+      return new LinkedHashMap<>();
+    }
+    Map<String, Trip> map = new LinkedHashMap<>();
+    for (Trip trip : tripMapper.selectBatchIds(ids)) {
+      map.put(trip.getId(), trip);
+    }
+    return map;
   }
 
   private Date startOfToday() {
