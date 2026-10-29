@@ -240,8 +240,8 @@ const dataUrl = (buf) => 'data:image/png;base64,' + buf.toString('base64');
   check(/\d{2}\/\d{2} – \d{2}\/\d{2} · 5 天/.test(firstDt), '行程日期行：' + firstDt);
   const stPill = (await page.locator('#tripBody .trip-row').first().locator('.st').textContent()).trim();
   check(stPill === '草稿', '状态胶囊（新建即草稿）：' + stPill);
-  const thumbTxt = (await page.locator('#tripBody .trip-row').first().locator('.thumb').textContent()).trim();
-  check(thumbTxt.length > 0, '行程缩略表情非空：' + thumbTxt);
+  const thumbSvg = await page.locator('#tripBody .trip-row').first().locator('.thumb svg').count();
+  check(thumbSvg === 1, '行程缩略 3D 图标已渲染（svg × ' + thumbSvg + '）');
   check((await page.locator('#tripBody .trip-row').first().getAttribute('role')) === 'link', '行程行可访问（role=link）');
 
   /* ---- 最近花费 ---- */

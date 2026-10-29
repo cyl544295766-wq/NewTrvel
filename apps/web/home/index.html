@@ -16,6 +16,7 @@
     display: grid;
     grid-template-columns: var(--rail-w, 232px) 1fr;
     min-height: 100vh;
+    min-height: 100dvh;
     transition: grid-template-columns 0.24s cubic-bezier(0.4,0,0.2,1);
   }
   .shell[data-collapsed="true"] { --rail-w: 76px; }
@@ -52,7 +53,8 @@
     color: #3D6A6C; text-decoration: none; font-size: 14.5px; border-radius: 9px;
     white-space: nowrap; transition: background .16s, color .16s;
   }
-  .nav a .ico { flex: none; width: 20px; text-align: center; font-size: 15px; }
+  .nav a .ico { flex: none; width: 24px; height: 24px; display: grid; place-items: center; }
+  .nav a .ico svg { width: 22px; height: 22px; display: block; filter: drop-shadow(0 1.5px 2px rgba(13,110,110,.28)); }
   .nav a:hover { background: rgba(255,255,255,.85); color: var(--brand); }
   .nav a[aria-current="page"] { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 2px 8px rgba(13,110,110,.10); }
   .nav a[aria-current="page"] .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); margin-left: auto; }
@@ -184,11 +186,25 @@
     transition: opacity .18s ease, transform .18s ease;
   }
   .stat:hover::after, .stat:focus-visible::after { opacity: 1; transform: none; }
+  /* ===== 3D 倾斜：统计卡与 Hero 随鼠标透视 ===== */
+  .stat { transform-style: preserve-3d; }
+  /* 光标高光：随指针移动的柔光，强化立体感 */
+  .stat::before {
+    content: "";
+    position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(170px circle at var(--mx, 50%) var(--my, -10%), rgba(255,255,255,.38), rgba(255,255,255,0) 62%);
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .stat:hover::before { opacity: 1; }
+  .hero { will-change: transform; transition: transform .25s ease; }
   .stat .ic {
-    width: 40px; height: 40px; flex: none; border-radius: 11px;
-    display: grid; place-items: center; font-size: 18px;
-    background: rgba(255,255,255,0.16);
-    border: 1px solid rgba(255,255,255,0.18);
+    width: 42px; height: 42px; flex: none;
+    display: grid; place-items: center;
+    transform: translateZ(28px);
+  }
+  .stat .ic svg {
+    width: 42px; height: 42px; display: block;
+    filter: drop-shadow(0 5px 8px rgba(7,52,52,.38));
   }
   .stat .k { font-size: 12px; letter-spacing: .04em; color: rgba(255,255,255,0.78); }
   .stat .v {
@@ -344,9 +360,12 @@
   .trip-row + .trip-row { border-top: 1px solid #F2F8F8; }
   .trip-row:hover { background: #F5FBFB; }
   .trip-row .thumb {
-    width: 46px; height: 46px; border-radius: 10px; flex: none;
-    display: grid; place-items: center; font-size: 19px;
-    background: linear-gradient(140deg, #DCF2F0, #C6E9E6);
+    width: 46px; height: 46px; border-radius: 12px; flex: none;
+    display: grid; place-items: center;
+  }
+  .trip-row .thumb svg {
+    width: 44px; height: 44px; display: block;
+    filter: drop-shadow(0 3px 6px rgba(13,110,110,.28));
   }
   .trip-row .mid { min-width: 0; flex: 1; }
   .trip-row .nm {
@@ -412,9 +431,12 @@
   .journal-card:hover { background: #F5FBFB; }
   .journal-card + .journal-card { border-top: 1px solid #F2F8F8; }
   .journal-card .thumb2 {
-    width: 54px; height: 54px; border-radius: 10px; flex: none;
-    background: linear-gradient(140deg, #E8F2FB, #CFE4F5);
-    display: grid; place-items: center; font-size: 20px;
+    width: 54px; height: 54px; border-radius: 12px; flex: none;
+    display: grid; place-items: center;
+  }
+  .journal-card .thumb2 svg {
+    width: 52px; height: 52px; display: block;
+    filter: drop-shadow(0 3px 6px rgba(44,99,164,.28));
   }
   .journal-card .nm {
     font-size: 14.5px; font-weight: 500;
@@ -484,7 +506,8 @@
 
   /* ===== AI 一键生成行程 + 新手示例 ===== */
   .ai-gen { display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 22px; }
-  .ag-t { font-family: var(--slab); font-weight: 700; font-size: 19px; color: var(--brand); }
+  .ag-t { font-family: var(--slab); font-weight: 700; font-size: 19px; color: var(--brand); display: flex; align-items: center; gap: 8px; }
+  .ag-t .ag-ic { width: 22px; height: 22px; flex: none; filter: drop-shadow(0 2px 3px rgba(255,138,76,.35)); }
   .ag-s { font-size: 12.5px; color: var(--mute); margin-top: 4px; }
   .ag-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .ag-form input, .ag-form select { height: 40px; padding: 0 12px; border: 1px solid var(--line, #D8ECEA); border-radius: 10px; background: #fff; font-size: 13px; color: var(--ink); }
@@ -502,6 +525,158 @@
 </style>
 </head>
 <body>
+<!-- ===== 3D 图标精灵（渐变底座 + 高光的立体图标，全站首页引用） ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="tl-teal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1BA49A"/><stop offset="1" stop-color="#0A5F5A"/></linearGradient>
+    <linearGradient id="tl-orange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFA05E"/><stop offset="1" stop-color="#E15F24"/></linearGradient>
+    <linearGradient id="tl-green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#55BE7C"/><stop offset="1" stop-color="#2E7C50"/></linearGradient>
+    <linearGradient id="tl-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5BA3DC"/><stop offset="1" stop-color="#2C63A4"/></linearGradient>
+    <linearGradient id="tl-violet" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9C8AE0"/><stop offset="1" stop-color="#6351B4"/></linearGradient>
+    <linearGradient id="tl-amber" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5C15C"/><stop offset="1" stop-color="#D08E22"/></linearGradient>
+    <linearGradient id="tl-cyan" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5FC6D8"/><stop offset="1" stop-color="#2A83A0"/></linearGradient>
+    <linearGradient id="tl-indigo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8591DA"/><stop offset="1" stop-color="#4C57A8"/></linearGradient>
+    <linearGradient id="tl-gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <!-- 底座模板：圆角渐变块 + 顶部高光，字形为白色（细节用半透明黑，任何底色都可读） -->
+  <symbol id="ic3d-home" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <path d="M24 11.5 36.5 21.8V34a2.4 2.4 0 0 1-2.4 2.4h-5.6V28.4h-7v8h-5.6A2.4 2.4 0 0 1 11.5 34V21.8z" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-plane" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <path d="M35 13 13.2 22.4l8.3 3.7 3.4 8.9 3.6-8.1z" fill="#fff"/>
+    <path d="M21.5 26.1 27.7 14.6" stroke="rgba(0,0,0,.16)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-globe" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <g fill="none" stroke="#fff" stroke-linecap="round">
+      <circle cx="24" cy="24" r="12" stroke-width="2.4"/>
+      <ellipse cx="24" cy="24" rx="5.2" ry="12" stroke-width="2"/>
+      <path d="M12.6 19.6h22.8M12.6 28.4h22.8" stroke-width="1.9"/>
+    </g>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-friends" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <circle cx="19" cy="19.4" r="4.7" fill="#fff"/>
+    <path d="M11 34.5c0-4.6 3.6-7.5 8-7.5s8 2.9 8 7.5z" fill="#fff"/>
+    <circle cx="30.6" cy="20.4" r="3.7" fill="#fff" opacity=".82"/>
+    <path d="M26.6 34.5c.2-3.8 2-6 4.4-6s4.5 2.2 4.7 6z" fill="#fff" opacity=".82"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-stats" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <rect x="13" y="24" width="4.8" height="10.5" rx="1.8" fill="#fff"/>
+    <rect x="21.6" y="18" width="4.8" height="16.5" rx="1.8" fill="#fff"/>
+    <rect x="30.2" y="12.8" width="4.8" height="21.7" rx="1.8" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-bell" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <path d="M24 11.5a7.6 7.6 0 0 0-7.6 7.6v6.3l-2.7 4.6h20.6l-2.7-4.6v-6.3A7.6 7.6 0 0 0 24 11.5z" fill="#fff"/>
+    <path d="M20.9 32.2a3.3 3.3 0 0 0 6.2 0z" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-pin" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <path d="M24 10.8a9.6 9.6 0 0 0-9.6 9.6c0 7.1 9.6 16.8 9.6 16.8s9.6-9.7 9.6-16.8A9.6 9.6 0 0 0 24 10.8z" fill="#fff"/>
+    <circle cx="24" cy="20.4" r="3.9" fill="rgba(0,0,0,.26)"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-account" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <circle cx="24" cy="18.6" r="5.6" fill="#fff"/>
+    <path d="M13.4 35.4c0-5.7 4.8-9.1 10.6-9.1s10.6 3.4 10.6 9.1z" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-admin" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-teal)"/>
+    <path d="M24 11.2 35.2 15.4v8.9c0 6.7-4.6 10.8-11.2 12.9-6.6-2.1-11.2-6.2-11.2-12.9v-8.9z" fill="#fff"/>
+    <path d="M19.2 24.3 22.8 28l6.2-6.8" stroke="rgba(0,0,0,.3)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-luggage" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-orange)"/>
+    <path d="M20.4 17.4v-2.6a2.2 2.2 0 0 1 2.2-2.2h2.8a2.2 2.2 0 0 1 2.2 2.2v2.6" fill="none" stroke="#fff" stroke-width="2.5"/>
+    <rect x="14.6" y="17.4" width="18.8" height="15.6" rx="3.2" fill="#fff"/>
+    <rect x="20.4" y="17.4" width="2.1" height="15.6" fill="rgba(0,0,0,.15)"/>
+    <rect x="25.5" y="17.4" width="2.1" height="15.6" fill="rgba(0,0,0,.15)"/>
+    <circle cx="19" cy="34.6" r="1.6" fill="#fff"/><circle cx="29" cy="34.6" r="1.6" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-money" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-green)"/>
+    <rect x="11.8" y="17.2" width="24.4" height="14.4" rx="2.8" fill="#fff"/>
+    <path d="M20.4 21 24 25.4l3.6-4.4M24 25.4V30M21.3 26.7h5.4M21.3 28.8h5.4" stroke="rgba(0,0,0,.3)" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.4" cy="20.6" r="1.3" fill="rgba(0,0,0,.18)"/><circle cx="32.6" cy="28.2" r="1.3" fill="rgba(0,0,0,.18)"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-calendar" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-blue)"/>
+    <rect x="13" y="15.4" width="22" height="19.2" rx="3" fill="#fff"/>
+    <path d="M13 18.4a3 3 0 0 1 3-3h16a3 3 0 0 1 3 3v2.6H13z" fill="rgba(0,0,0,.2)"/>
+    <rect x="17.3" y="12.2" width="2.7" height="5.8" rx="1.35" fill="#fff"/>
+    <rect x="28" y="12.2" width="2.7" height="5.8" rx="1.35" fill="#fff"/>
+    <g fill="rgba(0,0,0,.24)"><circle cx="18.5" cy="25.8" r="1.7"/><circle cx="24" cy="25.8" r="1.7"/><circle cx="29.5" cy="25.8" r="1.7"/><circle cx="18.5" cy="30.4" r="1.7"/><circle cx="24" cy="30.4" r="1.7"/></g>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-pack" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-violet)"/>
+    <path d="M18.8 21.4v-2.8A2.6 2.6 0 0 1 21.4 16h5.2a2.6 2.6 0 0 1 2.6 2.6v2.8" fill="none" stroke="#fff" stroke-width="2.6"/>
+    <rect x="11.8" y="21.4" width="24.4" height="11.6" rx="5.8" fill="#fff"/>
+    <path d="M18.6 21.6v11.2M29.4 21.6v11.2" stroke="rgba(0,0,0,.16)" stroke-width="1.8"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-desert" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-amber)"/>
+    <circle cx="30.8" cy="16.4" r="4.2" fill="rgba(0,0,0,.2)"/>
+    <path d="M11 31.8c2.6-4.6 5.6-4.6 8.2 0 2.3 4 5.2 3.7 7.9-.4 2.2-3.3 4.9-2.9 7.4.4V35H11z" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-mountain" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-green)"/>
+    <circle cx="31.4" cy="15.4" r="3.8" fill="rgba(0,0,0,.2)"/>
+    <path d="M11.4 33.6 20 18.4l4.8 8.2 3.7-5.2 7.1 12.2z" fill="#fff"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-beach" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-cyan)"/>
+    <circle cx="16.6" cy="16.4" r="4.1" fill="#fff"/>
+    <path d="M11 29c2-2.6 4-2.6 6 0s4 2.6 6 0 4-2.6 6 0 4 2.6 6 0v6H11z" fill="#fff"/>
+    <path d="M11 32.4c2-2.6 4-2.6 6 0s4 2.6 6 0 4-2.6 6 0 4 2.6 6 0" stroke="rgba(0,0,0,.16)" stroke-width="2" fill="none"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-lake" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-blue)"/>
+    <path d="M11.8 27.2 17.6 18l3.5 5.4 2.9-4 5.6 7.8z" fill="#fff"/>
+    <path d="M11 29.6c2-2.4 4-2.4 6 0s4 2.4 6 0 4-2.4 6 0 4 2.4 6 0V35H11z" fill="#fff"/>
+    <path d="M11 32.8c2-2.4 4-2.4 6 0s4 2.4 6 0 4-2.4 6 0 4 2.4 6 0" stroke="rgba(0,0,0,.16)" stroke-width="2" fill="none"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-city" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-indigo)"/>
+    <rect x="13.8" y="21" width="5.6" height="13.4" fill="#fff"/>
+    <rect x="21.4" y="15.6" width="6.2" height="18.8" fill="#fff"/>
+    <rect x="29.6" y="23" width="5.2" height="11.4" fill="#fff"/>
+    <g fill="rgba(0,0,0,.22)"><rect x="23" y="18.6" width="1.5" height="2.6" rx=".4"/><rect x="24.5" y="18.6" width="1.5" height="2.6" rx=".4"/><rect x="23" y="22.4" width="1.5" height="2.6" rx=".4"/><rect x="24.5" y="22.4" width="1.5" height="2.6" rx=".4"/><rect x="23" y="26.2" width="1.5" height="2.6" rx=".4"/><rect x="24.5" y="26.2" width="1.5" height="2.6" rx=".4"/><rect x="15.6" y="24" width="1.5" height="2.6" rx=".4"/><rect x="15.6" y="28" width="1.5" height="2.6" rx=".4"/><rect x="31.2" y="25.6" width="1.5" height="2.6" rx=".4"/><rect x="31.2" y="29.4" width="1.5" height="2.6" rx=".4"/></g>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-book" viewBox="0 0 48 48">
+    <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#tl-blue)"/>
+    <path d="M13.4 14.4h8.1A2.5 2.5 0 0 1 24 16.9V33.6a2.5 2.5 0 0 0-2.5-2.5h-8.1z" fill="#fff"/>
+    <path d="M34.6 14.4h-8.1A2.5 2.5 0 0 0 24 16.9V33.6a2.5 2.5 0 0 1 2.5-2.5h8.1z" fill="#fff" opacity=".85"/>
+    <rect x="23.3" y="16.2" width="1.4" height="16.6" rx=".7" fill="rgba(0,0,0,.15)"/>
+    <path d="M2 15A13 13 0 0 1 15 2h18a13 13 0 0 1 13 13v8H2z" fill="url(#tl-gloss)"/>
+  </symbol>
+  <symbol id="ic3d-spark" viewBox="0 0 48 48">
+    <path d="M22 9.5l2.8 7.2 7.2 2.8-7.2 2.8L22 29.5l-2.8-7.2-7.2-2.8 7.2-2.8z" fill="#FFA45C"/>
+    <path d="M34.5 29l1.5 3.8 3.8 1.5-3.8 1.5-1.5 3.8-1.5-3.8-3.8-1.5 3.8-1.5z" fill="#FFC77E"/>
+  </symbol>
+</svg>
+
 <div class="shell" id="shell">
 
   <aside class="side">
@@ -510,17 +685,17 @@
     <div class="brand-mark" aria-hidden="true">T</div>
     <nav class="nav" id="sideNav" aria-label="主导航">
       <div class="nav-label">总览</div>
-      <a href="/home/" aria-current="page"><span class="ico" aria-hidden="true">&#8962;</span><span class="txt">首页</span><span class="dot"></span></a>
-      <a href="/trips/"><span class="ico" aria-hidden="true">&#9992;</span><span class="txt">我的旅行</span></a>
-      <a href="/square/"><span class="ico" aria-hidden="true">&#127758;</span><span class="txt">攻略广场</span></a>
-      <a href="/friends/"><span class="ico" aria-hidden="true">&#128101;</span><span class="txt">好友</span></a>
+      <a href="/home/" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-home"></use></svg></span><span class="txt">首页</span><span class="dot"></span></a>
+      <a href="/trips/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></span><span class="txt">我的旅行</span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-globe"></use></svg></span><span class="txt">攻略广场</span></a>
+      <a href="/friends/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-friends"></use></svg></span><span class="txt">好友</span></a>
       <div class="nav-label">洞察</div>
-      <a href="/stats/"><span class="ico" aria-hidden="true">&#9638;</span><span class="txt">旅行统计</span></a>
-      <a href="/notifications/"><span class="ico" aria-hidden="true">&#9719;</span><span class="txt">通知中心</span><span class="badge" id="navUnread" hidden>0</span></a>
+      <a href="/stats/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-stats"></use></svg></span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-bell"></use></svg></span><span class="txt">通知中心</span><span class="badge" id="navUnread" hidden>0</span></a>
       <div class="nav-label">行程</div>
-      <a href="/map/"><span class="ico" aria-hidden="true">&#9673;</span><span class="txt">地图</span></a>
-      <a href="/account/"><span class="ico" aria-hidden="true">&#9684;</span><span class="txt">账户</span></a>
-      <a href="/admin/"><span class="ico" aria-hidden="true">&#9881;</span><span class="txt">管理后台</span></a>
+      <a href="/map/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-pin"></use></svg></span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-account"></use></svg></span><span class="txt">账户</span></a>
+      <a href="/admin/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-admin"></use></svg></span><span class="txt">管理后台</span></a>
     </nav>
     <div class="side-foot">
       <span class="avatar" id="avatar">A</span>
@@ -559,7 +734,7 @@
       <!-- 统计：融入背景的票根数据条（毛玻璃浮层，点击跳转对应页面） -->
       <section class="stats">
         <a class="stat" href="/trips/" aria-label="旅行次数 · 打开我的旅行">
-          <span class="ic" aria-hidden="true">&#129517;</span>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-luggage"></use></svg></span>
           <div>
             <div class="k">旅行次数</div>
             <div class="v"><span id="stTrips">0</span> <small>次</small></div>
@@ -567,7 +742,7 @@
           </div>
         </a>
         <a class="stat" href="/expenses/" aria-label="累计花费 · 打开记账与花费">
-          <span class="ic" aria-hidden="true">&#128176;</span>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-money"></use></svg></span>
           <div>
             <div class="k">累计花费</div>
             <div class="v"><span id="stSpent">0</span> <small>¥</small></div>
@@ -575,7 +750,7 @@
           </div>
         </a>
         <a class="stat" href="/stats/" aria-label="累计天数 · 打开旅行统计">
-          <span class="ic" aria-hidden="true">&#128197;</span>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-calendar"></use></svg></span>
           <div>
             <div class="k">累计天数</div>
             <div class="v"><span id="stDays">0</span> <small>天</small></div>
@@ -583,7 +758,7 @@
           </div>
         </a>
         <a class="stat" href="/packing/" aria-label="待打包物品 · 打开打包清单">
-          <span class="ic" aria-hidden="true">&#127890;</span>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-pack"></use></svg></span>
           <div>
             <div class="k">待打包物品</div>
             <div class="v"><span id="stPacking">0</span> <small>件</small></div>
@@ -596,7 +771,7 @@
     <!-- ===== AI 一键生成行程（30 秒魔法时刻入口） ===== -->
     <section class="panel ai-gen" aria-label="AI 一键生成行程">
       <div class="ag-info">
-        <div class="ag-t">✨ AI 一键生成行程</div>
+        <div class="ag-t"><svg class="ag-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-spark"></use></svg>AI 一键生成行程</div>
         <div class="ag-s">说出目的地和日期，AI 帮你把景点、用餐、住宿全部安排好</div>
       </div>
       <form class="ag-form" id="aiGenForm" onsubmit="return aiGenTrip(event)">
@@ -778,20 +953,21 @@
   };
   function statusOf(v) { return STATUS[v] || STATUS.draft; }
 
-  /* ================= 目的地 → 缩略图表情 ================= */
+  /* ================= 目的地 → 3D 缩略图标 ================= */
   var THUMBS = [
-    { re: /阿拉善|沙漠|沙坡头|腾格里|巴丹吉林|响沙湾/, ic: '\uD83C\uDFDC' },
-    { re: /峰|山|石林|峡|岭|岩|林/,                   ic: '\u26F0' },
-    { re: /海|岛|湾|港|滨/,                            ic: '\uD83C\uDFDD' },
-    { re: /湖|湿地|草原|牧/,                           ic: '\uD83C\uDFDE' },
-    { re: /城|市|镇|京|沪|穗/,                         ic: '\uD83C\uDFD9' }
+    { re: /阿拉善|沙漠|沙坡头|腾格里|巴丹吉林|响沙湾/, ic: 'ic3d-desert' },
+    { re: /峰|山|石林|峡|岭|岩|林/,                   ic: 'ic3d-mountain' },
+    { re: /海|岛|湾|港|滨/,                            ic: 'ic3d-beach' },
+    { re: /湖|湿地|草原|牧/,                           ic: 'ic3d-lake' },
+    { re: /城|市|镇|京|沪|穗/,                         ic: 'ic3d-city' }
   ];
   function thumbOf(trip) {
     var key = ((trip && (trip.destination || trip.title)) || '').toString();
+    var icon = 'ic3d-plane';
     for (var i = 0; i < THUMBS.length; i++) {
-      if (THUMBS[i].re.test(key)) return THUMBS[i].ic;
+      if (THUMBS[i].re.test(key)) { icon = THUMBS[i].ic; break; }
     }
-    return '\u2708';
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><use href="#' + icon + '"></use></svg>';
   }
 
   /* ================= 花费分类（与费用页一致） ================= */
@@ -830,6 +1006,33 @@
       var next = shell.getAttribute('data-collapsed') !== 'true';
       apply(next);
       try { localStorage.setItem(KEY, next ? 'true' : 'false'); } catch (e) {}
+    });
+  })();
+
+  /* ================= 3D 倾斜：Hero 与统计卡随鼠标透视 ================= */
+  (function initTilt() {
+    if (!window.matchMedia || !matchMedia('(pointer: fine)').matches) return; /* 触屏不启用 */
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;       /* 尊重减动效设置 */
+
+    function bindTilt(el, maxDeg, onMove) {
+      if (!el) return;
+      el.addEventListener('pointermove', function (e) {
+        var r = el.getBoundingClientRect();
+        var px = (e.clientX - r.left) / r.width - 0.5;   /* -0.5 ~ 0.5 */
+        var py = (e.clientY - r.top) / r.height - 0.5;
+        el.style.transform = 'perspective(1000px) rotateX('
+          + (-py * maxDeg).toFixed(2) + 'deg) rotateY(' + (px * maxDeg).toFixed(2) + 'deg)';
+        if (onMove) onMove(el, px, py);
+      });
+      el.addEventListener('pointerleave', function () { el.style.transform = ''; });
+    }
+
+    bindTilt(document.querySelector('.hero'), 2.4);
+    document.querySelectorAll('.stat').forEach(function (card) {
+      bindTilt(card, 8, function (el, px, py) {
+        el.style.setProperty('--mx', ((px + 0.5) * 100).toFixed(1) + '%');
+        el.style.setProperty('--my', ((py + 0.5) * 100).toFixed(1) + '%');
+      });
     });
   })();
 
@@ -1247,7 +1450,7 @@
       var href = '/journal-detail/?id=' + encodeURIComponent(j.id)
         + (j.tripId ? '&trip=' + encodeURIComponent(j.tripId) : '');
       html.push('<a class="journal-card" href="' + href + '">');
-      html.push('<span class="thumb2" aria-hidden="true">&#128211;</span>');
+      html.push('<span class="thumb2" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-book"></use></svg></span>');
       html.push('<div><div class="nm">' + escapeHtml(j.title || '无题') + '</div>'
         + '<div class="dt">' + escapeHtml(meta) + '</div>'
         + (j.summary ? '<div class="excerpt">' + escapeHtml(j.summary) + '</div>' : '')
