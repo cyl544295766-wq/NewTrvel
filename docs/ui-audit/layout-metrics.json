@@ -1,0 +1,126 @@
+{
+  "desktop": {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "documentWidth": 1440,
+    "documentHeight": 2903,
+    "hero": {
+      "width": 1280,
+      "height": 591
+    },
+    "stats": {
+      "width": 1192,
+      "height": 120
+    },
+    "aiForm": {
+      "width": 820,
+      "height": 65
+    },
+    "topbar": {
+      "width": 1280,
+      "height": 66
+    },
+    "navItems": 9,
+    "reducedMotionRule": false
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "documentWidth": 390,
+    "documentHeight": 3711,
+    "formWidth": 346,
+    "formHeight": 176,
+    "navClientWidth": 358,
+    "navScrollWidth": 836,
+    "statWidth": 173,
+    "statHeight": 121,
+    "countdownHeight": 174,
+    "visibleHeroIcons": 4,
+    "smallTouchTargets": [
+      {
+        "text": "Travel OSTRIP COCKPIT",
+        "height": 30
+      },
+      {
+        "text": "首页",
+        "height": 35
+      },
+      {
+        "text": "我的旅行",
+        "height": 35
+      },
+      {
+        "text": "攻略广场",
+        "height": 35
+      },
+      {
+        "text": "好友",
+        "height": 35
+      },
+      {
+        "text": "旅行统计",
+        "height": 35
+      },
+      {
+        "text": "通知中心3",
+        "height": 35
+      },
+      {
+        "text": "地图",
+        "height": 35
+      },
+      {
+        "text": "账户",
+        "height": 35
+      },
+      {
+        "text": "管理后台",
+        "height": 35
+      },
+      {
+        "text": "⏻",
+        "height": 28
+      },
+      {
+        "text": "北京 · 11/01 出发",
+        "height": 19
+      },
+      {
+        "text": "完整地图 →",
+        "height": 34
+      },
+      {
+        "text": "标准",
+        "height": 29
+      },
+      {
+        "text": "卫星",
+        "height": 29
+      },
+      {
+        "text": "去补充地点 →",
+        "height": 24
+      },
+      {
+        "text": "全部行程 →",
+        "height": 34
+      },
+      {
+        "text": "全部账目 →",
+        "height": 34
+      },
+      {
+        "text": "全部照片 →",
+        "height": 34
+      },
+      {
+        "text": "全部游记 →",
+        "height": 34
+      }
+    ]
+  }
+}
