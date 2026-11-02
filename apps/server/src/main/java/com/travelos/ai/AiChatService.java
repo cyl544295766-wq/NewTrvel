@@ -182,6 +182,15 @@ public class AiChatService {
 
   public Map<String, Object> sendMessage(String conversationId, String userId,
       Map<String, Object> dto) {
+    return sendMessageStream(conversationId, userId, dto, null);
+  }
+
+  /**
+   * 流式变体：onDelta 实时回调正文增量（传 null 即非流式）。
+   * 校验、并发闸、持久化与草稿装配与 sendMessage 完全一致。
+   */
+  public Map<String, Object> sendMessageStream(String conversationId, String userId,
+      Map<String, Object> dto, java.util.function.Consumer<String> onDelta) {
     String content = dto.get("content") == null ? "" : dto.get("content").toString().trim();
     if (content.isEmpty()) {
       throw ApiException.badRequest("消息内容不能为空");
@@ -193,13 +202,14 @@ public class AiChatService {
       throw ApiException.conflict("上一条回复还在生成中，请稍候");
     }
     try {
-      return doSend(conversationId, userId, content);
+      return doSend(conversationId, userId, content, onDelta);
     } finally {
       inFlightUsers.remove(userId);
     }
   }
 
-  private Map<String, Object> doSend(String conversationId, String userId, String content) {
+  private Map<String, Object> doSend(String conversationId, String userId, String content,
+      java.util.function.Consumer<String> onDelta) {
     AiConversation conversation = requireOwnedConversation(conversationId, userId);
 
     AiMessage userMessage = insertMessage(conversationId, userId, "user", content, null, null);
@@ -226,7 +236,9 @@ public class AiChatService {
       int draftClaimRetries = 0;  /* 「声称生成了草稿但实际没调用工具」的纠正次数 */
       Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        Map<String, Object> message = llm.chat(llmMessages, toolRegistry.toolDefinitions());
+        Map<String, Object> message = onDelta == null
+            ? llm.chat(llmMessages, toolRegistry.toolDefinitions())
+            : llm.chatStream(llmMessages, toolRegistry.toolDefinitions(), onDelta);
         List<Map<String, Object>> toolCalls = llm.extractToolCalls(message);
         String messageContent = message.get("content") == null ? ""
             : message.get("content").toString();

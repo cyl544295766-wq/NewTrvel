@@ -23,6 +23,7 @@ public class AuthService {
 
   private final UserService userService;
   private final com.travelos.service.AuditService auditService;
+  private final com.travelos.service.FileStorageService fileStorageService;
   private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
   private final String jwtSecret;
   private final String cookieName;
@@ -30,11 +31,13 @@ public class AuthService {
 
   public AuthService(UserService userService,
       com.travelos.service.AuditService auditService,
+      com.travelos.service.FileStorageService fileStorageService,
       @Value("${jwt.secret}") String jwtSecret,
       @Value("${auth.cookie-name:access_token}") String cookieName,
       @Value("${auth.secure-cookie:false}") boolean secureCookie) {
     this.userService = userService;
     this.auditService = auditService;
+    this.fileStorageService = fileStorageService;
     this.jwtSecret = jwtSecret;
     this.cookieName = cookieName;
     this.secureCookie = secureCookie;
@@ -147,6 +150,49 @@ public class AuthService {
     userService.updateUser(user);
     auditService.record(user.getId(), null, "password_changed", "user", user.getId(),
         Map.of("username", user.getUsername()));
+  }
+
+  /**
+   * 更新账户资料：显示名（1–30 字符）与头像。头像支持 data URL 上传（落盘转受管地址）
+   * 或已是受管地址；传空字符串清空头像，传 null 的字段保持不变。
+   * 更换/清空头像时清理旧的受管文件。
+   */
+  @Transactional
+  public Map<String, Object> updateProfile(UserContext currentUser, String displayName, String avatarUrl) {
+    User user = userService.findById(currentUser.id());
+    if (user == null) {
+      throw ApiException.unauthorized("Unauthorized");
+    }
+    if (!"active".equals(user.getStatus())) {
+      throw ApiException.forbidden("账户不可用");
+    }
+    if (displayName != null) {
+      String name = displayName.trim();
+      if (name.isEmpty() || name.length() > 30) {
+        throw ApiException.badRequest("显示名需为 1–30 个字符");
+      }
+      user.setDisplayName(name);
+    }
+    if (avatarUrl != null) {
+      String old = user.getAvatarUrl();
+      String value = avatarUrl.trim();
+      if (value.isEmpty()) {
+        user.setAvatarUrl(null);
+      } else if (fileStorageService.isDataUrl(value)) {
+        user.setAvatarUrl(fileStorageService.storeDataUrl(value));
+      } else if (fileStorageService.isManagedFileUrl(value)) {
+        user.setAvatarUrl(value);
+      } else {
+        throw ApiException.badRequest("头像仅支持上传图片（data URL）或受管文件地址");
+      }
+      if (old != null && !old.equals(user.getAvatarUrl())) {
+        fileStorageService.deleteIfManaged(old);
+      }
+    }
+    userService.updateUser(user);
+    auditService.record(user.getId(), null, "profile_updated", "user", user.getId(),
+        Map.of("displayName", String.valueOf(user.getDisplayName())));
+    return Map.of("user", userService.toPublicUser(user));
   }
 
   public Map<String, Object> getMe(UserContext currentUser) {

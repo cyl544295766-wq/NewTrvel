@@ -367,6 +367,21 @@
   /* ===== 暗色线条图标（#ln-*）：配色与线宽 ===== */
   .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
   .tb-nav a .ico svg.ln { color: #8FE0DB; stroke-width: 2.1; }
+
+  /* ===== 模板快启（P0-6） ===== */
+  .tpl-row { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tpl-label { font-family: var(--grot); font-size: 11px; font-weight: 600; letter-spacing: .12em; color: rgba(255,255,255,.45); }
+  .tpl-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tpl-btn {
+    display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px; padding: 9px 14px; cursor: pointer; font-family: var(--grot);
+    transition: background .16s, border-color .16s, transform .16s;
+  }
+  .tpl-btn:hover { background: rgba(255,255,255,.1); border-color: rgba(91,197,192,.5); transform: translateY(-1px); }
+  .tpl-btn:disabled { opacity: .55; cursor: wait; transform: none; }
+  .tpl-btn b { font-size: 13px; color: rgba(255,255,255,.85); }
+  .tpl-btn span { font-size: 11px; color: rgba(255,255,255,.45); }
 </style>
 </head>
 <body>
@@ -417,6 +432,12 @@
         <div><div class="v" id="ovCd">–</div><div class="k" id="ovCdK">距出发</div></div>
       </div>
     </section>
+
+    <!-- 模板快启（P0-6） -->
+    <div class="tpl-row" id="tplRow" hidden>
+      <span class="tpl-label">模板快启</span>
+      <div class="tpl-btns" id="tplBtns"></div>
+    </div>
 
     <!-- 新建清单 -->
     <div class="new-row" id="newRow">
@@ -521,6 +542,42 @@
         + '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + stroke + '" stroke-linecap="round" stroke-dasharray="' + v.toFixed(1) + ' ' + c.toFixed(1) + '"/>'
         + '</svg>';
     }
+
+    /* ===== 模板快启（P0-6） ===== */
+    async function loadTemplates() {
+      try {
+        var d = await apiGet('/templates');
+        var tpls = (d && d.templates) || [];
+        if (!tpls.length) return;
+        $('tplBtns').innerHTML = tpls.map(function (t) {
+          return '<button type="button" class="tpl-btn" data-tpl="' + escapeHtml(t.id) + '">'
+            + '<b>' + escapeHtml(t.name) + '</b>'
+            + '<span>' + escapeHtml(t.desc) + ' · ' + (t.listCount || 0) + ' 张 / ' + (t.itemCount || 0) + ' 物</span>'
+            + '</button>';
+        }).join('');
+        $('tplRow').hidden = false;
+      } catch (e) { /* 模板列表失败不影响主流程 */ }
+    }
+    $('tplBtns').addEventListener('click', async function (e) {
+      var btn = e.target.closest('.tpl-btn');
+      if (!btn) return;
+      var id = btn.getAttribute('data-tpl');
+      var name = (btn.querySelector('b') || {}).textContent || '模板';
+      if (!confirm('将为本行程生成「' + name + '」的整套打包清单（已有内容不受影响），并为未命名的行程天套用标题建议？')) return;
+      btn.disabled = true;
+      try {
+        var r = await apiPost('/trips/' + encodeURIComponent(tripId) + '/apply-template', { templateId: id });
+        showToast('已应用「' + (r && r.template ? r.template : name) + '」：'
+          + (r ? r.listsCreated : 0) + ' 张清单 / ' + (r ? r.itemsCreated : 0) + ' 件物品'
+          + ((r && r.daysTitled) ? ' / ' + r.daysTitled + ' 天标题' : ''));
+        await load();
+      } catch (err) {
+        showToast(humanError(err));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    loadTemplates();
 
     /* ===== 加载 ===== */
     async function load() {

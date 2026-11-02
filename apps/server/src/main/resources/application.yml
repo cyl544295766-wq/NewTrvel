@@ -59,7 +59,7 @@ seed:
 
 app:
   user-cleanup:
-    enabled: false
+    enabled: true
   booking-reminder:
     enabled: true
 

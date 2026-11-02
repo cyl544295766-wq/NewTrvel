@@ -347,6 +347,20 @@
   /* ===== 暗色线条图标（#ln-*）：配色与线宽 ===== */
   .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
   .tb-nav a .ico svg.ln { color: #8FE0DB; stroke-width: 2.1; }
+
+  /* ===== 资料编辑（P0-3） ===== */
+  .profile-edit { margin-top: 18px; border-top: 1px dashed rgba(255,255,255,.1); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .pr-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+  .pr-field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 240px; }
+  .pr-field span { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.55); }
+  .pr-field input[type="text"], .pr-field input[type="file"] {
+    font-family: var(--grot); font-size: 13.5px; color: rgba(255,255,255,.82);
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; padding: 10px 12px; outline: none;
+  }
+  .pr-field input[type="text"]:focus { border-color: rgba(91,197,192,.65); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
+  .pr-foot { align-items: center; justify-content: space-between; }
+  .pr-note { font-size: 12px; color: rgba(255,255,255,.45); }
 </style>
 </head>
 <body>
@@ -408,6 +422,20 @@
             <div class="inf"><div class="k">注册时间</div><div class="v" id="iCreated">…</div></div>
             <div class="inf"><div class="k">用户 ID</div><div class="v mono" id="iId">…</div></div>
             <div class="inf"><div class="k">头像</div><div class="v" id="iAvatar">…</div><div class="hint">当前用显示名首字母占位</div></div>
+          </div>
+          <div class="profile-edit">
+            <div class="pr-row">
+              <label class="pr-field"><span>修改显示名</span>
+                <input type="text" id="prDisplay" maxlength="30" placeholder="1–30 个字符">
+              </label>
+              <label class="pr-field"><span>更换头像</span>
+                <input type="file" id="prAvatar" accept="image/png,image/jpeg,image/webp">
+              </label>
+            </div>
+            <div class="pr-row pr-foot">
+              <span class="pr-note" id="prNote">头像支持 JPG / PNG / WebP，不超过 2MB，上传后服务端落盘保管</span>
+              <button type="button" class="btn-stamp" id="prSave">保存资料</button>
+            </div>
           </div>
         </section>
 
@@ -637,7 +665,53 @@
       $('iCreated').textContent = fmtDate(u.createdAt);
       $('iId').textContent = u.id || '—';
       $('iAvatar').textContent = u.avatarUrl ? '已设置图片' : '未设置（首字母占位）';
+      if (u.avatarUrl) {
+        var img = '<img src="' + escapeHtml(u.avatarUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">';
+        $('hpAvatar').innerHTML = img;
+        $('avatar').innerHTML = img;
+      }
+      $('prDisplay').value = u.displayName || '';
     }
+
+    /* ===== 编辑账户资料（P0-3）：PUT /api/auth/profile ===== */
+    var prAvatarData = null;
+    $('prAvatar').addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      if (f.size > 2 * 1024 * 1024) {
+        showToast('头像不能超过 2MB');
+        this.value = '';
+        return;
+      }
+      var r = new FileReader();
+      r.onload = function () {
+        prAvatarData = r.result;
+        showToast('头像已选择，点击「保存资料」生效');
+      };
+      r.readAsDataURL(f);
+    });
+    $('prSave').addEventListener('click', async function () {
+      var b = $('prSave');
+      var body = {};
+      var name = $('prDisplay').value.trim();
+      if (name && name !== (getCurrentUser() || {}).displayName) body.displayName = name;
+      if (prAvatarData) body.avatarUrl = prAvatarData;
+      if (!Object.keys(body).length) { showToast('没有需要保存的修改'); return; }
+      b.disabled = true;
+      try {
+        var d = await apiPut('/auth/profile', body);
+        var u = (d && d.user) || getCurrentUser();
+        setAuth(getToken(), u);
+        renderProfile(u);
+        prAvatarData = null;
+        $('prAvatar').value = '';
+        showToast('资料已更新');
+      } catch (err) {
+        showToast(humanError(err));
+      } finally {
+        b.disabled = false;
+      }
+    });
 
     /* ===== 子导航高亮 ===== */
     var links = Array.prototype.slice.call(document.querySelectorAll('.subnav a'));

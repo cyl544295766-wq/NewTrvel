@@ -46,6 +46,10 @@ public class AuthController {
       @NotBlank @Size(max = 64) String newPassword) {
   }
 
+  /** 资料更新：displayName / avatarUrl 传 null 表示该字段保持不变。 */
+  public record ProfileRequest(String displayName, String avatarUrl) {
+  }
+
   @PostMapping("/register")
   public Map<String, Object> register(@Valid @RequestBody RegisterRequest request,
       HttpServletResponse response) {
@@ -73,6 +77,13 @@ public class AuthController {
   @GetMapping("/me")
   public Map<String, Object> getMe(@CurrentUser UserContext currentUser) {
     return authService.getMe(currentUser);
+  }
+
+  /** 更新账户资料：显示名与头像（data URL 上传，服务端落盘转受管地址）。 */
+  @PutMapping("/profile")
+  public Map<String, Object> updateProfile(@RequestBody ProfileRequest request,
+      @CurrentUser UserContext currentUser) {
+    return authService.updateProfile(currentUser, request.displayName(), request.avatarUrl());
   }
 
   @PostMapping("/logout")

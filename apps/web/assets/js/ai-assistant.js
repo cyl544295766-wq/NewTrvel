@@ -773,6 +773,67 @@
     }
   }
 
+  /* 流式发送（P0-4）：SSE 逐增量渲染临时气泡；任何失败静默回退普通接口 */
+  async function streamMessage(text, box) {
+    var endpoint = '/ai/conversations/' + encodeURIComponent(S.convId) + '/messages/stream';
+    var fallback = function () {
+      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages', { content: text });
+    };
+    var token = getToken();
+    if (!token || typeof fetch !== 'function' || !(typeof ReadableStream !== 'undefined')) {
+      return fallback();
+    }
+    var res;
+    try {
+      res = await fetch(API_BASE + endpoint, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: {
+          'Accept': 'text/event-stream',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({ content: text }),
+      });
+    } catch (e) {
+      return fallback();
+    }
+    if (!res.ok || !res.body) return fallback();
+
+    removeTyping();
+    box.insertAdjacentHTML('beforeend',
+      '<div class="pet-msg ai msg-streaming"><div class="txt"><span class="pet-typing"><i></i><i></i><i></i></span></div></div>');
+    var streamEl = box.querySelector('.msg-streaming .txt');
+    var acc = '';
+    var buf = '';
+    var decoder = new TextDecoder();
+    var reader = res.body.getReader();
+    try {
+      for (;;) {
+        var step = await reader.read();
+        if (step.done) break;
+        buf += decoder.decode(step.value, { stream: true });
+        var parts = buf.split('\n');
+        buf = parts.pop();
+        for (var i = 0; i < parts.length; i++) {
+          var line = parts[i].trim();
+          if (line.slice(0, 5) !== 'data:') continue;
+          var payload = line.slice(5).trim();
+          if (!payload) continue;
+          var obj = null;
+          try { obj = JSON.parse(payload); } catch (e) { continue; }
+          if (obj && typeof obj.text === 'string' && obj.text) {
+            acc += obj.text;
+            streamEl.innerHTML = mdText(acc);
+            box.scrollTop = box.scrollHeight;
+          }
+        }
+      }
+    } catch (e) {
+      /* 中断：保留已接收文本，后续 fetchMessages 会对齐权威状态 */
+    }
+  }
+
   async function send(preset) {
     if (S.sending) return;
     var text = String(preset != null ? preset : S.el.input.value).trim();
@@ -792,7 +853,7 @@
     appendTyping();
     try {
       await ensureConversation(text);
-      await apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages', { content: text });
+      await streamMessage(text, box);
       /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配） */
       var d = await fetchMessages();
       var items = (d.messages || []).slice();

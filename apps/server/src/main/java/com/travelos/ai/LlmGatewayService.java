@@ -99,6 +99,111 @@ public class LlmGatewayService {
     }
   }
 
+
+  /**
+   * 流式对话补全（SSE）。逐行解析上游 `data:` 增量：正文片段实时回调
+   * onDelta，tool_calls 片段按 index 拼装。返回与 {@link #chat} 相同形状的
+   * message（含完整 content / tool_calls），上层工具循环可无差别复用。
+   */
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> chatStream(List<Map<String, Object>> messages,
+      List<Map<String, Object>> tools, java.util.function.Consumer<String> onDelta) {
+    if (!isEnabled()) {
+      throw ApiException.serviceUnavailable(disabledMessage());
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("model", model);
+    body.put("messages", messages);
+    body.put("stream", true);
+    if (tools != null && !tools.isEmpty()) {
+      body.put("tools", tools);
+      body.put("tool_choice", "auto");
+    }
+    Map<String, Object> headers = new LinkedHashMap<>();
+    headers.put("Authorization", "Bearer " + apiKey);
+    try {
+      return restTemplate.execute(
+          baseUrl.replaceAll("/$", "") + "/chat/completions",
+          org.springframework.http.HttpMethod.POST,
+          request -> {
+            request.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+            headers.forEach((k, v) -> request.getHeaders().set(k, String.valueOf(v)));
+            request.getBody().write(
+                JsonUtil.write(body).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+          },
+          (org.springframework.web.client.ResponseExtractor<Map<String, Object>>) response -> {
+            StringBuilder content = new StringBuilder();
+            Map<Integer, Map<String, Object>> toolAcc = new LinkedHashMap<>();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(response.getBody(),
+                    java.nio.charset.StandardCharsets.UTF_8))) {
+              String line;
+              while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || !line.startsWith("data:")) continue;
+                String payload = line.substring(5).trim();
+                if ("[DONE]".equals(payload)) break;
+                Map<String, Object> chunk;
+                try {
+                  chunk = JsonUtil.readObject(payload);
+                } catch (Exception ignore) {
+                  continue;
+                }
+                Object choicesRaw = chunk.get("choices");
+                if (!(choicesRaw instanceof List<?> choices) || choices.isEmpty()) continue;
+                if (!(((Map<?, ?>) choices.get(0)).get("delta") instanceof Map<?, ?> delta)) continue;
+
+                Object contentRaw = delta.get("content");
+                if (contentRaw != null && !contentRaw.toString().isEmpty()) {
+                  content.append(contentRaw);
+                  if (onDelta != null) onDelta.accept(contentRaw.toString());
+                }
+                if (delta.get("tool_calls") instanceof List<?> tcList) {
+                  for (Object tcObj : tcList) {
+                    if (!(tcObj instanceof Map<?, ?> tc)) continue;
+                    int index = tc.get("index") instanceof Number n ? n.intValue() : 0;
+                    Map<String, Object> acc =
+                        toolAcc.computeIfAbsent(index, k -> new LinkedHashMap<>());
+                    if (tc.get("id") != null && acc.get("id") == null) {
+                      acc.put("id", String.valueOf(tc.get("id")));
+                    }
+                    if (tc.get("function") instanceof Map<?, ?> fn) {
+                      if (fn.get("name") != null && acc.get("name") == null) {
+                        acc.put("name", String.valueOf(fn.get("name")));
+                      }
+                      if (fn.get("arguments") != null) {
+                        acc.put("arguments", String.valueOf(acc.getOrDefault("arguments", ""))
+                            + fn.get("arguments"));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            Map<String, Object> message = new LinkedHashMap<>();
+            message.put("role", "assistant");
+            message.put("content", content.length() == 0 ? null : content.toString());
+            if (!toolAcc.isEmpty()) {
+              List<Map<String, Object>> calls = new ArrayList<>();
+              for (Map<String, Object> acc : toolAcc.values()) {
+                Map<String, Object> function = new LinkedHashMap<>();
+                function.put("name", acc.getOrDefault("name", ""));
+                function.put("arguments", acc.getOrDefault("arguments", ""));
+                Map<String, Object> call = new LinkedHashMap<>();
+                call.put("id", acc.getOrDefault("id", "call_" + calls.size()));
+                call.put("type", "function");
+                call.put("function", function);
+                calls.add(call);
+              }
+              message.put("tool_calls", calls);
+            }
+            return message;
+          });
+    } catch (RestClientException ex) {
+      throw ApiException.serviceUnavailable("AI 服务暂时不可用（超时或网络异常），请稍后再试");
+    }
+  }
+
   /** 把网关返回的 message 规整为内部消息格式（content / toolCalls）。 */
   @SuppressWarnings("unchecked")
   public List<Map<String, Object>> extractToolCalls(Map<String, Object> message) {

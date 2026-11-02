@@ -4,6 +4,7 @@ import com.travelos.ai.AiChatService;
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,6 +52,43 @@ public class AiController {
   public Map<String, Object> send(@PathVariable String conversationId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return aiChatService.sendMessage(conversationId, user.id(), dto);
+  }
+
+  /**
+   * 流式发送（P0-4）：SSE 推送 delta 增量，结束时以 done 事件下发
+   * 完整装配结果（与非流式接口同形状），异常以 error 事件告知。
+   */
+  @PostMapping("/{conversationId}/messages/stream")
+  public SseEmitter sendMessageStream(@PathVariable String conversationId,
+      @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
+    SseEmitter emitter = new SseEmitter(180_000L);
+    Thread worker = new Thread(() -> {
+      try {
+        Map<String, Object> result = aiChatService.sendMessageStream(
+            conversationId, user.id(), dto,
+            delta -> {
+              try {
+                emitter.send(SseEmitter.event().name("delta").data(Map.of("text", delta)));
+              } catch (Exception ignored) {
+                /* 客户端断开：无需中断生成 */
+              }
+            });
+        emitter.send(SseEmitter.event().name("done").data(result));
+        emitter.complete();
+      } catch (Exception ex) {
+        String message = ex instanceof com.travelos.common.ApiException
+            ? String.valueOf(ex.getMessage()) : "AI 服务异常，请稍后再试";
+        try {
+          emitter.send(SseEmitter.event().name("error").data(Map.of("message", message)));
+          emitter.complete();
+        } catch (Exception ignored) {
+          /* emitter 已关闭 */
+        }
+      }
+    }, "ai-stream-" + conversationId);
+    worker.setDaemon(true);
+    worker.start();
+    return emitter;
   }
 
   @DeleteMapping("/{conversationId}")
