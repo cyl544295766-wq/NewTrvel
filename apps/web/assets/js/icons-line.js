@@ -28,13 +28,9 @@
     calendar: '<rect x="4" y="6" width="16" height="15" rx="2.4"/><path d="M4 10.2h16M8.5 3.6V7M15.5 3.6V7"/>'
       + '<g fill="currentColor" stroke="none"><circle cx="9" cy="14.4" r="1"/><circle cx="12" cy="14.4" r="1"/><circle cx="15" cy="14.4" r="1"/><circle cx="9" cy="17.6" r="1"/><circle cx="12" cy="17.6" r="1"/></g>',
     pack: '<path d="M8 9V7a4 4 0 0 1 8 0v2"/><rect x="5" y="9" width="14" height="11.6" rx="3"/><path d="M8.6 13.5v2.4M15.4 13.5v2.4"/>',
-    desert: '<circle cx="8" cy="6.8" r="2.4"/><path d="M3 18.2c2.4-3.9 4.9-3.9 7.3 0 1.9 3.2 4.4 2.9 6.6-.4 1.5-2.1 2.9-1.8 4.6.4"/>',
     mountain: '<path d="m3 19 6.8-11.6 3.6 6 2.4-3.3L21 19z"/>',
     beach: '<circle cx="8" cy="7" r="2.8"/><path d="M3 14.2c2-1.9 4-1.9 6 0s4 1.9 6 0 4-1.9 6 0"/>'
       + '<path d="M3 18.4c2-1.9 4-1.9 6 0s4 1.9 6 0 4-1.9 6 0"/>',
-    lake: '<path d="m7.5 9.5 3-4 2.8 4"/><path d="M3 13.8c2-1.8 4-1.8 6 0s4 1.8 6 0 4-1.8 6 0"/>'
-      + '<path d="M3 18c2-1.8 4-1.8 6 0s4 1.8 6 0 4-1.8 6 0"/>',
-    city: '<path d="M4 20V9.2h5V20M9 20V4.5h6V20M15 20v-7.2h5V20"/><path d="M2.5 20.5h19"/>',
     book: '<path d="M12 6.6C10.6 5.1 8.6 4.5 4 4.5v13c4.6 0 6.6.6 8 2 1.4-1.4 3.4-2 8-2v-13c-4.6 0-6.6.6-8 2z"/><path d="M12 6.6v13"/>',
     lock: '<rect x="5" y="10.6" width="14" height="9.4" rx="2.4"/><path d="M8 10.6V7.9a4 4 0 0 1 8 0v2.7"/><path d="M12 14v2.6"/>',
     alert: '<path d="M12 4 21 19.5H3z"/><path d="M12 10.2v4.4"/><circle cx="12" cy="17.1" r=".8" fill="currentColor" stroke="none"/>',
