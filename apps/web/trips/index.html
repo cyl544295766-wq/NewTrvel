@@ -20,16 +20,16 @@
 
     /* 状态色（登机牌 ribbon / 印章，页面特有） */
     --st-draft:     #8A9BA5;
-    --st-planning:  #C08A2E;
-    --st-active:    #1E9A6E;
-    --st-completed: #0D6E6E;
+    --st-planning:  #D9A54A;
+    --st-active:    #35B583;
+    --st-completed: #2FA79F;
     --st-archived:  #8A9BA5;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    font-family: var(--grot); background: var(--cloud); color: var(--ink);
+    font-family: var(--grot); background: #0E1116; color: rgba(255,255,255,.82);
     line-height: 1.6; -webkit-font-smoothing: antialiased;
   }
 
@@ -109,14 +109,14 @@
     gap: 20px; flex-wrap: wrap;
   }
   h1 {
-    font-family: var(--slab); font-weight: 600; font-size: 36px; line-height: 1.15; color: var(--brand);
+    font-family: var(--slab); font-weight: 600; font-size: 36px; line-height: 1.15; color: #F2F4F8;
   }
   h1 .en {
     display: block; font-size: 12px; font-family: var(--grot); font-weight: 500;
-    letter-spacing: .24em; color: var(--mute); text-transform: uppercase; margin-top: 8px;
+    letter-spacing: .24em; color: rgba(255,255,255,.42); text-transform: uppercase; margin-top: 8px;
   }
-  .meta { font-size: 14px; color: var(--mute); margin-top: 12px; }
-  .meta b { color: var(--brand); font-weight: 600; }
+  .meta { font-size: 14px; color: rgba(255,255,255,.5); margin-top: 12px; }
+  .meta b { color: #7FD8D4; font-weight: 600; }
 
   .btn-new {
     font-family: var(--grot); font-weight: 600; font-size: 15px; color: #fff;
@@ -133,30 +133,31 @@
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     margin-top: 28px;
   }
-  .filters { display: flex; gap: 6px; background: #fff; padding: 4px; border-radius: 11px; box-shadow: var(--card-shadow); }
+  .filters { display: flex; gap: 6px; background: rgba(255,255,255,.06); padding: 4px; border-radius: 11px; border: 1px solid rgba(255,255,255,.1); }
   .filters button {
-    font-family: var(--grot); font-size: 13.5px; color: #3D6A6C;
+    font-family: var(--grot); font-size: 13.5px; color: rgba(255,255,255,.72);
     background: none; border: none; padding: 8px 16px; border-radius: 8px;
     cursor: pointer;
     transition: background .16s, color .16s;
   }
-  .filters button:hover { background: var(--panel); color: var(--brand); }
+  .filters button:hover { background: rgba(255,255,255,.08); color: #fff; }
   .filters button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
   .filters button .n { font-size: 11.5px; opacity: .72; margin-left: 3px; }
 
   .search {
     margin-left: auto; display: flex; align-items: center; gap: 9px;
-    background: #fff; padding: 0 16px; height: 42px; border-radius: 11px;
-    box-shadow: var(--card-shadow); min-width: 230px;
-    border: 1px solid transparent;
+    background: rgba(255,255,255,.06); padding: 0 16px; height: 42px; border-radius: 11px;
+    min-width: 230px;
+    border: 1px solid rgba(255,255,255,.1);
+    transition: border-color .16s, box-shadow .16s;
   }
-  .search:focus-within { border-color: var(--brand-soft); box-shadow: var(--card-shadow), 0 0 0 3px rgba(91,197,192,0.22); }
+  .search:focus-within { border-color: rgba(91,197,192,.65); box-shadow: 0 0 0 3px rgba(91,197,192,0.22); }
   .search input {
     border: none; outline: none; font-family: var(--grot); font-size: 14px;
-    color: var(--ink); background: none; width: 100%;
+    color: #fff; background: none; width: 100%;
   }
-  .search input::placeholder { color: var(--mute); }
-  .search .si { color: var(--mute); display: grid; place-items: center; }
+  .search input::placeholder { color: rgba(255,255,255,.38); }
+  .search .si { color: rgba(255,255,255,.5); display: grid; place-items: center; }
   .search .si svg { width: 17px; height: 17px; display: block; }
 
   /* ===== 登机牌卡组 ===== */
@@ -166,14 +167,16 @@
   }
 
   .ticket {
-    background: #fff; border-radius: 15px;
+    background: #161A23; border-radius: 15px;
     display: grid; grid-template-columns: 1fr 128px;
-    position: relative; box-shadow: var(--card-shadow);
+    position: relative;
+    border: 1px solid rgba(255,255,255,.07);
+    box-shadow: 0 14px 44px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.18);
     transition: transform .18s ease, box-shadow .18s ease;
     cursor: pointer;
     transform-style: preserve-3d;
   }
-  .ticket:hover { transform: translateY(-4px); box-shadow: 0 16px 36px rgba(13,110,110,0.16), 0 2px 4px rgba(13,110,110,0.08); }
+  .ticket:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(0,0,0,.42), 0 3px 8px rgba(0,0,0,.22); }
   .ticket:focus-visible { outline: 2px solid var(--stamp); outline-offset: 3px; }
 
   .ticket .ribbon {
@@ -183,19 +186,19 @@
 
   .ticket::before {
     content: ""; position: absolute; top: 16px; bottom: 16px; right: 128px;
-    border-left: 1.5px dashed var(--line-2);
+    border-left: 1.5px dashed rgba(255,255,255,.16);
   }
   .ticket::after {
     content: ""; position: absolute; right: 121px; top: -8px;
-    width: 15px; height: 15px; background: var(--cloud); border-radius: 50%;
-    box-shadow: 0 calc(100% + 14px) 0 -0.5px var(--cloud);
+    width: 15px; height: 15px; background: #0E1116; border-radius: 50%;
+    box-shadow: 0 calc(100% + 14px) 0 -0.5px #0E1116;
   }
 
   .ticket-main { padding: 22px 24px 20px 26px; }
 
   .route { display: flex; align-items: center; gap: 12px; }
   .route .pt-name {
-    font-family: var(--slab); font-weight: 700; font-size: 25px; color: var(--brand);
+    font-family: var(--slab); font-weight: 700; font-size: 25px; color: #8FE0DB;
     letter-spacing: .01em; white-space: nowrap;
   }
   .route .line {
@@ -204,8 +207,8 @@
   }
   .route .line svg {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-    width: 20px; height: 20px; background: #fff; border-radius: 6px; padding: 1px;
-    box-shadow: 0 1px 5px rgba(13,110,110,.22);
+    width: 22px; height: 22px; background: #1E2833; border-radius: 7px; padding: 2px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.35);
   }
 
   .ticket-title { font-size: 15.5px; font-weight: 500; margin-top: 9px; }
@@ -217,11 +220,11 @@
 
   .dates {
     display: inline-flex; align-items: stretch; margin-top: 16px;
-    border-radius: 9px; overflow: hidden; font-size: 12.5px; background: var(--mist);
+    border-radius: 9px; overflow: hidden; font-size: 12.5px; background: rgba(255,255,255,.06);
   }
   .dates span { padding: 7px 12px; }
   .dates .dep { background: var(--brand); color: #fff; font-weight: 500; }
-  .dates .arr { color: var(--brand); font-weight: 500; }
+  .dates .arr { color: #8FE0DB; font-weight: 500; }
   .dates .sep { padding: 7px 8px; color: var(--brand-soft); font-weight: 700; }
 
   .ops {
@@ -232,16 +235,16 @@
   }
   .ticket:hover .ops, .ticket:focus-within .ops { opacity: 1; transform: none; pointer-events: auto; }
   .ops button {
-    font-family: var(--grot); font-size: 12.5px; color: #3D6A6C;
-    background: #F5FBFB; border: none; padding: 6px 13px; border-radius: 7px;
+    font-family: var(--grot); font-size: 12.5px; color: rgba(255,255,255,.75);
+    background: rgba(255,255,255,.07); border: none; padding: 6px 13px; border-radius: 7px;
     cursor: pointer;
     transition: background .16s, color .16s;
   }
-  .ops button:hover { background: var(--mist); color: var(--brand); }
+  .ops button:hover { background: rgba(255,255,255,.13); color: #fff; }
   .ops button.danger:hover { background: var(--danger-bg); color: var(--danger); }
 
   .stub {
-    background: var(--mist); border-radius: 0 15px 15px 0;
+    background: rgba(255,255,255,.05); border-radius: 0 15px 15px 0;
     padding: 20px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px;
   }
   .stamp-badge {
@@ -257,13 +260,13 @@
 
   .stub .days-label { font-size: 10px; letter-spacing: .22em; color: var(--mute); margin-top: 4px; }
   .stub .days {
-    font-family: var(--slab); font-weight: 700; font-size: 30px; color: var(--brand); line-height: 1;
+    font-family: var(--slab); font-weight: 700; font-size: 30px; color: #8FE0DB; line-height: 1;
   }
   .stub .days small { font-size: 12px; font-weight: 500; color: var(--brand-soft); }
 
   .stub .fav {
     margin-top: auto; width: 40px; height: 40px; border-radius: 50%;
-    border: 1.5px solid var(--brand-soft); background: #fff;
+    border: 1.5px solid var(--brand-soft); background: rgba(255,255,255,.06);
     display: grid; place-items: center; cursor: pointer;
     color: var(--brand-soft);
     transition: all .16s ease;
@@ -285,29 +288,31 @@
   .ticket:hover .barcode { opacity: .55; }
 
   .new-ticket {
-    border: 1.5px dashed var(--line-3); border-radius: 15px;
+    border: 1.5px dashed rgba(255,255,255,.16); border-radius: 15px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 9px; min-height: 200px; background: rgba(255,255,255,0.6);
+    gap: 9px; min-height: 200px; background: rgba(255,255,255,.03);
     cursor: pointer;
     text-decoration: none; color: var(--mute);
     transition: border-color .18s, background .18s;
   }
-  .new-ticket:hover { border-color: var(--brand-soft); background: #fff; }
+  .new-ticket:hover { border-color: var(--brand-soft); background: rgba(255,255,255,.06); }
   .new-ticket .plus {
-    width: 46px; height: 46px; border-radius: 50%; background: var(--mist);
-    color: var(--brand); display: grid; place-items: center; font-size: 22px;
+    width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.07);
+    color: #8FE0DB; display: grid; place-items: center; font-size: 22px;
   }
-  .new-ticket .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: var(--brand); }
+  .new-ticket .t { font-family: var(--slab); font-weight: 600; font-size: 16px; color: #F2F4F8; }
   .new-ticket .s { font-size: 12.5px; }
 
   .empty {
-    grid-column: 1 / -1; background: #fff; border-radius: 15px;
-    text-align: center; padding: 62px 24px; box-shadow: var(--card-shadow);
+    grid-column: 1 / -1; background: #161A23; border: 1px solid rgba(255,255,255,.07);
+    border-radius: 15px;
+    text-align: center; padding: 62px 24px;
+    box-shadow: 0 14px 44px rgba(0,0,0,.3);
   }
   .empty .ill { margin-bottom: 14px; }
   .empty .ill svg { width: 58px; height: 58px; display: block; margin: 0 auto; filter: drop-shadow(0 6px 12px rgba(13,110,110,.28)); }
-  .empty strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 22px; color: var(--brand); margin-bottom: 7px; }
-  .empty p { font-size: 14px; color: var(--mute); margin-bottom: 22px; }
+  .empty strong { display: block; font-family: var(--slab); font-weight: 600; font-size: 22px; color: #F2F4F8; margin-bottom: 7px; }
+  .empty p { font-size: 14px; color: rgba(255,255,255,.5); margin-bottom: 22px; }
 
   .toast {
     position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
@@ -319,33 +324,33 @@
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 
   /* ===== 分享弹窗（分享到攻略广场） ===== */
-  .share-mask { position: fixed; inset: 0; background: rgba(10,40,39,.42); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .share-mask { position: fixed; inset: 0; background: rgba(6,8,12,.6); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .2s; }
   .share-mask.open { opacity: 1; pointer-events: auto; }
   .share-modal {
     position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 104%); z-index: 41;
-    width: min(480px, 96vw); background: var(--panel); border: 1px solid var(--line-2); border-bottom: none;
+    width: min(480px, 96vw); background: #161A23; border: 1px solid rgba(255,255,255,.1); border-bottom: none;
     border-radius: 16px 16px 0 0; box-shadow: 0 -14px 40px rgba(10,40,39,.18);
     transition: transform .24s cubic-bezier(.4,0,.2,1);
   }
   .share-modal.open { transform: translate(-50%, 0); }
-  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--line); background: #fff; border-radius: 16px 16px 0 0; }
-  .sh-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: var(--brand); }
-  .sh-head .x { border: none; background: rgba(13,110,110,.08); color: var(--brand); width: 28px; height: 28px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+  .sh-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,.08); border-radius: 16px 16px 0 0; }
+  .sh-head .t { font-family: var(--slab); font-weight: 600; font-size: 17px; color: #F2F4F8; }
+  .sh-head .x { border: none; background: rgba(255,255,255,.08); color: rgba(255,255,255,.75); width: 28px; height: 28px; border-radius: 9px; cursor: pointer; font-size: 13px; }
   .sh-body { padding: 16px 20px 18px; }
-  .sh-desc { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink); }
+  .sh-desc { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: rgba(255,255,255,.78); }
   .vis-pick { display: flex; gap: 8px; flex-wrap: wrap; }
   .vis-pick button {
     display: inline-flex; align-items: center; gap: 7px;
-    font-size: 13px; border: 1px solid var(--line-2); background: #fff; color: var(--ink);
+    font-size: 13px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: rgba(255,255,255,.82);
     padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: all .16s; font-family: inherit;
   }
-  .vis-pick .vp-ic { width: 19px; height: 19px; flex: none; filter: drop-shadow(0 1.5px 2px rgba(13,110,110,.25)); }
+  .vis-pick .vp-ic { width: 19px; height: 19px; flex: none; }
   .vis-pick button[data-v="public"][aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
   .vis-pick button[data-v="friends"][aria-pressed="true"] { background: #3A7FA5; border-color: #3A7FA5; color: #fff; }
   .vis-pick button[data-v="private"][aria-pressed="true"] { background: #4A6068; border-color: #4A6068; color: #fff; }
-  .sh-note { margin: 12px 0 0; font-size: 12.5px; color: var(--mute); }
-  .sh-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--line); background: #fff; }
-  .btn-plain { border: 1px solid var(--line-2); background: #fff; color: var(--ink); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-family: inherit; }
+  .sh-note { margin: 12px 0 0; font-size: 12.5px; color: rgba(255,255,255,.5); }
+  .sh-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid rgba(255,255,255,.08); }
+  .btn-plain { border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: rgba(255,255,255,.82); font-size: 13.5px; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-family: inherit; }
   .btn-primary-sm { border: none; background: var(--brand); color: #fff; font-weight: 600; font-size: 13.5px; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-family: inherit; }
   .btn-primary-sm:disabled { opacity: .55; cursor: default; }
 
@@ -375,36 +380,114 @@
     .ops { opacity: 1; transform: none; pointer-events: auto; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ===== 顶部横版菜单（全站统一，暗色顶栏） ===== */
+  /* 覆盖 theme.css 的 html,body{height:100%}：body 盒高被锁死会限制 sticky 吸顶范围 */
+  html, body { height: auto; min-height: 100%; }
+  .topbar {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(10,11,14,.94);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .tb-inner {
+    max-width: 1280px; margin: 0 auto; padding: 0 44px;
+    height: 66px; display: flex; align-items: center; gap: 20px;
+  }
+  .tb-brand {
+    flex: none; text-decoration: none; line-height: 1.05;
+    font-family: var(--slab); font-weight: 700; font-size: 21px; color: #fff;
+  }
+  .tb-brand small {
+    display: block; font-family: var(--grot); font-weight: 500; font-size: 9px;
+    letter-spacing: .26em; color: rgba(255,255,255,.42); margin-top: 2px;
+  }
+  .tb-nav {
+    display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .tb-nav::-webkit-scrollbar { display: none; }
+  .tb-nav a {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 11px; border-radius: 10px;
+    color: rgba(255,255,255,.72); text-decoration: none;
+    font-family: var(--grot); font-size: 13px; white-space: nowrap;
+    transition: background .16s, color .16s;
+  }
+  .tb-nav a .ico { flex: none; width: 22px; height: 22px; display: grid; place-items: center; }
+  .tb-nav a .ico svg { width: 21px; height: 21px; display: block; filter: drop-shadow(0 1.5px 3px rgba(0,0,0,.35)); }
+  .tb-nav a:hover { background: rgba(255,255,255,.09); color: #fff; }
+  .tb-nav a[aria-current="page"] { background: rgba(255,255,255,.13); color: #fff; font-weight: 600; }
+  .tb-nav a[aria-current="page"] .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--stamp); margin-left: 3px; }
+  .tb-nav a .badge {
+    margin-left: 3px; min-width: 17px; height: 17px; padding: 0 5px;
+    display: inline-grid; place-items: center;
+    font-family: var(--grot); font-size: 10px; font-weight: 600;
+    color: #fff; background: var(--stamp); border-radius: 999px;
+  }
+  .tb-nav a .badge[hidden] { display: none; }
+  .tb-user { flex: none; display: flex; align-items: center; gap: 9px; margin-left: auto; }
+  .tb-user .avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--brand-soft); color: #fff;
+    display: grid; place-items: center; font-family: var(--grot);
+    font-size: 11px; font-weight: 600; flex: none;
+  }
+  .tb-user .who {
+    max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--grot); font-size: 13px; color: rgba(255,255,255,.8);
+  }
+  .tb-user .side-exit {
+    width: 28px; height: 28px; border: none; border-radius: 9px; flex: none;
+    background: rgba(255,255,255,.08); color: rgba(255,255,255,.66);
+    font-size: 13px; line-height: 1; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .tb-user .side-exit:hover { background: rgba(255,255,255,.18); color: #fff; }
+  @media (max-width: 720px) {
+    .tb-inner { height: auto; flex-wrap: wrap; padding: 10px 16px 8px; gap: 10px; }
+    .tb-brand { font-size: 18px; }
+    .tb-user { margin-left: auto; }
+    .tb-user .who { display: none; }
+    .tb-nav { order: 3; flex: 1 1 100%; padding-bottom: 4px; }
+    .tb-nav a { padding: 7px 10px; }
+    .tb-nav a .ico { width: 19px; height: 19px; }
+    .tb-nav a .ico svg { width: 18px; height: 18px; }
+  }
+
+  /* ===== 暗色线条图标（#ln-*）：配色与线宽 ===== */
+  .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+  .tb-nav a .ico svg.ln { color: #8FE0DB; stroke-width: 2.1; }
+  .search .si svg.ln { color: rgba(255,255,255,.5); stroke-width: 2.2; }
+  .route .line svg.ln { color: #8FE0DB; stroke-width: 2.3; }
+  .empty .ill svg.ln { color: #8FE0DB; stroke-width: 1.6; filter: drop-shadow(0 8px 16px rgba(0,0,0,.35)); }
+  .vis-pick .vp-ic.ln { color: #8FE0DB; stroke-width: 2.1; }
+  .vis-pick button[aria-pressed="true"] .vp-ic.ln { color: #fff; }
 </style>
 </head>
 <body>
-<script src="../assets/js/icons3d.js"></script>
-<div class="shell">
-
-  <aside class="side">
-    <button class="rail-toggle" id="railToggle" aria-label="折叠侧边栏" aria-expanded="true" aria-controls="sideNav" title="折叠 / 展开">&#8249;</button>
-    <div class="brand">Travel OS<small>行程驾驶舱</small></div>
-    <div class="brand-mark" aria-hidden="true">T</div>
-    <nav class="nav" id="sideNav" aria-label="主导航">
-      <div class="nav-label">总览</div>
-      <a href="/home/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-home"></use></svg></span><span class="txt">首页</span></a>
-      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></span><span class="txt">我的旅行</span><span class="dot"></span></a>
-      <a href="/square/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-globe"></use></svg></span><span class="txt">攻略广场</span></a>
-      <a href="/friends/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-friends"></use></svg></span><span class="txt">好友</span></a>
-      <div class="nav-label">洞察</div>
-      <a href="/stats/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-stats"></use></svg></span><span class="txt">旅行统计</span></a>
-      <a href="/notifications/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-bell"></use></svg></span><span class="txt">通知中心</span></a>
-      <div class="nav-label">行程</div>
-      <a href="/map/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-pin"></use></svg></span><span class="txt">地图</span></a>
-      <a href="/account/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-account"></use></svg></span><span class="txt">账户</span></a>
-      <a href="/admin/"><span class="ico" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-admin"></use></svg></span><span class="txt">管理后台</span></a>
+<script src="../assets/js/icons-line.js"></script>
+<header class="topbar">
+  <div class="tb-inner">
+    <a class="tb-brand" href="/home/">Travel OS<small>TRIP COCKPIT</small></a>
+    <nav class="nav tb-nav" id="sideNav" aria-label="主导航">
+      <a href="/home/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-home"></use></svg></span><span class="txt">首页</span></a>
+      <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span><span class="txt">我的旅行</span><span class="dot"></span></a>
+      <a href="/square/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-globe"></use></svg></span><span class="txt">攻略广场</span></a>
+      <a href="/friends/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-friends"></use></svg></span><span class="txt">好友</span></a>
+      <a href="/stats/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-stats"></use></svg></span><span class="txt">旅行统计</span></a>
+      <a href="/notifications/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-bell"></use></svg></span><span class="txt">通知中心</span><span class="badge" id="navUnread" hidden>0</span></a>
+      <a href="/map/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-pin"></use></svg></span><span class="txt">地图</span></a>
+      <a href="/account/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-account"></use></svg></span><span class="txt">账户</span></a>
+      <a href="/admin/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-admin"></use></svg></span><span class="txt">管理后台</span></a>
     </nav>
-    <div class="side-foot">
+    <div class="tb-user">
       <span class="avatar" id="avatar">A</span>
-      <span class="who" id="who">…</span>
-<button type="button" class="side-exit" id="sideLogout" title="退出登录" aria-label="退出登录">&#9211;</button>
+      <span class="who" id="who">&hellip;</span>
+      <button type="button" class="side-exit" id="sideLogout" title="退出登录" aria-label="退出登录">&#9211;</button>
     </div>
-  </aside>
+  </div>
+</header>
 
   <main>
     <div class="page-head">
@@ -425,7 +508,7 @@
         <button data-status="archived"  aria-pressed="false">已归档<span class="n" data-count="archived">0</span></button>
       </div>
       <label class="search">
-        <span class="si" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-search"></use></svg></span>
+        <span class="si" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-search"></use></svg></span>
         <input type="search" placeholder="搜索目的地或旅程名称" aria-label="搜索旅程" id="search">
       </label>
     </div>
@@ -434,7 +517,6 @@
       <p style="grid-column:1/-1;padding:48px 0;text-align:center;color:var(--mute);" id="loading">正在加载旅程…</p>
     </section>
   </main>
-</div>
 
 <div class="share-mask" id="shareMask"></div>
 <aside class="share-modal" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
@@ -445,9 +527,9 @@
   <div class="sh-body">
     <p class="sh-desc">选择这份行程在「攻略广场」（<a href="/square/" target="_blank" rel="noopener">打开广场</a>）对别人可见的程度。公开后别人可以直接把这份行程复制成自己的。</p>
     <div class="vis-pick" id="sharePick" role="group" aria-label="可见性">
-      <button type="button" data-v="public" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-globe"></use></svg>公开</button>
-      <button type="button" data-v="friends" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-friends"></use></svg>好友可见</button>
-      <button type="button" data-v="private" aria-pressed="false"><svg class="vp-ic" viewBox="0 0 48 48" aria-hidden="true"><use href="#ic3d-lock"></use></svg>私有</button>
+      <button type="button" data-v="public" aria-pressed="false"><svg class="vp-ic ln" viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-globe"></use></svg>公开</button>
+      <button type="button" data-v="friends" aria-pressed="false"><svg class="vp-ic ln" viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-friends"></use></svg>好友可见</button>
+      <button type="button" data-v="private" aria-pressed="false"><svg class="vp-ic ln" viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-lock"></use></svg>私有</button>
     </div>
     <p class="sh-note" id="shareNote"></p>
   </div>
@@ -470,8 +552,8 @@
     document.getElementById('avatar').textContent = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
 
     // 侧栏折叠
-    var shell = document.querySelector('.shell');
-    var btn = document.getElementById('railToggle');
+    var shell = document.querySelector('.shell') || { setAttribute: function () {}, getAttribute: function () { return null; } };
+    var btn = document.getElementById('railToggle') || { setAttribute: function () {}, addEventListener: function () {} };
     var KEY = 'travel-os-rail-collapsed';
     function applyRail(collapsed) {
       shell.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
@@ -561,7 +643,7 @@
         +   '<div class="ticket-main">'
         +     '<div class="route">'
         +       '<span class="pt-name">' + escapeHtml(t.destination || '待定') + '</span>'
-        +       '<span class="line" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></span>'
+        +       '<span class="line" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span>'
         +     '</div>'
         +     '<p class="ticket-title">' + escapeHtml(t.title || '未命名旅程') + '<span class="code">' + escapeHtml(codeText) + '</span></p>'
         +     '<div class="dates" role="group" aria-label="行程日期">'
@@ -580,7 +662,7 @@
         +     '<span class="stamp-badge ' + st.cls + '">' + st.label + '</span>'
         +     '<span class="days-label">DAYS</span>'
         +     '<span class="days">' + (days === '–' ? '–' : days + '<small>天</small>') + '</span>'
-        +     '<button class="fav" aria-pressed="' + (t.isFavorite ? 'true' : 'false') + '" aria-label="' + (t.isFavorite ? '已收藏，点击取消收藏' : '点击收藏') + '" data-act="fav"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-star"></use></svg></button>'
+        +     '<button class="fav" aria-pressed="' + (t.isFavorite ? 'true' : 'false') + '" aria-label="' + (t.isFavorite ? '已收藏，点击取消收藏' : '点击收藏') + '" data-act="fav"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-star"></use></svg></button>'
         +   '</div>'
         + '</article>';
     }
@@ -616,7 +698,7 @@
       if (rows.length === 0) {
         board.innerHTML =
           '<div class="empty">'
-          + '<div class="ill" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-plane"></use></svg></div>'
+          + '<div class="ill" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></div>'
           + '<strong>还没有匹配的旅程</strong>'
           + '<p>试试切换状态筛选，或者直接签发下一张</p>'
           + '<button class="btn-new" id="emptyNew">＋ 新建旅程</button>'
@@ -712,7 +794,7 @@
       } catch (err) {
         board.innerHTML =
           '<div class="empty">'
-          + '<div class="ill" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#ic3d-alert"></use></svg></div>'
+          + '<div class="ill" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-alert"></use></svg></div>'
           + '<strong>加载失败</strong>'
           + '<p>' + escapeHtml(humanError(err)) + '</p>'
           + '</div>';

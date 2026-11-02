@@ -11,479 +11,288 @@
 <link rel="stylesheet" href="../assets/css/theme.css">
 <link rel="stylesheet" href="../assets/css/pet.css">
 <style>
-  /* ===== 「山湖清晨 · 炫」设计令牌 =====
-     晨雾 #F4FBFA · 湖松绿 #0B6E6E · 湖水青 #2FA8A0 · 湖光 #3EC8BE
-     高天蓝 #8FD4F0 · 破晓金 #FFD98F · 墨松 #15332F · 雾松 #6E8C88 */
-
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: auto; min-height: 100%; }
   body {
-    min-height: 100vh;
-    font-family: var(--grot), 'Noto Sans SC', sans-serif;
-    color: #15332F;
-    background: linear-gradient(180deg, #F4FBFA 0%, #EAF7F5 55%, #D8F1EC 100%);
-    position: relative;
-    overflow-x: hidden;
+    font-family: var(--grot); background: #0A0B0E; color: #fff;
+    min-height: 100vh; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* ================= 场景层（视差三层 + 山峦） ================= */
-  .scene {
-    position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
-    perspective: 1100px; perspective-origin: 50% 42%; transform-style: preserve-3d;
-  }
+  /* ===== 雪山 3D 场景（三层视差，JS 写入 --px-x/--px-y） ===== */
+  .scene { position: fixed; inset: 0; overflow: hidden; z-index: 0; background: #0A0B0E; }
   .px {
-    position: absolute; inset: 0; will-change: transform; transform-style: preserve-3d;
-    transform: translate3d(var(--px-x, 0px), var(--px-y, 0px), var(--px-z, 0px)) scale(var(--px-scale, 1));
+    position: absolute; inset: -60px;
+    transform: translate(var(--px-x, 0), var(--px-y, 0));
+    will-change: transform;
   }
-  .px[data-depth="10"] { --px-z: -90px; --px-scale: 1.08; }
-  .px[data-depth="22"] { --px-z: 0px; }
-  .px[data-depth="38"] { --px-z: 72px; --px-scale: .94; }
-
-  /* 弥散光斑 */
-  .blob { position: absolute; border-radius: 50%; filter: blur(90px); }
-  .b1 { width: 560px; height: 560px; left: -160px; top: -180px;
-        background: radial-gradient(circle, rgba(47,168,160,.5) 0%, rgba(47,168,160,0) 70%); }
-  .b2 { width: 620px; height: 620px; right: -200px; top: -160px;
-        background: radial-gradient(circle, rgba(143,212,240,.55) 0%, rgba(143,212,240,0) 70%); }
-  .b3 { width: 460px; height: 460px; right: 5%; bottom: 2%;
-        background: radial-gradient(circle, rgba(169,232,222,.6) 0%, rgba(169,232,222,0) 70%); }
-  .b4 { width: 320px; height: 320px; left: 16%; bottom: -70px;
-        background: radial-gradient(circle, rgba(255,217,143,.5) 0%, rgba(255,217,143,0) 70%); }
-
-  /* 破晓日轮：山后升起的太阳，光晕缓慢呼吸 */
-  .sun {
-    position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%);
-    width: 360px; height: 360px; border-radius: 50%;
-    background: radial-gradient(circle,
-      rgba(255,236,190,.95) 0%, rgba(255,208,130,.5) 34%, rgba(255,200,120,0) 68%);
-    animation: sunGlow 7s ease-in-out infinite;
+  .px-bg {
+    background:
+      linear-gradient(180deg, rgba(8,9,12,.52) 0%, rgba(8,9,12,.16) 38%, rgba(8,9,12,.72) 100%),
+      linear-gradient(90deg, rgba(8,9,12,.80) 0%, rgba(8,9,12,.26) 55%, rgba(8,9,12,.62) 100%),
+      url("../assets/img/login-bg.jpg") center 36% / cover no-repeat;
   }
-  @keyframes sunGlow {
-    0%, 100% { opacity: .85; transform: translateX(-50%) scale(1); }
-    50%      { opacity: 1;   transform: translateX(-50%) scale(1.06); }
+  .glow { position: absolute; border-radius: 50%; pointer-events: none; }
+  .g1 { right: -12%; top: -20%; width: 46vw; height: 46vw;
+    background: radial-gradient(circle, rgba(60,180,175,.22), transparent 65%); }
+  .g2 { left: -14%; bottom: -24%; width: 44vw; height: 44vw;
+    background: radial-gradient(circle, rgba(255,138,76,.16), transparent 65%); }
+  .spark {
+    position: absolute; border-radius: 50%; background: #fff;
+    animation: twinkle 3.4s ease-in-out infinite;
   }
-
-  /* 极光带：顶部缓慢流转的青蓝渐变光 */
-  .aurora {
-    position: absolute; left: -30%; top: -34%; width: 160%; height: 60%;
-    background: linear-gradient(115deg,
-      rgba(47,168,160,0) 12%, rgba(62,200,190,.14) 34%, rgba(143,212,240,.2) 52%,
-      rgba(47,168,160,.12) 70%, rgba(47,168,160,0) 88%);
-    filter: blur(42px);
-    animation: auroraSway 18s ease-in-out infinite alternate;
-  }
-  @keyframes auroraSway {
-    from { transform: rotate(-4deg) translateX(-3%); }
-    to   { transform: rotate(3deg) translateX(3%); }
-  }
-
-  /* 星屑：高空微闪 */
-  .spark { position: absolute; border-radius: 50%; background: #fff;
-           box-shadow: 0 0 8px rgba(255,255,255,.9); animation: twinkle 4s ease-in-out infinite; }
   @keyframes twinkle {
-    0%, 100% { opacity: .15; transform: scale(.7); }
+    0%, 100% { opacity: .14; transform: scale(.8); }
     50%      { opacity: .95; transform: scale(1.15); }
   }
 
-  /* 立体气泡：左上高光 + 内侧暗缘 + 底部投影，缓慢上浮（近景层更快，制造纵深） */
-  .bubble {
-    position: absolute; border-radius: 50%;
-    background:
-      radial-gradient(circle at 30% 24%, rgba(255,255,255,.98) 0 8%, rgba(255,255,255,0) 34%),
-      radial-gradient(circle at 70% 80%, rgba(255,255,255,.42), rgba(255,255,255,0) 56%),
-      radial-gradient(circle at 50% 50%, rgba(150,222,214,.66), rgba(58,148,158,.36));
-    border: 1px solid rgba(255,255,255,.6);
-    box-shadow:
-      inset -8px -12px 26px rgba(11,90,90,.18),
-      inset 4px 6px 14px rgba(255,255,255,.35),
-      0 22px 48px rgba(11,90,90,.14);
-    animation: bubbleFloat 24s ease-in-out infinite;
+  /* 漂浮 3D 图标（深景/近景两层） */
+  .fx {
+    position: absolute; display: block;
+    filter: drop-shadow(0 18px 30px rgba(0,0,0,.5));
+    animation: floaty 8s ease-in-out infinite;
   }
-  .bubble::after { /* 底部反射亮弧：立体感细节 */
-    content: ""; position: absolute; left: 18%; right: 18%; bottom: 7%; height: 16%;
-    border-radius: 50%; background: rgba(255,255,255,.35); filter: blur(2px);
+  .fx svg { width: 100%; height: 100%; display: block; }
+  @keyframes floaty {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-16px); }
   }
-  .u1 { width: 92px;  height: 92px;  left: 7%;  top: 22%; }
-  .u2 { width: 52px;  height: 52px;  left: 19%; top: 60%; animation-delay: -6s;  animation-duration: 28s; }
-  .u3 { width: 130px; height: 130px; right: 9%; top: 13%; animation-delay: -11s; animation-duration: 30s; }
-  .u4 { width: 64px;  height: 64px;  right: 21%; bottom: 32%; animation-delay: -3s; }
-  .u5 { width: 38px;  height: 38px;  left: 43%; top: 11%; animation-delay: -15s; animation-duration: 26s; }
-  .u6 { width: 74px;  height: 74px;  left: 30%; top: 40%; animation-delay: -9s;  animation-duration: 32s; }
-  .u7 { width: 30px;  height: 30px;  right: 34%; top: 8%;  animation-delay: -18s; }
-  @keyframes bubbleFloat {
-    0%, 100% { transform: translate(0, 0) rotate(0deg); }
-    33%      { transform: translate(16px, -30px) rotate(6deg); }
-    66%      { transform: translate(-14px, -12px) rotate(-5deg); }
+  .f1 { width: 56px; height: 56px; left: 7%;  top: 17%; animation-delay: -1.2s; }
+  .f2 { width: 68px; height: 68px; left: 14%; bottom: 20%; animation-delay: -3.4s; }
+  .f3 { width: 48px; height: 48px; left: 37%; top: 11%; animation-delay: -2.2s; }
+  .f4 { width: 82px; height: 82px; right: 8%;  top: 15%; animation-delay: -4.0s; }
+  .f5 { width: 54px; height: 54px; right: 19%; bottom: 16%; animation-delay: -2.8s; }
+  .f6 { width: 44px; height: 44px; right: 35%; top: 23%; animation-delay: -5.2s; }
+
+  .scene-vig {
+    position: absolute; inset: 0;
+    background: radial-gradient(125% 95% at 50% 42%, transparent 52%, rgba(6,7,10,.68) 100%);
   }
 
-  /* 云：叠圆椭圆 + 缓慢漂移 */
-  .cloud { position: absolute; height: 26px; border-radius: 999px;
-           background: rgba(255,255,255,.88); filter: blur(1px);
-           box-shadow: 0 12px 32px rgba(11,90,90,.1); }
-  .cloud::before, .cloud::after {
-    content: ""; position: absolute; border-radius: 50%; background: inherit;
-  }
-  .cloud::before { width: 46%; height: 170%; left: 16%; bottom: 28%; }
-  .cloud::after  { width: 34%; height: 130%; right: 18%; bottom: 30%; }
-  .c1 { width: 150px; left: 11%; top: 17%; animation: cloudDrift 46s linear infinite; }
-  .c2 { width: 110px; right: 13%; top: 38%; animation: cloudDrift 58s linear infinite reverse; }
-  .c3 { width: 84px;  left: 30%; top: 64%; animation: cloudDrift 64s linear infinite; opacity: .7; }
-  @keyframes cloudDrift {
-    from { transform: translateX(-7vw); }
-    to   { transform: translateX(7vw); }
-  }
-
-  /* 纸飞机：沿弧线巡游（大屏可见） */
-  .plane { position: absolute; font-size: 15px; color: #0B6E6E; opacity: .45;
-           offset-path: path('M-40,340 C280,120 640,380 1020,150 C1240,10 1400,120 1500,80');
-           animation: fly 30s linear infinite; }
-  .plane.p2 { font-size: 12px; opacity: .3; animation-duration: 44s; animation-delay: -16s;
-              offset-path: path('M-40,220 C320,340 720,90 1100,260 C1300,340 1420,220 1500,240'); }
-  @keyframes fly {
-    from { offset-distance: 0%; transform: rotate(8deg); }
-    50%  { transform: rotate(-4deg); }
-    to   { offset-distance: 100%; transform: rotate(10deg); }
-  }
-  @media (max-width: 768px) { .plane, .u6, .u7 { display: none; } }
-
-  /* 山峦：三层剪影 + 山腰晨雾 */
-  .mist { position: absolute; bottom: 96px; left: 8%; width: 55%; height: 46px;
-          background: rgba(255,255,255,.55); filter: blur(26px); border-radius: 50%; }
-  .mist.m2 { left: auto; right: 4%; width: 40%; bottom: 70px; opacity: .7; }
-  .mountains { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 190px; display: block; }
-
-  /* ================= 页面主体 ================= */
+  /* ===== 内容：左品牌大字 + 右玻璃登录卡 ===== */
   .page {
-    position: relative; z-index: 1;
-    min-height: 100dvh;
-    display: flex; flex-direction: column; align-items: center;
-    padding: 50px 20px 120px;
+    position: relative; z-index: 2; min-height: 100vh;
+    display: grid; grid-template-columns: 1fr min(460px, 92vw);
+    align-items: center; gap: 48px;
+    padding: 48px clamp(24px, 6vw, 88px);
   }
-
-  /* 入场编排：品牌下沉、卡片上浮、场景淡入 */
-  .brand { text-align: center; margin-bottom: 28px; animation: brandIn .8s cubic-bezier(.22,1,.36,1) both; }
-  @keyframes brandIn { from { opacity: 0; transform: translateY(-20px); } }
-  .card { animation: cardIn .9s .12s cubic-bezier(.22,1,.36,1) both; }
-  @keyframes cardIn {
-    from { opacity: 0; translate: 0 30px; scale: .96; }
-    to   { opacity: 1; translate: 0 0; scale: 1; }
-  }
-  .scene { animation: sceneIn 1.4s ease both; }
-  @keyframes sceneIn { from { opacity: 0; } }
-
-  /* 品牌区：3D 标志 + 呼吸光晕 */
-  .brand { text-align: center; margin-bottom: 28px; }
-  .mark {
-    position: relative;
-    width: 66px; height: 66px; margin: 0 auto 15px;
-    border-radius: 20px; display: grid; place-items: center;
-    background: linear-gradient(150deg, #ffffff 0%, #E4F6F3 100%);
-    box-shadow:
-      0 16px 34px rgba(11,90,90,.2),
-      0 3px 8px rgba(11,90,90,.08),
-      inset 0 1.5px 0 rgba(255,255,255,.95);
-    transform-style: preserve-3d;
-    transition: transform .4s cubic-bezier(.22,1,.36,1), box-shadow .4s;
-  }
-  .mark:hover {
-    transform: rotateY(16deg) rotateX(8deg) translateY(-3px);
-    box-shadow: 0 24px 44px rgba(11,90,90,.26), inset 0 1.5px 0 rgba(255,255,255,.95);
-  }
-  .mark::before { /* 呼吸光晕 */
-    content: ""; position: absolute; inset: -14px; border-radius: 26px; z-index: -1;
-    background: radial-gradient(circle, rgba(62,200,190,.35) 0%, rgba(62,200,190,0) 70%);
-    animation: markGlow 4.5s ease-in-out infinite;
-  }
-  @keyframes markGlow {
-    0%, 100% { opacity: .5; transform: scale(.94); }
-    50%      { opacity: 1;  transform: scale(1.06); }
-  }
-  .mark svg { width: 36px; height: 36px; display: block; }
+  .brand { max-width: 620px; }
+  .mark { display: inline-flex; margin-bottom: 18px; filter: drop-shadow(0 8px 18px rgba(0,0,0,.4)); }
+  .mark svg { width: 46px; height: 46px; display: block; }
   .b-name {
-    font-family: var(--slab); font-weight: 700; font-size: 37px; line-height: 1.1;
-    color: #0B6E6E; letter-spacing: .01em;
+    font-family: var(--slab); font-weight: 700; font-size: 27px; color: #fff; line-height: 1.1;
+    text-shadow: 0 2px 18px rgba(0,0,0,.45);
   }
   .b-name small {
-    display: block; font-family: var(--grot); font-weight: 500;
-    font-size: 11px; letter-spacing: .24em; color: #6E8C88; margin-top: 5px;
+    display: block; font-family: var(--grot); font-weight: 500; font-size: 10.5px;
+    letter-spacing: .3em; color: rgba(255,255,255,.48); margin-top: 7px; text-transform: uppercase;
   }
-  .slogan { margin: 14px 0 0; font-size: 15px; color: #3E5B56; line-height: 1.6; }
-  .slogan em { font-style: normal; color: #0B6E6E; font-weight: 600; }
+  .slogan {
+    margin-top: 28px;
+    font-family: var(--grot); font-weight: 700;
+    font-size: clamp(30px, 4.4vw, 52px); line-height: 1.14; letter-spacing: -.015em;
+    color: #fff; text-shadow: 0 2px 24px rgba(0,0,0,.5);
+  }
+  .slogan em { font-style: normal; color: #FFB27E; }
+  .feat { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 34px; }
+  .feat span {
+    padding: 9px 18px; border-radius: 999px;
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14);
+    color: rgba(255,255,255,.78); font-family: var(--grot); font-size: 13.5px;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
 
-  /* ===== 玻璃拟态登录卡：渐变描边 + 顶部高光 + 悬停光扫 ===== */
+  /* ===== 玻璃登录卡（JS 写入 --card-rotate-x/y） ===== */
   .card {
-    --card-lift: 0px;
-    --card-rotate-x: 0deg;
-    --card-rotate-y: 0deg;
-    position: relative;
-    width: 100%; max-width: 430px;
-    border: 1.5px solid transparent;
-    border-radius: 24px;
-    background:
-      linear-gradient(168deg, rgba(255,255,255,.86) 0%, rgba(255,255,255,.62) 100%) padding-box,
-      linear-gradient(150deg, rgba(62,200,190,.65) 0%, rgba(143,212,240,.5) 40%,
-        rgba(255,255,255,.35) 70%, rgba(47,168,160,.45) 100%) border-box;
-    backdrop-filter: blur(22px) saturate(1.15);
-    -webkit-backdrop-filter: blur(22px) saturate(1.15);
-    box-shadow:
-      0 30px 70px rgba(11,90,90,.16),
-      0 6px 18px rgba(11,90,90,.07),
-      inset 0 1.5px 0 rgba(255,255,255,.95);
-    padding: 30px 30px 26px;
-    overflow: hidden;
-    transform-style: preserve-3d;
-    transform: perspective(1200px) rotateX(var(--card-rotate-x)) rotateY(var(--card-rotate-y)) translateY(var(--card-lift));
-    transition: box-shadow .35s, transform .25s cubic-bezier(.22,1,.36,1);
+    position: relative; width: 100%;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.13);
+    border-radius: 26px; padding: 38px 36px 32px;
+    -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
+    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    transform: perspective(1100px) rotateX(var(--card-rotate-x, 0deg)) rotateY(var(--card-rotate-y, 0deg));
+    transition: transform .28s ease;
   }
-  .card:hover {
-    box-shadow:
-      0 40px 84px rgba(11,90,90,.2),
-      0 8px 22px rgba(11,90,90,.08),
-      inset 0 1.5px 0 rgba(255,255,255,.95);
-    --card-lift: -3px;
-  }
-  .card > h1, .card > .subtitle, .card > .mode-tabs, .card > .form {
-    position: relative; z-index: 1; transform: translateZ(12px);
-  }
-  .card > .subtitle { transform: translateZ(7px); }
-  .card > .form { transform: translateZ(9px); }
-  .card > h1 { transform: translateZ(15px); }
-  .card > .mode-tabs { transform: translateZ(11px); }
-  .card > .form > * { transform-style: preserve-3d; }
-  }
-  .card::before { /* 顶部玻璃高光弧 */
-    content: ""; position: absolute; left: 8%; right: 8%; top: 0; height: 42%;
-    border-radius: 0 0 50% 50%; pointer-events: none;
-    background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0));
-  }
-  .card::after { /* 悬停光扫 */
-    content: ""; position: absolute; top: -60%; left: -80%;
-    width: 45%; height: 220%; transform: rotate(18deg);
-    background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.4), rgba(255,255,255,0));
-    transition: left .7s ease; pointer-events: none;
-  }
-  .card:hover::after { left: 130%; }
-  .card.shake { animation: shake .45s cubic-bezier(.36,.07,.19,.97); }
+  .card.shake { animation: shake .5s ease; }
   @keyframes shake {
-    10%, 90% { transform: translateX(-2px); }
-    20%, 80% { transform: translateX(3px); }
-    30%, 50%, 70% { transform: translateX(-5px); }
-    40%, 60% { transform: translateX(5px); }
+    0%, 100% { margin-left: 0; }
+    20%, 60% { margin-left: -9px; }
+    40%, 80% { margin-left: 9px; }
   }
-
-  h1 {
-    font-family: var(--slab); font-weight: 600; font-size: 27px; line-height: 1.2;
-    color: #0B6E6E; margin: 0;
+  .card h1 {
+    font-family: var(--grot); font-weight: 700; font-size: 27px;
+    color: #fff; letter-spacing: -.01em;
   }
-  .subtitle { font-size: 13.5px; color: #6E8C88; margin: 6px 0 0; }
+  .card .subtitle { margin-top: 8px; font-size: 14px; color: rgba(255,255,255,.55); }
 
-  /* 滑动指示条的登录/注册切换 */
+  /* 登录 / 注册切换 */
   .mode-tabs {
-    position: relative;
-    display: flex; gap: 4px; margin: 22px 0 20px;
-    background: rgba(232,246,244,.9); padding: 5px; border-radius: 12px;
-    width: fit-content;
+    position: relative; display: grid; grid-template-columns: 1fr 1fr;
+    background: rgba(255,255,255,.07); border-radius: 999px;
+    padding: 5px; margin: 24px 0 22px;
   }
   .tab-pill {
-    position: absolute; top: 5px; left: 0; height: calc(100% - 10px);
-    width: 84px; border-radius: 9px;
-    background: linear-gradient(135deg, #0B6E6E, #2FA8A0);
-    box-shadow: 0 6px 16px rgba(11,110,110,.32), inset 0 1px 0 rgba(255,255,255,.25);
-    transition: transform .3s cubic-bezier(.22,1,.36,1), width .3s cubic-bezier(.22,1,.36,1);
+    position: absolute; left: 0; top: 5px; bottom: 5px;
+    background: rgba(255,255,255,.16); border-radius: 999px;
+    transition: transform .28s cubic-bezier(.4,0,.2,1), width .28s cubic-bezier(.4,0,.2,1);
   }
   .mode-tabs button {
     position: relative; z-index: 1;
-    font-family: var(--grot); font-size: 14px; color: #3E5B56;
-    background: none; border: none; padding: 8px 26px; border-radius: 9px;
-    cursor: pointer; transition: color .2s;
+    background: none; border: none; cursor: pointer;
+    font-family: var(--grot); font-weight: 600; font-size: 14px;
+    color: rgba(255,255,255,.58); padding: 11px 0; border-radius: 999px;
+    transition: color .18s;
   }
-  .mode-tabs button:hover { color: #0B6E6E; }
-  .mode-tabs button[aria-selected="true"] { color: #fff; font-weight: 600; }
+  .mode-tabs button[aria-selected="true"] { color: #fff; }
 
-  .form { display: flex; flex-direction: column; gap: 16px; }
-  .field { display: flex; flex-direction: column; gap: 7px; }
-  .field label { font-size: 12.5px; color: #3E5B56; font-weight: 500; transition: color .16s; }
-  .field:focus-within label { color: #0B6E6E; }
-  .input-wrap { position: relative; display: flex; align-items: center; }
-  .input-wrap .ico {
-    position: absolute; left: 14px; color: #6E8C88;
-    pointer-events: none; transition: color .16s, transform .2s;
+  /* 表单 */
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block; margin-bottom: 8px;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 500;
+    letter-spacing: .04em; color: rgba(255,255,255,.55);
   }
-  .input-wrap .ico svg { width: 16px; height: 16px; display: block; }
+  .input-wrap {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.13);
+    border-radius: 14px; padding: 0 14px; height: 52px;
+    transition: border-color .18s, box-shadow .18s;
+  }
+  .input-wrap:focus-within {
+    border-color: rgba(91,197,192,.65);
+    box-shadow: 0 0 0 3px rgba(91,197,192,.22);
+  }
+  .input-wrap .ico { display: grid; place-items: center; flex: none; }
+  .input-wrap .ico svg { width: 23px; height: 23px; display: block; filter: drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
   .input-wrap input {
-    width: 100%;
-    font-family: var(--grot); font-size: 14.5px; color: #15332F;
-    background: rgba(255,255,255,.92); border: 1.5px solid #D9ECEA; border-radius: 12px;
-    padding: 13px 44px 13px 42px; outline: none;
-    transition: border-color .16s, box-shadow .2s, background .16s;
+    flex: 1 1 auto; min-width: 0;
+    background: none; border: none; outline: none;
+    color: #fff; font-family: var(--grot); font-size: 15px;
   }
-  .input-wrap input::placeholder { color: #9BB5B1; font-size: 13px; }
-  .input-wrap input:hover { border-color: #BFDEDA; }
-  .input-wrap input:focus {
-    border-color: #2FA8A0; background: #fff;
-    box-shadow: 0 0 0 4px rgba(47,168,160,.16), 0 8px 20px rgba(11,90,90,.08);
-  }
-  .input-wrap:focus-within .ico { color: #0B6E6E; transform: scale(1.12); }
-
+  .input-wrap input::placeholder { color: rgba(255,255,255,.32); }
   .toggle-pw {
-    position: absolute; right: 13px;
-    background: none; border: none; color: #6E8C88; cursor: pointer;
-    font-size: 14px; padding: 4px; line-height: 1; border-radius: 8px;
-    transition: color .16s, background .16s, transform .16s;
+    background: none; border: none; cursor: pointer;
+    padding: 4px; display: grid; place-items: center;
+    transition: transform .16s ease;
   }
-  .toggle-pw:hover { color: #0B6E6E; background: rgba(47,168,160,.1); transform: scale(1.08); }
+  .toggle-pw:hover { transform: scale(1.1); }
+  .toggle-pw svg { width: 23px; height: 23px; display: block; filter: drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
+  .hint { display: block; margin-top: 8px; font-size: 12px; color: rgba(255,255,255,.42); }
+  .link {
+    background: none; border: none; cursor: pointer; padding: 0;
+    color: #7FD8D4; font-family: inherit; font-size: inherit;
+    transition: color .16s;
+  }
+  .link:hover { color: #A5E8E5; }
 
-  .hint { font-size: 11.5px; color: #6E8C88; }
   .row-between {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 14px; flex-wrap: wrap;
+    margin: 4px 0 6px;
   }
   .check {
     display: inline-flex; align-items: center; gap: 8px;
-    font-size: 13px; color: #3E5B56; cursor: pointer;
+    font-size: 13px; color: rgba(255,255,255,.68); cursor: pointer;
   }
-  .check input { accent-color: #0B6E6E; width: 16px; height: 16px; cursor: pointer; }
+  .check input { accent-color: var(--stamp); width: 15px; height: 15px; }
 
-  .link {
-    background: none; border: none; padding: 0;
-    font-family: inherit; font-size: 13px; font-weight: 500;
-    color: #0B6E6E; cursor: pointer; text-decoration: none;
-    border-bottom: 1px solid transparent; transition: border-color .16s, color .16s;
-  }
-  .link:hover { color: #2FA8A0; border-bottom-color: #2FA8A0; }
-
-  .alert {
-    display: flex; align-items: center; gap: 9px;
-    background: #FDEFF2; color: #A63D52;
-    border: 1px solid #F5D3DA; border-radius: 11px;
-    padding: 11px 14px; font-size: 13px;
-    animation: alertIn .3s ease both;
-  }
-  @keyframes alertIn { from { opacity: 0; transform: translateY(-6px); } }
-  .alert .ic { font-size: 15px; flex: none; }
-
-  /* 渐变主按钮：流动渐变 + 悬停光扫 + 加载光环 */
+  /* 主按钮（橙色 CTA，与首页一致） */
   .btn-stamp {
-    position: relative; overflow: hidden;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    width: 100%; height: 50px;
-    font-family: var(--grot); font-size: 15.5px; font-weight: 600; color: #fff;
-    background: linear-gradient(120deg, #0B6E6E, #2FA8A0, #3EC8BE, #2FA8A0, #0B6E6E);
-    background-size: 300% 100%;
-    animation: gradFlow 9s ease infinite;
-    border: none; border-radius: 14px; cursor: pointer;
-    box-shadow: 0 14px 30px rgba(11,110,110,.34), inset 0 1.5px 0 rgba(255,255,255,.3);
-    transition: transform .18s, box-shadow .18s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 54px; margin-top: 22px;
+    background: var(--stamp); color: #fff; border: none; border-radius: 999px;
+    font-family: var(--grot); font-weight: 600; font-size: 16px; cursor: pointer;
+    box-shadow: 0 12px 32px rgba(255,138,76,.4);
+    transition: transform .16s ease, box-shadow .16s ease, opacity .16s;
   }
-  @keyframes gradFlow {
-    0%, 100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-  }
-  .btn-stamp::after { /* 悬停光扫 */
-    content: ""; position: absolute; top: 0; left: -70%;
-    width: 45%; height: 100%; transform: skewX(-22deg);
-    background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.4), rgba(255,255,255,0));
-    transition: left .55s ease;
-  }
-  .btn-stamp:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 20px 40px rgba(11,110,110,.42), inset 0 1.5px 0 rgba(255,255,255,.3);
-  }
-  .btn-stamp:hover:not(:disabled)::after { left: 125%; }
-  .btn-stamp:active:not(:disabled) { transform: translateY(0) scale(.99); }
-  .btn-stamp:disabled { opacity: .68; cursor: default; animation: none; }
-  .btn-stamp:focus-visible { outline: 3px solid rgba(47,168,160,.45); outline-offset: 2px; }
-  .btn-stamp.is-loading::before { /* 加载光环 */
-    content: ""; width: 16px; height: 16px; flex: none;
-    border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
-    border-radius: 50%; animation: spin .7s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .btn-stamp.is-loading .arr { display: none; }
-  .arr { transition: transform .2s; }
-  .btn-stamp:hover:not(:disabled) .arr { transform: translateX(4px); }
+  .btn-stamp:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgba(255,138,76,.48); }
+  .btn-stamp:active { transform: translateY(0); }
+  .btn-stamp.is-loading { opacity: .7; cursor: wait; transform: none; }
+  .arr { font-size: 18px; transition: transform .18s; }
+  .btn-stamp:hover .arr { transform: translateX(3px); }
 
-  .alt-note { font-size: 13px; color: #6E8C88; text-align: center; margin: 4px 0 0; }
+  .alt-note { margin-top: 18px; text-align: center; font-size: 13.5px; color: rgba(255,255,255,.55); }
 
-  .register-only { display: none; }
-  body[data-mode="register"] .register-only { display: flex; }
+  /* 错误提示 */
+  .alert {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: rgba(255,90,90,.13); border: 1px solid rgba(255,110,110,.35);
+    color: #FF9C9C; border-radius: 12px; padding: 11px 14px;
+    font-size: 13px; line-height: 1.55; margin-bottom: 18px;
+  }
+  .alert .ic { flex: none; }
+  .alert .ic svg { width: 19px; height: 19px; display: block; margin-top: 1px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.3)); }
+
+  /* 模式切换的字段显隐 */
+  body[data-mode="login"] .register-only { display: none; }
   body[data-mode="register"] .login-only { display: none; }
 
-  :is(a, button, input, select):focus-visible {
-    outline: 3px solid rgba(47,168,160,.45); outline-offset: 2px;
+  /* 焦点可达性 */
+  a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--stamp); outline-offset: 3px;
   }
 
-  @media (max-width: 640px) {
-    .page { padding: 36px 18px 100px; }
-    .card { padding: 24px 20px 22px; }
-    .b-name { font-size: 31px; }
-    .slogan { font-size: 14px; }
-    .mountains { height: 130px; }
-    .bubble.u3 { width: 88px; height: 88px; }
-    .bubble.u1 { width: 66px; height: 66px; }
-    .sun { width: 260px; height: 260px; bottom: 96px; }
-  }
-  @media (max-width: 768px), (pointer: coarse) {
-    .scene { perspective: none; }
-    .scene .px { transform: none; }
-  }
   @media (prefers-reduced-motion: reduce) {
-    .bubble, .cloud, .sun, .aurora, .spark, .btn-stamp, .plane,
-    .mark::before, .card, .brand { animation: none !important; }
-    .scene { perspective: none; }
-    .scene .px, .card { transform: none !important; }
-    .tab-pill { transition: none; }
+    * { transition: none !important; animation: none !important; }
+    .card { transform: none !important; }
+    .px { transform: none !important; }
   }
+
+  /* ===== 响应式 ===== */
+  @media (max-width: 980px) {
+    .page {
+      grid-template-columns: 1fr; gap: 30px;
+      padding: 44px 22px 56px; align-content: center;
+    }
+    .brand { max-width: 560px; margin: 0 auto; text-align: center; }
+    .mark { margin-left: auto; margin-right: auto; }
+    .feat { justify-content: center; }
+    .card { max-width: 480px; margin: 0 auto; }
+    .f3, .f6 { display: none; }
+  }
+  @media (max-width: 560px) {
+    .slogan { font-size: 27px; }
+    .card { padding: 30px 22px 26px; border-radius: 20px; }
+    .feat span { padding: 7px 14px; font-size: 12px; }
+    .f1, .f5 { display: none; }
+  }
+
+  /* ===== 暗色线条图标（#ln-*）：配色与线宽 ===== */
+  .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+  .scene .fx svg.ln {
+    color: #8FE0DB; stroke-width: 1.35;
+    filter: drop-shadow(0 0 12px rgba(143,224,219,.55));
+  }
+  .scene .fx.acc svg.ln {
+    color: #FFC08F;
+    filter: drop-shadow(0 0 12px rgba(255,192,143,.55));
+  }
+  .input-wrap .ico svg.ln { color: #8FE0DB; stroke-width: 2.1; }
+  .toggle-pw svg.ln { color: #8FE0DB; stroke-width: 2; }
+  .alert .ic svg.ln { color: #FFC08F; stroke-width: 2; }
 </style>
 </head>
 <body data-mode="login">
 
-<!-- 装饰场景：视差三层（光斑/远景气泡/近景气泡+云）+ 日轮 + 星屑 + 山峦 -->
+<script src="../assets/js/icons-line.js"></script>
+<!-- 装饰场景：雪山照片 + 双色柔光 + 星屑 + 漂浮 3D 图标（三层视差） -->
 <div class="scene" aria-hidden="true">
-  <div class="px" data-depth="10">
-    <span class="blob b1"></span>
-    <span class="blob b2"></span>
-    <div class="aurora"></div>
+  <div class="px px-bg" data-depth="6"></div>
+  <div class="px" data-depth="12">
+    <span class="glow g1"></span>
+    <span class="glow g2"></span>
     <div id="sparkles"></div>
   </div>
-  <div class="px" data-depth="22">
-    <span class="bubble u1"></span>
-    <span class="bubble u3"></span>
-    <span class="bubble u5"></span>
-    <span class="cloud c1"></span>
-    <span class="plane">✈</span>
+  <div class="px" data-depth="24">
+    <span class="fx f1"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span>
+    <span class="fx f2 acc"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-luggage"></use></svg></span>
+    <span class="fx f3"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-globe"></use></svg></span>
   </div>
-  <div class="px" data-depth="38">
-    <span class="bubble u2"></span>
-    <span class="bubble u4"></span>
-    <span class="bubble u6"></span>
-    <span class="bubble u7"></span>
-    <span class="cloud c2"></span>
-    <span class="cloud c3"></span>
-    <span class="plane p2">✈</span>
+  <div class="px" data-depth="40">
+    <span class="fx f4"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-mountain"></use></svg></span>
+    <span class="fx f5"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-book"></use></svg></span>
+    <span class="fx f6 acc"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-spark"></use></svg></span>
   </div>
-  <div class="sun"></div>
-  <div class="mist"></div>
-  <div class="mist m2"></div>
-  <svg class="mountains" viewBox="0 0 1440 190" preserveAspectRatio="none">
-    <defs>
-      <linearGradient id="mFar" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#CDEBE7"/><stop offset="1" stop-color="#B4E1DB"/>
-      </linearGradient>
-      <linearGradient id="mMid" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#9BD8D1"/><stop offset="1" stop-color="#7FCAC2"/>
-      </linearGradient>
-      <linearGradient id="mNear" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#63B9B0"/><stop offset="1" stop-color="#4FAAA1"/>
-      </linearGradient>
-    </defs>
-    <path fill="url(#mFar)" opacity=".8"
-      d="M0 150 L120 96 L240 132 L360 70 L480 120 L620 58 L760 118 L900 80 L1040 126 L1180 66 L1320 116 L1440 88 L1440 190 L0 190 Z"/>
-    <path fill="url(#mMid)" opacity=".92"
-      d="M0 172 L150 118 L300 158 L460 100 L620 152 L780 92 L940 150 L1100 108 L1260 156 L1440 112 L1440 190 L0 190 Z"/>
-    <path fill="url(#mNear)"
-      d="M0 190 L180 142 L340 176 L520 128 L700 172 L880 134 L1060 176 L1240 140 L1440 172 L1440 190 L0 190 Z"/>
-  </svg>
+  <div class="scene-vig"></div>
 </div>
 
 <main class="page">
@@ -494,15 +303,16 @@
       <svg viewBox="0 0 24 24" role="img" aria-label="Travel OS 山形标志">
         <defs>
           <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#0B6E6E"/><stop offset="1" stop-color="#2FA8A0"/>
+            <stop offset="0" stop-color="#1BA49A"/><stop offset="1" stop-color="#54C9BE"/>
           </linearGradient>
         </defs>
         <path d="M2.5 18 L9 8.2 L12.6 13 L15.4 9.4 L21.5 18 Z" fill="url(#mk)"/>
-        <circle cx="17.6" cy="5.6" r="2.1" fill="#F3C988"/>
+        <circle cx="17.6" cy="5.6" r="2.1" fill="#FFC77E"/>
       </svg>
     </span>
     <div class="b-name">Travel OS<small>行程驾驶舱</small></div>
     <p class="slogan">把每一次出发，都收进<em>同一本行程簿</em></p>
+    <div class="feat"><span>行程规划</span><span>多人协作</span><span>费用结算</span><span>AI 助手</span></div>
   </header>
 
   <!-- 玻璃拟态登录卡 -->
@@ -519,18 +329,14 @@
     <form class="form" id="form" novalidate>
 
       <div class="alert" id="alert" role="alert" hidden>
-        <span class="ic" aria-hidden="true">⚠</span>
+        <span class="ic" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-alert"></use></svg></span>
         <span id="alertText">用户名或密码不正确，请重新输入</span>
       </div>
 
       <div class="field">
         <label for="username">用户名</label>
         <span class="input-wrap">
-          <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <circle cx="12" cy="8.2" r="3.4"/><path d="M5 19.5c1.3-3.4 3.9-5 7-5s5.7 1.6 7 5"/>
-            </svg>
-          </span>
+          <span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-account"></use></svg></span>
           <input id="username" name="username" type="text" autocomplete="username"
             placeholder="3–20 位字母、数字或下划线" required>
         </span>
@@ -539,14 +345,10 @@
       <div class="field">
         <label for="password">密码</label>
         <span class="input-wrap">
-          <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/>
-            </svg>
-          </span>
+          <span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-lock"></use></svg></span>
           <input id="password" name="password" type="password" autocomplete="current-password"
             placeholder="登录：任意 / 注册：8 位以上且含字母与数字" required>
-          <button class="toggle-pw" type="button" id="togglePw" aria-label="显示密码">👁</button>
+          <button class="toggle-pw" type="button" id="togglePw" aria-label="显示密码"><svg class="ln" viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-eye"></use></svg></button>
         </span>
         <span class="hint login-only">忘记密码？<button class="link" type="button" id="forgotLink">联系管理员重置</button></span>
       </div>
@@ -554,11 +356,7 @@
       <div class="field register-only">
         <label for="confirm">确认密码</label>
         <span class="input-wrap">
-          <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/><path d="M12 14v3"/>
-            </svg>
-          </span>
+          <span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-lock"></use></svg></span>
           <input id="confirm" name="confirm" type="password" autocomplete="new-password"
             placeholder="再输一次密码">
         </span>
@@ -707,7 +505,8 @@
       var show = pwInput.type === 'password';
       pwInput.type = show ? 'text' : 'password';
       togglePw.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
-      togglePw.textContent = show ? '🙈' : '👁';
+      togglePw.innerHTML = '<svg class="ln" viewBox="0 0 24 24" aria-hidden="true"><use href="#ln-'
+        + (show ? 'eye-off' : 'eye') + '"></use></svg>';
     });
 
     // 输入时收起错误提示

@@ -62,8 +62,8 @@ html, body { height: 100%; }
 
 body {
   font-family: var(--grot);
-  background: var(--cloud);
-  color: var(--ink);
+  background: #0E1116;
+  color: rgba(255,255,255,.82);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
