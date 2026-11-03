@@ -300,8 +300,10 @@
     font-family: var(--grot); font-size: 13.5px; color: rgba(255,255,255,.82);
     background: rgba(255,255,255,.06); border: 1.5px solid #D8ECEB; border-radius: 10px;
     padding: 9px 12px; outline: none; cursor: pointer;
+    color-scheme: dark; /* 原生下拉弹层按暗色渲染，否则浅底白字不可见 */
     transition: border-color .16s, box-shadow .16s;
   }
+  .trip-select option { color: #E6EAEA; background: #161A23; }
   .trip-select:focus { border-color: var(--brand-soft); box-shadow: 0 0 0 3px rgba(91,197,192,.18); }
   .pick-row .btn-retry { margin-top: 0; white-space: nowrap; }
 
