@@ -822,6 +822,23 @@
         return;
       }
       list.innerHTML = state.days.map(dayCardHtml).join('');
+      focusQueryDay(list);
+    }
+
+    /* 深链 ?day=tripDayId：渲染后滚动定位到对应天（一次性，后续重渲染不跳） */
+    var dayFocused = false;
+    function focusQueryDay(list) {
+      if (dayFocused) return;
+      var target = qs.get('day');
+      if (!target) return;
+      dayFocused = true;
+      var cards = list.querySelectorAll('.day-card');
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].getAttribute('data-day') === target) {
+          window.scrollTo(0, cards[i].getBoundingClientRect().top + window.pageYOffset - 80);
+          break;
+        }
+      }
     }
 
     /* ===== 找天 / 找地点 ===== */

@@ -134,6 +134,11 @@ public class AiPromptBuilder {
         + "(b) 单次性/临时性要求（如「这次想去看海」）不要保存，本次遵守即可；\n"
         + "(c) 用户要求忘记/删除某条偏好时调用 forget_preference；用户问「我的偏好」时调用 list_preferences；\n"
         + "(d) 偏好与实际情况冲突时（如用户不吃辣但行程目的地以辣为主），如实提醒用户并提供替代方案。\n");
+    prompt.append("19. 今日简报（重要）：用户问「今天怎么安排？」「生成今日简报」「今天有什么需要注意的？」"
+        + "或想了解当天整体安排/风险时，调用 today_brief 工具（一次即可），"
+        + "基于返回的 summary/schedule/weather/alerts 组织回复：先给整体安排概览，再逐条提醒与建议；"
+        + "只引用工具返回中存在的事实，绝不编造地点、时间、天气、价格或预订；"
+        + "返回数据里没有订单号、确认码、证件内容，回复中也不要出现这些信息。\n");
     try {
       List<String> preferenceLines = preferenceService.promptLines(conversation.getUserId());
       if (!preferenceLines.isEmpty()) {

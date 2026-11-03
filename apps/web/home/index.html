@@ -268,6 +268,110 @@
   .stat .v small { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.6); margin-left: 3px; letter-spacing: 0; }
   .stat .foot { margin-top: 7px; font-size: 11px; color: rgba(255,255,255,.6); line-height: 1.45; }
 
+  /* ===== AI 今日简报卡 ===== */
+  .brief { margin-top: 26px; }
+  .brief .panel-head .brief-refresh {
+    border: none; cursor: pointer;
+    font-family: var(--grot); font-size: 13.5px; font-weight: 600;
+  }
+  .brief .panel-head .brief-refresh:disabled { opacity: .55; cursor: wait; }
+  .tb-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; }
+  .tb-summary {
+    font-family: var(--grot); font-size: 15.5px; line-height: 1.85;
+    color: rgba(255,255,255,.86); margin: 2px 0 14px;
+  }
+  .tb-badge {
+    display: inline-block; vertical-align: 2px; margin-left: 8px;
+    font-family: var(--grot); font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .tb-badge.pre { background: rgba(255,192,143,.16); color: #FFC08F; }
+  .tb-badge.past { background: rgba(255,255,255,.10); color: rgba(255,255,255,.62); }
+  .tb-weather { font-family: var(--grot); font-size: 12.5px; color: rgba(255,255,255,.58); margin-bottom: 4px; }
+  .tb-sec-t {
+    font-family: var(--grot); font-size: 12px; font-weight: 600; letter-spacing: .06em;
+    color: rgba(255,255,255,.5); margin: 14px 0 10px;
+  }
+  .tb-alerts { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .tb-al {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.06);
+    border-radius: var(--r-data); padding: 12px 14px;
+  }
+  .tb-al-tag {
+    flex: 0 0 auto; margin-top: 2px;
+    font-family: var(--grot); font-size: 11px; font-weight: 600;
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .tb-al.sev-urgent .tb-al-tag { background: rgba(255,120,120,.16); color: #FF9C9C; }
+  .tb-al.sev-warning .tb-al-tag { background: rgba(255,192,143,.16); color: #FFC08F; }
+  .tb-al.sev-info .tb-al-tag { background: rgba(143,224,219,.14); color: #8FE0DB; }
+  .tb-al-main { min-width: 0; flex: 1 1 auto; }
+  .tb-al-t { font-family: var(--grot); font-weight: 600; font-size: 13.5px; color: #F2F4F8; }
+  .tb-al-d { font-size: 12.5px; color: rgba(255,255,255,.62); line-height: 1.7; margin-top: 3px; }
+  .tb-al-a {
+    flex: 0 0 auto; align-self: center; white-space: nowrap;
+    font-family: var(--grot); font-size: 12px; font-weight: 600;
+    color: #7FD8D4; text-decoration: none; padding: 4px 2px;
+  }
+  .tb-al-a:hover { text-decoration: underline; }
+  .tb-none { font-size: 13.5px; color: rgba(255,255,255,.58); padding: 6px 0 2px; }
+  .tb-tl { margin: 0; padding: 0; list-style: none; }
+  .tb-tl li { display: flex; gap: 12px; padding: 9px 2px; border-bottom: 1px dashed rgba(255,255,255,.07); }
+  .tb-tl li:last-child { border-bottom: none; }
+  .tb-time {
+    flex: 0 0 48px; padding-top: 1px;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600; color: #8FE0DB;
+  }
+  .tb-time.tbd { color: rgba(255,255,255,.42); }
+  .tb-item-t { font-family: var(--grot); font-size: 13.5px; color: #F2F4F8; }
+  .tb-item-d { font-size: 12px; color: rgba(255,255,255,.55); margin-top: 2px; line-height: 1.6; }
+  .tb-more {
+    margin-top: 10px; padding: 4px 0;
+    font-family: var(--grot); font-size: 12.5px; font-weight: 600;
+    color: #7FD8D4; background: none; border: none; cursor: pointer;
+  }
+  .tb-more:hover { text-decoration: underline; }
+  .tb-acts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .tb-act {
+    font-family: var(--grot); font-weight: 600; font-size: 13px;
+    padding: 10px 20px; border-radius: 999px; text-decoration: none;
+    border: 1px solid rgba(91,197,192,.32); background: rgba(91,197,192,.10); color: #7FD8D4;
+    transition: background .16s, border-color .16s, transform .16s;
+  }
+  .tb-act:hover { background: rgba(91,197,192,.18); border-color: rgba(91,197,192,.5); transform: translateY(-1px); }
+  .tb-foot {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.06);
+    font-family: var(--grot); font-size: 12px; color: rgba(255,255,255,.45);
+  }
+  .tb-chip { padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.07); color: rgba(255,255,255,.62); }
+  .tb-chip.warn { background: rgba(255,192,143,.14); color: #FFC08F; }
+
+  /* 骨架屏：与最终结构一致的行式占位 */
+  .tb-sk { display: grid; gap: 12px; padding: 6px 0 4px; }
+  .tb-sk-line, .tb-sk-row, .tb-sk-btn {
+    background: linear-gradient(100deg, rgba(255,255,255,.05) 30%, rgba(255,255,255,.11) 50%, rgba(255,255,255,.05) 70%);
+    background-size: 200% 100%;
+    animation: tb-shimmer 1.3s linear infinite;
+    border-radius: 8px;
+  }
+  .tb-sk-line { height: 14px; }
+  .tb-sk-line.w45 { width: 45%; }
+  .tb-sk-line.w85 { width: 85%; }
+  .tb-sk-line.w95 { width: 95%; }
+  .tb-sk-rows { display: grid; gap: 10px; margin-top: 6px; }
+  .tb-sk-row { height: 46px; border-radius: var(--r-data); }
+  .tb-sk-btns { display: flex; gap: 12px; margin-top: 10px; }
+  .tb-sk-btn { width: 120px; height: 38px; border-radius: 999px; }
+  @keyframes tb-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @media (max-width: 980px) {
+    .tb-grid { grid-template-columns: 1fr; gap: 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tb-sk-line, .tb-sk-row, .tb-sk-btn { animation: none; }
+  }
+
   /* ===== AI 一键生成：黑色推广带（暗/亮交替节奏） ===== */
   .panel.ai-gen {
     margin: 36px -44px 0; padding: 52px 56px 56px;
@@ -832,6 +936,28 @@
             <div class="foot">记得出发前清点行囊</div>
           </div>
         </a>
+    </section>
+
+    <!-- ===== AI 今日简报 ===== -->
+    <section class="panel brief" id="todayBrief" aria-label="AI 今日简报">
+      <div class="panel-head">
+        <h2 class="title">AI 今日简报</h2>
+        <span class="sub" id="briefSub"></span>
+        <button type="button" class="link brief-refresh" id="briefRefresh">刷新简报</button>
+      </div>
+      <div class="panel-body" id="briefBody" aria-live="polite">
+        <div class="tb-sk" aria-hidden="true">
+          <div class="tb-sk-line w45"></div>
+          <div class="tb-sk-line w95"></div>
+          <div class="tb-sk-line w85"></div>
+          <div class="tb-sk-rows">
+            <div class="tb-sk-row"></div><div class="tb-sk-row"></div><div class="tb-sk-row"></div>
+          </div>
+          <div class="tb-sk-btns">
+            <div class="tb-sk-btn"></div><div class="tb-sk-btn"></div><div class="tb-sk-btn"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== AI 行程创建工具 ===== -->
@@ -1798,6 +1924,205 @@
         });
     }).catch(function () { /* 示例加载失败不影响首页 */ });
   }
+
+  /* ================= AI 今日简报（独立模块：失败不影响首页其他模块） ================= */
+  (function initTodayBrief() {
+    try {
+      var body = document.getElementById('briefBody');
+      var sub = document.getElementById('briefSub');
+      var refreshBtn = document.getElementById('briefRefresh');
+      if (!body || !refreshBtn) return;
+      var skelHtml = body.innerHTML;
+      var S = { loading: false, expanded: false, data: null };
+      var SEV_TAG = { urgent: '紧急', warning: '注意', info: '提示' };
+      var STATUS_LABEL = {
+        schedule: '行程', weather: '天气', bookings: '预订',
+        expenses: '账目', packing: '打包', documents: '证件'
+      };
+
+      function dt(v) {
+        if (v == null || v === '') return null;
+        var d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      function hm(v) {
+        var d = dt(v);
+        return d ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) : '';
+      }
+      function md(v) {
+        var d = dt(v);
+        return d ? (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日' : '';
+      }
+
+      function showSkeleton() { body.innerHTML = skelHtml; }
+
+      function renderError() {
+        sub.textContent = '';
+        body.innerHTML = '<div class="empty"><strong>简报暂时无法生成</strong>'
+          + '<p>数据加载失败，可稍后重试；首页其他功能不受影响。</p>'
+          + '<button type="button" class="btn-soft" data-brief-act="retry">重试</button></div>';
+      }
+
+      function renderNone() {
+        sub.textContent = '';
+        body.innerHTML = '<div class="empty"><strong>还没有可以生成简报的旅行</strong>'
+          + '<p>创建旅行后，这里会每天为你汇总行程、天气、预订与提醒。</p>'
+          + '<a class="btn-soft" href="/trip-form/">创建新旅行</a></div>';
+      }
+
+      function renderChoose(d) {
+        sub.textContent = '';
+        var rows = (d.candidates || []).map(function (c) {
+          return '<button type="button" class="tb-act" data-brief-act="pick" data-trip="'
+            + esc(c.id) + '">' + esc(c.title || '未命名行程') + ' · ' + md(c.startDate) + '–'
+            + md(c.endDate) + '</button>';
+        }).join('');
+        body.innerHTML = '<div class="empty"><strong>请选择要生成简报的行程</strong>'
+          + '<p>今天有多个行程同时符合，选一个继续（不会替你猜）：</p>'
+          + '<div class="tb-acts" style="justify-content:center;">' + rows + '</div></div>';
+      }
+
+      function renderBrief(d) {
+        var trip = d.trip || {};
+        var day = d.day;
+        var pre = trip.mode === 'pre-trip';
+        var meta = esc(trip.title || '未命名行程');
+        if (day && day.dayIndex) {
+          meta += ' · 第 ' + day.dayIndex + '／' + (day.totalDays || day.dayIndex) + ' 天 · ' + md(day.date);
+        } else if (pre && trip.startDate) {
+          meta += ' · ' + md(trip.startDate) + ' 出发';
+        }
+        if (pre) meta += '<span class="tb-badge pre">行前简报</span>';
+        else if (trip.mode === 'past') meta += '<span class="tb-badge past">历史日期</span>';
+        sub.innerHTML = meta;
+
+        var weatherLine = d.weather
+          ? '<div class="tb-weather">天气：' + esc(d.weather.condition || '未知')
+            + (d.weather.tempLow != null && d.weather.tempHigh != null
+                ? ' · ' + d.weather.tempLow + '~' + d.weather.tempHigh + '℃' : '')
+            + (d.weather.rainChance != null ? ' · 降雨 ' + d.weather.rainChance + '%' : '')
+            + '</div>'
+          : '<div class="tb-weather">天气暂不可用</div>';
+
+        var alerts = (d.alerts || []).slice(0, 3);
+        var alertHtml;
+        if (!alerts.length) {
+          alertHtml = '<div class="tb-none">今天暂未发现需要特别处理的问题。</div>';
+        } else {
+          alertHtml = '<ul class="tb-alerts">' + alerts.map(function (a) {
+            var sev = (a.severity === 'urgent' || a.severity === 'warning') ? a.severity : 'info';
+            return '<li class="tb-al sev-' + sev + '">'
+              + '<span class="tb-al-tag">' + (SEV_TAG[sev] || '提示') + '</span>'
+              + '<div class="tb-al-main"><div class="tb-al-t">' + esc(a.title) + '</div>'
+              + '<div class="tb-al-d">' + esc(a.detail) + '</div></div>'
+              + (a.action && a.action.url
+                  ? '<a class="tb-al-a" href="' + esc(a.action.url) + '">'
+                    + esc(a.action.label || '查看') + '</a>' : '')
+              + '</li>';
+          }).join('') + '</ul>';
+        }
+
+        var items = d.schedule || [];
+        var shown = S.expanded ? items : items.slice(0, 3);
+        var tlHtml;
+        if (!items.length) {
+          tlHtml = '<div class="tb-none">' + (pre ? '第 1 天还没有安排。' : '今天还没有安排。') + '</div>';
+        } else {
+          var out = [];
+          var tbdStarted = false;
+          shown.forEach(function (p) {
+            if (!p.timed && !tbdStarted) {
+              tbdStarted = true;
+              out.push('<li><div class="tb-item-d">—— 时间待定 ——</div></li>');
+            }
+            out.push('<li>'
+              + (p.timed
+                  ? '<span class="tb-time">' + esc(hm(p.startTime)) + '</span>'
+                  : '<span class="tb-time tbd">待定</span>')
+              + '<div><div class="tb-item-t">' + esc(p.name || '') + '</div>'
+              + (p.address || p.notes
+                  ? '<div class="tb-item-d">'
+                    + esc([p.address, p.notes].filter(Boolean).join(' · ')) + '</div>' : '')
+              + '</div></li>');
+          });
+          tlHtml = '<ul class="tb-tl">' + out.join('') + '</ul>';
+          if (!S.expanded && items.length > 3) {
+            tlHtml += '<button type="button" class="tb-more" data-brief-act="expand">展开全部 '
+              + items.length + ' 项</button>';
+          }
+        }
+
+        var actsHtml = '<div class="tb-acts">' + (d.actions || []).map(function (a) {
+          return '<a class="tb-act" href="' + esc(a.url) + '">' + esc(a.label) + '</a>';
+        }).join('') + '</div>';
+
+        var missing = [];
+        Object.keys(d.dataStatus || {}).forEach(function (k) {
+          if (d.dataStatus[k] === 'unavailable' && STATUS_LABEL[k]) missing.push(STATUS_LABEL[k]);
+        });
+        var footHtml = '<div class="tb-foot"><span>更新于 ' + esc(hm(d.generatedAt)) + '</span>'
+          + (missing.length
+              ? '<span class="tb-chip warn">' + esc(missing.join('、')) + '暂不可用</span>' : '')
+          + (d.summarySource === 'fallback' ? '<span class="tb-chip">模板摘要</span>' : '')
+          + '</div>';
+
+        body.innerHTML = '<div class="tb-grid">'
+          + '<div>' + weatherLine
+          + '<div class="tb-summary">' + esc(d.summary || '') + '</div>'
+          + '<div class="tb-sec-t">重要提示</div>' + alertHtml + '</div>'
+          + '<div><div class="tb-sec-t">' + (pre ? '第 1 天预览' : '今日时间轴') + '</div>'
+          + tlHtml + '</div>'
+          + '</div>' + actsHtml + footHtml;
+      }
+
+      function route(d) {
+        if (!d) return renderError();
+        if (d.mode === 'none') return renderNone();
+        if (d.mode === 'choose') return renderChoose(d);
+        renderBrief(d);
+      }
+
+      /* 刷新期间禁止重复提交；完成后更新 generatedAt（foot） */
+      function load(refresh, tripId) {
+        if (S.loading) return;
+        S.loading = true;
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '刷新中…';
+        if (!S.data) showSkeleton();
+        var payload = { refresh: !!refresh };
+        if (tripId) payload.tripId = tripId;
+        apiPost('/ai/today-brief', payload).then(function (d) {
+          S.data = d;
+          S.expanded = false;
+          route(d);
+        }).catch(function () {
+          renderError();
+        }).then(function () {
+          S.loading = false;
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = '刷新简报';
+        });
+      }
+
+      body.addEventListener('click', function (e) {
+        var t = e.target && e.target.closest ? e.target.closest('[data-brief-act]') : null;
+        if (!t) return;
+        var act = t.getAttribute('data-brief-act');
+        if (act === 'expand') {
+          S.expanded = true;
+          if (S.data) renderBrief(S.data);
+        } else if (act === 'retry') {
+          load(true);
+        } else if (act === 'pick') {
+          load(false, t.getAttribute('data-trip'));
+        }
+      });
+      refreshBtn.addEventListener('click', function () { load(true); });
+      load(false);
+    } catch (err) {
+      /* 简报模块异常不影响首页其他模块 */
+    }
+  })();
 })();
 </script>
 </body>

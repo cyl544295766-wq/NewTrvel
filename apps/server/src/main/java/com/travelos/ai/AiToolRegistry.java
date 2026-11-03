@@ -14,6 +14,7 @@ import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.service.AiPreferenceService;
 import com.travelos.service.BookingService;
 import com.travelos.service.PlacesService;
+import com.travelos.service.TodayBriefService;
 import com.travelos.service.TripDayService;
 import com.travelos.service.TripMemberService;
 import com.travelos.service.TripService;
@@ -88,13 +89,14 @@ public class AiToolRegistry {
   private final WeatherService weatherService;
   private final AiPreferenceService preferenceService;
   private final AiPromptBuilder promptBuilder;
+  private final TodayBriefService todayBriefService;
 
   public AiToolRegistry(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       TripService tripService, TripDayService tripDayService, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
       PlacesService placesService, BookingService bookingService,
       WeatherService weatherService, AiPreferenceService preferenceService,
-      AiPromptBuilder promptBuilder) {
+      AiPromptBuilder promptBuilder, TodayBriefService todayBriefService) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.tripService = tripService;
@@ -107,6 +109,7 @@ public class AiToolRegistry {
     this.weatherService = weatherService;
     this.preferenceService = preferenceService;
     this.promptBuilder = promptBuilder;
+    this.todayBriefService = todayBriefService;
   }
 
   // ==================== 工具定义 ====================
@@ -159,6 +162,13 @@ public class AiToolRegistry {
         Map.of()));
     tools.add(function("get_bookings", "读取行程的全部预订（机票/酒店/火车票/门票）",
         Map.of("tripId", stringProp("行程 ID"))));
+    tools.add(function("today_brief",
+        "生成「AI 今日简报」：整合当天（或行前）的行程、天气、预订、预算、打包与证件状态和确定性提醒。"
+            + "当用户问「今天怎么安排？」「生成今日简报」「今天有什么需要注意的？」或想了解当天整体情况时调用；"
+            + "返回结构化简报（summary/schedule/weather/alerts 等），据此组织回复，"
+            + "绝不添加返回数据中不存在的地点、时间、天气、价格或预订，也不要在回复中暴露订单号、确认码或证件信息",
+        Map.of("tripId", stringProp("行程 ID，可空（默认自动选择进行中/最近的行程）"),
+            "date", stringProp("日期 YYYY-MM-DD，可空（默认今天）"))));
     tools.add(function("add_booking",
         "预订登记草稿：用户要预订/登记/记录一条预订（机票、酒店、火车票、门票等），或酒店推荐后用户选定某家要求订下/记下时调用，"
             + "生成待确认草稿而非直接写入；点「应用」后写入预定管理。必填 type 与 title；"
@@ -292,6 +302,7 @@ public class AiToolRegistry {
         case "list_preferences" -> listPreferences(userId);
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
+        case "today_brief" -> todayBrief(args, conversation, userId);
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "add_booking" -> createBookingDraft(args, conversation, userId);
         case "ask_options" -> askOptions(args);
@@ -385,6 +396,30 @@ public class AiToolRegistry {
     } catch (Exception ex) {
       log.warn("get_weather 查询失败 tripId={}", tripId, ex);
       return "{\"error\":\"天气查询暂时不可用，请稍后再试；规划时先不要引用天气信息\"}";
+    }
+  }
+
+  // ==================== 今日简报工具 ====================
+
+  /**
+   * today_brief 工具：与首页「AI 今日简报」同一份数据与规则（TodayBriefService）。
+   * 传 llmSummary=false——摘要由对话模型自己组织语言，避免对话中嵌套调用 LLM 拖慢响应。
+   */
+  private String todayBrief(Map<String, Object> args, AiConversation conversation, String userId) {
+    String tripId = args.get("tripId") == null ? "" : args.get("tripId").toString().trim();
+    if (tripId.isEmpty() && conversation.getTripId() != null) {
+      tripId = conversation.getTripId();
+    }
+    try {
+      return JsonUtil.write(todayBriefService.brief(userId,
+          tripId.isEmpty() ? null : tripId,
+          args.get("date") == null ? null : args.get("date").toString(),
+          false, false));
+    } catch (ApiException ex) {
+      return "{\"error\":\"" + ex.getMessage().replace("\"", "'") + "\"}";
+    } catch (Exception ex) {
+      log.warn("today_brief 失败 userId={}", userId, ex);
+      return "{\"error\":\"今日简报暂时无法生成，请稍后再试\"}";
     }
   }
 
