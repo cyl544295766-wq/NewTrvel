@@ -1,0 +1,30 @@
+name: CI
+
+# 只做构建验证：编译 + 测试 + 打包。
+# 部署不在 CI 内——用本地一键发布 deploy/publish.sh（同国链路快、零外购成本）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-backend:
+    name: 构建后端 (apps/server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Maven verify（编译 + 测试 + 打包）
+        working-directory: apps/server
+        run: mvn -B verify
