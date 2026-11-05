@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+deploy/.deploy.env
 
 # ===== Java / Maven 构建产物 =====
 target/
@@ -22,3 +23,6 @@ build/
 
 # ===== Office 临时锁文件（Word/WPS 打开文档时生成） =====
 ~$*
+
+# ===== 鸿蒙移动端（独立 git 仓库，不纳入本仓库） =====
+Mappic/

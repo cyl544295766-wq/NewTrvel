@@ -109,12 +109,23 @@ mvn spring-boot:run
 
 ## 部署
 
-生产环境为 Ubuntu + Nginx + systemd + Docker PostgreSQL，由 GitHub Actions 自动化部署：
+生产环境为 Ubuntu + Nginx + systemd + Docker PostgreSQL。发布零外购成本（原 COS 中转按流量计费，已移除），两条路径任选：
+
+**A. 本地一键发布（推荐，同国链路快）**
+
+```bash
+DEPLOY_HOST=<服务器IP> ./deploy/publish.sh
+```
+
+构建 → 备份 → scp 直传 jar → 数据库迁移 → 发布前端 → 重启 + 健康检查（失败自动回滚）。
+连接配置可写入 `deploy/.deploy.env`（已 gitignore），变量见脚本头部注释。
+
+**B. GitHub Actions 自动发布（push 到 main 触发，仓库公开、Actions 分钟免费）**
 
 1. 构建后端 jar（`mvn -B verify`）
-2. jar 经腾讯云 COS 中转，服务器从内网拉取（避免跨境慢链路）
+2. jar 由 runner `scp` 直传服务器（44MB，跨境约 1~3 分钟）
 3. 按文件名顺序重放 `apps/server/db/migration/*.sql`（脚本必须幂等）
-4. `rsync` 发布前端静态目录到 `/var/www/travel-os/`
+4. 发布前端静态目录到 `/var/www/travel-os/`（保留 `/ci/` 状态页）
 5. 重启 systemd 服务并做健康检查，失败自动回滚到上一个 jar
 
 完整步骤与所需 Secrets 见 `deploy/服务器初始化手册.md`。
