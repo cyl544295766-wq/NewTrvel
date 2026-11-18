@@ -135,4 +135,4 @@ log "6/6 重启后端 + 健康检查"
   sudo systemctl restart travel-os-api
   exit 1'
 
-log "发布完成：http://$DEPLOY_HOST/"
+log "发布完成：http://$DEPLOY_HOST:8082/"
