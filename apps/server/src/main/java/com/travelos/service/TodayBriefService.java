@@ -490,23 +490,25 @@ public class TodayBriefService {
   private Map<String, Object> buildBudget(String userId, String tripId, String dateKey,
       boolean preTrip) {
     Map<String, Object> budget = tripExpenseService.getBudget(tripId, userId);
-    BigDecimal todaySpent = BigDecimal.ZERO;
+    // TR-02：按币种分组，不做隐式换算
+    java.util.Map<String, BigDecimal> spentByCurrency = new java.util.LinkedHashMap<>();
     int todayCount = 0;
-    String currency = "CNY";
     if (!preTrip) {
       for (TripExpense expense : tripExpenseService.findExpenses(tripId)) {
         if (expense.getSpentAt() == null || !Fmt.dateKey(expense.getSpentAt()).equals(dateKey)) {
           continue;
         }
         if (expense.getAmount() != null) {
-          todaySpent = todaySpent.add(expense.getAmount());
+          String cur = expense.getCurrency() == null || expense.getCurrency().isBlank()
+              ? "CNY" : expense.getCurrency();
+          spentByCurrency.merge(cur, expense.getAmount(), BigDecimal::add);
           todayCount++;
-        }
-        if (expense.getCurrency() != null && !expense.getCurrency().isBlank()) {
-          currency = expense.getCurrency();
         }
       }
     }
+    // 兼容单币种场景：todaySpent 取主币种，多币种时 todaySpent 为主币种金额、todaySpentByCurrency 给出全部
+    String currency = spentByCurrency.isEmpty() ? "CNY" : spentByCurrency.keySet().iterator().next();
+    BigDecimal todaySpent = spentByCurrency.getOrDefault(currency, BigDecimal.ZERO);
 
     Map<String, Object> tightest = null;
     BigDecimal tightestRemaining = null;
@@ -539,6 +541,10 @@ public class TodayBriefService {
     body.put("todaySpent", Fmt.money(todaySpent));
     body.put("todayCount", todayCount);
     body.put("currency", currency);
+    // TR-02：分币种当日支出，避免混币虚假合计
+    java.util.Map<String, String> spentByCurrencyFmt = new java.util.LinkedHashMap<>();
+    spentByCurrency.forEach((cur, amt) -> spentByCurrencyFmt.put(cur, Fmt.money(amt)));
+    body.put("todaySpentByCurrency", spentByCurrencyFmt);
     body.put("tightestCategory", tightest);
     return body;
   }
@@ -873,9 +879,21 @@ public class TodayBriefService {
     }
     text.append("\n");
     if (budget != null) {
-      text.append("预算：总 ").append(budget.get("tripBudget")).append("，已花 ")
-          .append(budget.get("totalSpent")).append("，剩余 ").append(budget.get("totalRemaining"))
-          .append("，今日 ").append(budget.get("todaySpent")).append("\n");
+      text.append("预算：总 ").append(budget.get("tripBudget")).append("（")
+          .append(budget.getOrDefault("budgetCurrency", "CNY")).append("），已花 ")
+          .append(budget.get("totalSpent")).append("，剩余 ").append(budget.get("totalRemaining"));
+      // TR-02：多币种时提示今日分币种支出，避免混币虚假合计
+      if (budget.get("todaySpentByCurrency") instanceof java.util.Map<?, ?> byCur && byCur.size() > 1) {
+        text.append("，今日 ");
+        byCur.forEach((cur, amt) -> text.append(amt).append(" ").append(cur).append("、"));
+        text.setLength(text.length() - 1); // 去尾逗号
+      } else {
+        text.append("，今日 ").append(budget.get("todaySpent"));
+      }
+      if (budget.get("foreignCurrencySpent") instanceof java.util.Map<?, ?> foreign && !foreign.isEmpty()) {
+        text.append("（另有异币支出未计入预算）");
+      }
+      text.append("\n");
     }
     if (packing != null) {
       text.append("打包：共 ").append(packing.get("totalItems")).append(" 件，未打包 ")

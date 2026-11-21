@@ -52,6 +52,15 @@ public class TripController {
     return tripService.getRoute(tripId, user.id());
   }
 
+  /** TR-03：日期变更预览——返回哪些天会移动/保留/移除，不实际修改。 */
+  @GetMapping("/{tripId}/date-change-preview")
+  public Map<String, Object> dateChangePreview(@PathVariable String tripId,
+      @org.springframework.web.bind.annotation.RequestParam(required = false) String startDate,
+      @org.springframework.web.bind.annotation.RequestParam(required = false) String endDate,
+      @CurrentUser UserContext user) {
+    return tripService.dateChangePreview(tripId, startDate, endDate, user.id());
+  }
+
   @PatchMapping("/{tripId}")
   public Map<String, Object> update(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {

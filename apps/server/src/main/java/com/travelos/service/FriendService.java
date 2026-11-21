@@ -271,6 +271,28 @@ public class FriendService {
     return hasDirection(userA, userB) && hasDirection(userB, userA);
   }
 
+  /** 批量互为好友：返回 candidateIds 中与 viewerId 互为好友的 id 子集。两次批量查询代替 N×2 次逐条查询。 */
+  public java.util.Set<String> mutualFriendIds(String viewerId, java.util.Collection<String> candidateIds) {
+    if (candidateIds == null || candidateIds.isEmpty()) {
+      return java.util.Set.of();
+    }
+    // viewerId 已添加的候选
+    java.util.Set<String> iAdded = userFriendMapper.selectList(new LambdaQueryWrapper<UserFriend>()
+            .eq(UserFriend::getUserId, viewerId)
+            .in(UserFriend::getFriendId, candidateIds))
+        .stream().map(UserFriend::getFriendId).collect(java.util.stream.Collectors.toSet());
+    if (iAdded.isEmpty()) {
+      return java.util.Set.of();
+    }
+    // 已添加 viewerId 的候选（限制在 iAdded 内，减少无用查询）
+    java.util.Set<String> addedMe = userFriendMapper.selectList(new LambdaQueryWrapper<UserFriend>()
+            .eq(UserFriend::getFriendId, viewerId)
+            .in(UserFriend::getUserId, iAdded))
+        .stream().map(UserFriend::getUserId).collect(java.util.stream.Collectors.toSet());
+    iAdded.retainAll(addedMe);
+    return iAdded;
+  }
+
   // ==================== 内部工具 ====================
 
   private boolean hasDirection(String userId, String friendId) {

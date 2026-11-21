@@ -50,12 +50,13 @@ public class DashboardService {
   private final PackingListMapper packingListMapper;
   private final PackingItemMapper packingItemMapper;
   private final NotificationMapper notificationMapper;
+  private final TripJournalService tripJournalService;
 
   public DashboardService(TripMapper tripMapper, TripMemberMapper tripMemberMapper,
       UserMapper userMapper, TripExpenseMapper expenseMapper, PhotoMapper photoMapper,
       TravelDocumentMapper documentMapper, TripJournalMapper journalMapper,
       PackingListMapper packingListMapper, PackingItemMapper packingItemMapper,
-      NotificationMapper notificationMapper) {
+      NotificationMapper notificationMapper, TripJournalService tripJournalService) {
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
     this.userMapper = userMapper;
@@ -66,6 +67,7 @@ public class DashboardService {
     this.packingListMapper = packingListMapper;
     this.packingItemMapper = packingItemMapper;
     this.notificationMapper = notificationMapper;
+    this.tripJournalService = tripJournalService;
   }
 
   public Map<String, Object> findOne(String userId) {
@@ -220,12 +222,14 @@ public class DashboardService {
             return map;
           })
           .toList();
-      recentJournals = journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
-          .in(TripJournal::getTripId, tripIds)
-          .eq(TripJournal::getIsDraft, false)
-          .orderByDesc(TripJournal::getCreatedAt)
-          .last("LIMIT 3"))
+      recentJournals = tripJournalService.filterVisibleBatch(
+              journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
+                  .in(TripJournal::getTripId, tripIds)
+                  .eq(TripJournal::getIsDraft, false)
+                  .orderByDesc(TripJournal::getCreatedAt)
+                  .last("LIMIT 20")), userId)
           .stream()
+          .limit(3)
           .map(journal -> {
             Trip trip = tripMap.get(journal.getTripId());
             Map<String, Object> map = new LinkedHashMap<>();

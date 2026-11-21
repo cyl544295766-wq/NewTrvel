@@ -311,12 +311,19 @@ public class TripExpenseService {
     Long tripBudgetCents = trip != null && trip.getBudget() != null
         ? toCentsQuiet(trip.getBudget())
         : null;
-
+    // TR-02：预算币种标注；异币费用单独列出，不计入未换算的预算进度
+    String budgetCurrency = "CNY"; // 行程预算固定 CNY（产品决策：不引入汇率）
     List<TripExpense> expenses = findExpenses(tripId);
     Map<String, Long> spentByCategory = new LinkedHashMap<>();
+    Map<String, Long> foreignByCurrency = new LinkedHashMap<>(); // 异币费用单独列出
     long totalSpent = 0;
     for (TripExpense expense : expenses) {
+      String cur = normalizeCurrency(expense.getCurrency());
       long cents = toCentsQuiet(expense.getAmount());
+      if (!budgetCurrency.equals(cur)) {
+        foreignByCurrency.merge(cur, cents, Long::sum);
+        continue; // 不计入预算进度
+      }
       totalSpent += cents;
       spentByCategory.merge(expense.getCategory(), cents, Long::sum);
     }
@@ -381,6 +388,7 @@ public class TripExpenseService {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("tripBudget", tripBudgetCents == null ? null : centsToString(tripBudgetCents));
+    body.put("budgetCurrency", budgetCurrency);
     body.put("totalSpent", centsToString(totalSpent));
     body.put("totalEstimated", centsToString(totalEstimated));
     body.put("totalRemaining", tripBudgetCents == null
@@ -390,6 +398,10 @@ public class TripExpenseService {
         && totalSpent + totalEstimated > tripBudgetCents);
     body.put("hasWarning", anyWarning);
     body.put("categories", categories);
+    // TR-02：异币费用单独列出，不计入预算进度
+    Map<String, String> foreignFmt = new LinkedHashMap<>();
+    foreignByCurrency.forEach((cur, amt) -> foreignFmt.put(cur, centsToString(amt)));
+    body.put("foreignCurrencySpent", foreignFmt);
     return body;
   }
 
@@ -456,27 +468,73 @@ public class TripExpenseService {
 
   // ==================== 需求 3：多人分摊与结算 ====================
 
-  /** 实时净额 + 最少转账结算方案（净额正负贪心配对）。 */
+  /** 实时净额 + 最少转账结算方案（净额正负贪心配对）。TR-02：按币种独立计算，不跨币种抵消。 */
   public Map<String, Object> settlement(String tripId, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     List<TripExpense> expenses = findExpenses(tripId);
     List<Map<String, Object>> members = getMembers(tripId);
 
-    Map<String, Long> paid = new LinkedHashMap<>();
-    Map<String, Long> owed = new LinkedHashMap<>();
-    long total = 0;
+    // TR-02：按币种分组，每币种独立计算垫付/应付/转账
+    // key = currency，value = [paid, owed] per userId
+    Map<String, Map<String, Long>> paidByCur = new LinkedHashMap<>();
+    Map<String, Map<String, Long>> owedByCur = new LinkedHashMap<>();
+    Map<String, Long> totalByCur = new LinkedHashMap<>();
     for (TripExpense expense : expenses) {
+      String cur = normalizeCurrency(expense.getCurrency());
       long cents = toCentsQuiet(expense.getAmount());
-      total += cents;
-      paid.merge(expense.getPayerUserId(), cents, Long::sum);
+      totalByCur.merge(cur, cents, Long::sum);
+      paidByCur.computeIfAbsent(cur, k -> new LinkedHashMap<>())
+          .merge(expense.getPayerUserId(), cents, Long::sum);
       for (TripExpenseShare share : sharesOf(expense.getId())) {
-        owed.merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
+        owedByCur.computeIfAbsent(cur, k -> new LinkedHashMap<>())
+            .merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
       }
     }
 
+    // 每币种独立贪心计算转账
+    Map<String, Object> byCurrency = new LinkedHashMap<>();
+    for (String cur : totalByCur.keySet()) {
+      Map<String, Long> paid = paidByCur.getOrDefault(cur, Map.of());
+      Map<String, Long> owed = owedByCur.getOrDefault(cur, Map.of());
+      Map<String, Object> curResult = computeTransfers(members, paid, owed, cur);
+      byCurrency.put(cur, curResult);
+    }
+
+    String primary = totalByCur.isEmpty() ? "CNY" : totalByCur.keySet().iterator().next();
+    Set<String> currencies = totalByCur.keySet();
+    boolean multiCurrency = currencies.size() > 1;
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    // 兼容旧单币种响应：currency/totalAmount/nets/transfers 取主币种
+    @SuppressWarnings("unchecked")
+    Map<String, Object> primaryResult = (Map<String, Object>) byCurrency.get(primary);
+    body.put("currency", primary);
+    body.put("totalAmount", primaryResult.get("totalAmount"));
+    body.put("nets", primaryResult.get("nets"));
+    body.put("transfers", primaryResult.get("transfers"));
+    body.put("canConfirm", !multiCurrency && !((List<?>) primaryResult.get("transfers")).isEmpty());
+    // TR-02：分币种明细
+    body.put("byCurrency", byCurrency);
+    body.put("currencies", currencies);
+    body.put("multiCurrency", multiCurrency);
+    // 混币时明确提示不可确认（分币种确认上线前）
+    if (multiCurrency) {
+      body.put("confirmBlockedReason",
+          "当前行程包含多种币种（" + String.join("、", currencies) + "），分币种结算尚未上线。"
+              + "预览已按币种独立计算，确认前请先统一只保留一种币种。");
+    }
+    body.put("latestSettlement", latestSettlementMap(tripId));
+    return body;
+  }
+
+  /** 单币种净额 + 贪心转账计算。独立于其他币种，不跨币种抵消。 */
+  private Map<String, Object> computeTransfers(List<Map<String, Object>> members,
+      Map<String, Long> paid, Map<String, Long> owed, String currency) {
+    long total = 0;
+    for (Long v : paid.values()) total += v;
     List<Map<String, Object>> nets = new ArrayList<>();
-    List<long[]> creditors = new ArrayList<>(); // 应收（净额 > 0）
-    List<long[]> debtors = new ArrayList<>();   // 应付（净额 < 0）
+    List<long[]> creditors = new ArrayList<>();
+    List<long[]> debtors = new ArrayList<>();
     for (int index = 0; index < members.size(); index++) {
       Map<String, Object> member = members.get(index);
       String memberId = member.get("userId").toString();
@@ -494,7 +552,6 @@ public class TripExpenseService {
         debtors.add(new long[]{index, -net});
       }
     }
-    // 贪心：每次取最大应收与最大应付配对，每步至少清零一方 → 转账次数 ≤ 成员数 - 1
     creditors.sort((a, b) -> Long.compare(b[1], a[1]));
     debtors.sort((a, b) -> Long.compare(b[1], a[1]));
     List<Map<String, Object>> transfers = new ArrayList<>();
@@ -511,33 +568,30 @@ public class TripExpenseService {
         transfer.put("toUserId", members.get((int) creditor[0]).get("userId"));
         transfer.put("toDisplayName", members.get((int) creditor[0]).get("displayName"));
         transfer.put("amount", centsToString(amount));
+        transfer.put("currency", currency);
         transfers.add(transfer);
       }
       creditor[1] -= amount;
       debtor[1] -= amount;
-      if (creditor[1] == 0) {
-        ci++;
-      }
-      if (debtor[1] == 0) {
-        di++;
-      }
+      if (creditor[1] == 0) ci++;
+      if (debtor[1] == 0) di++;
     }
-
-    String currency = expenses.isEmpty() ? "CNY" : expenses.get(0).getCurrency();
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("currency", currency);
-    body.put("totalAmount", centsToString(total));
-    body.put("nets", nets);
-    body.put("transfers", transfers);
-    body.put("canConfirm", !transfers.isEmpty());
-    body.put("latestSettlement", latestSettlementMap(tripId));
-    return body;
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("currency", currency);
+    result.put("totalAmount", centsToString(total));
+    result.put("nets", nets);
+    result.put("transfers", transfers);
+    return result;
   }
 
-  /** 确认结算（owner/admin）：把当前方案快照存档并通知全部成员。 */
+  /** 确认结算（owner/admin）：把当前方案快照存档并通知全部成员。TR-02：混币拦截。 */
   @Transactional
   public Map<String, Object> confirmSettlement(String tripId, String confirmedBy) {
     Map<String, Object> plan = settlement(tripId, confirmedBy);
+    // TR-02：混币确认拦截——分币种确认上线前不隐式换算
+    if (Boolean.TRUE.equals(plan.get("multiCurrency"))) {
+      throw ApiException.badRequest(String.valueOf(plan.get("confirmBlockedReason")));
+    }
     @SuppressWarnings("unchecked")
     List<Map<String, Object>> transfers = (List<Map<String, Object>>) plan.get("transfers");
     if (transfers.isEmpty()) {
@@ -938,27 +992,38 @@ public class TripExpenseService {
 
   private Map<String, Object> buildSummary(List<TripExpense> expenses,
       List<Map<String, Object>> members) {
-    Map<String, Long> paid = new LinkedHashMap<>();
-    Map<String, Long> share = new LinkedHashMap<>();
-    long total = 0;
+    // TR-02：按币种分组汇总，不跨币种相加
+    Map<String, Long> paidByCurrency = new LinkedHashMap<>();  // key = currency + "|" + userId
+    Map<String, Long> shareByCurrency = new LinkedHashMap<>();
+    Map<String, Long> totalByCurrency = new LinkedHashMap<>();
+    Set<String> currencySet = new LinkedHashSet<>();
     for (TripExpense expense : expenses) {
+      String cur = normalizeCurrency(expense.getCurrency());
+      currencySet.add(cur);
       long cents = toCentsQuiet(expense.getAmount());
-      total += cents;
-      paid.merge(expense.getPayerUserId(), cents, Long::sum);
+      totalByCurrency.merge(cur, cents, Long::sum);
+      paidByCurrency.merge(cur + "|" + expense.getPayerUserId(), cents, Long::sum);
       for (TripExpenseShare expenseShare : sharesOf(expense.getId())) {
-        share.merge(expenseShare.getUserId(), toCentsQuiet(expenseShare.getShareAmount()), Long::sum);
+        shareByCurrency.merge(cur + "|" + expenseShare.getUserId(),
+            toCentsQuiet(expenseShare.getShareAmount()), Long::sum);
       }
     }
+    String primary = currencySet.isEmpty() ? "CNY" : currencySet.iterator().next();
     Map<String, Object> body = new LinkedHashMap<>();
-    body.put("currency", expenses.isEmpty() ? "CNY" : expenses.get(0).getCurrency());
-    body.put("totalAmount", centsToString(total));
-    body.put("paidByUser", toMemberRows(paid, members));
-    body.put("shareByUser", toMemberRows(share, members));
+    body.put("currency", primary);
+    body.put("totalAmount", centsToString(totalByCurrency.getOrDefault(primary, 0L)));
+    // 多币种时各币种明细
+    Map<String, String> totalByCurrencyFmt = new LinkedHashMap<>();
+    totalByCurrency.forEach((cur, amt) -> totalByCurrencyFmt.put(cur, centsToString(amt)));
+    body.put("totalByCurrency", totalByCurrencyFmt);
+    body.put("currencies", currencySet);
+    body.put("paidByUser", toMemberRowsByCurrency(paidByCurrency, members, primary));
+    body.put("shareByUser", toMemberRowsByCurrency(shareByCurrency, members, primary));
     List<Map<String, Object>> balances = new ArrayList<>();
     for (Map<String, Object> member : members) {
       String userId = member.get("userId").toString();
-      long paidAmount = paid.getOrDefault(userId, 0L);
-      long shareAmount = share.getOrDefault(userId, 0L);
+      long paidAmount = paidByCurrency.getOrDefault(primary + "|" + userId, 0L);
+      long shareAmount = shareByCurrency.getOrDefault(primary + "|" + userId, 0L);
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("userId", userId);
       row.put("displayName", member.get("displayName"));
@@ -971,22 +1036,32 @@ public class TripExpenseService {
 
   private Map<String, Object> buildWalletSummary(List<TripExpense> expenses,
       List<Map<String, Object>> members, String budget) {
+    // TR-02：按币种分组，不跨币种相加
     Map<String, Long> categoryTotals = new LinkedHashMap<>();
     for (String category : CATEGORIES) {
       categoryTotals.put(category, 0L);
     }
-    Map<String, Long> paid = new LinkedHashMap<>();
-    Map<String, Long> owed = new LinkedHashMap<>();
-    long total = 0;
+    Map<String, Long> paid = new LinkedHashMap<>();  // key = userId (主币种)
+    Map<String, Long> owed = new LinkedHashMap<>();  // key = userId (主币种)
+    Map<String, Long> totalByCurrency = new LinkedHashMap<>();
+    Set<String> currencySet = new LinkedHashSet<>();
     for (TripExpense expense : expenses) {
+      String cur = normalizeCurrency(expense.getCurrency());
+      currencySet.add(cur);
       long cents = toCentsQuiet(expense.getAmount());
-      total += cents;
-      categoryTotals.merge(expense.getCategory(), cents, Long::sum);
-      paid.merge(expense.getPayerUserId(), cents, Long::sum);
-      for (TripExpenseShare share : sharesOf(expense.getId())) {
-        owed.merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
+      totalByCurrency.merge(cur, cents, Long::sum);
+      // 主币种部分进分类/付款/应付
+      String primary = currencySet.isEmpty() ? "CNY" : currencySet.iterator().next();
+      if (cur.equals(primary)) {
+        categoryTotals.merge(expense.getCategory(), cents, Long::sum);
+        paid.merge(expense.getPayerUserId(), cents, Long::sum);
+        for (TripExpenseShare share : sharesOf(expense.getId())) {
+          owed.merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
+        }
       }
     }
+    String primaryCur = currencySet.isEmpty() ? "CNY" : currencySet.iterator().next();
+    long total = totalByCurrency.getOrDefault(primaryCur, 0L);
     Long budgetCents = budget == null ? null : toCents(budget, true);
     long remainingBudget = budgetCents == null ? 0 : budgetCents - total;
     Map<String, String> displayNameById = new LinkedHashMap<>();
@@ -996,7 +1071,13 @@ public class TripExpenseService {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("budget", budget);
+    body.put("currency", primaryCur);
+    body.put("currencies", currencySet);
     body.put("totalExpenseAmount", centsToString(total));
+    // 多币种时各币种明细
+    Map<String, String> totalByCurrencyFmt = new LinkedHashMap<>();
+    totalByCurrency.forEach((cur, amt) -> totalByCurrencyFmt.put(cur, centsToString(amt)));
+    body.put("totalByCurrency", totalByCurrencyFmt);
     body.put("remainingBudget", centsToString(remainingBudget));
     List<Map<String, Object>> categories = new ArrayList<>();
     for (String category : CATEGORIES) {
@@ -1058,6 +1139,36 @@ public class TripExpenseService {
       rows.add(row);
     }
     return rows;
+  }
+
+  /** 按主币种取成员行（key = currency|userId 格式，只取指定币种）。 */
+  private List<Map<String, Object>> toMemberRowsByCurrency(Map<String, Long> source,
+      List<Map<String, Object>> members, String currency) {
+    List<Map<String, Object>> rows = new ArrayList<>();
+    for (Map<String, Object> member : members) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("userId", member.get("userId"));
+      row.put("displayName", member.get("displayName"));
+      row.put("amount", centsToString(source.getOrDefault(currency + "|" + member.get("userId"), 0L)));
+      rows.add(row);
+    }
+    return rows;
+  }
+
+  /**
+   * 币种规范化：null/空白 → "CNY"；大小写统一为大写（"cny"→"CNY"）。
+   * 历史异常值（非 ISO 4217 三字母）原样保留但 trim，不换算、不吞没。
+   */
+  static String normalizeCurrency(String currency) {
+    if (currency == null || currency.isBlank()) {
+      return "CNY";
+    }
+    String trimmed = currency.trim();
+    // ISO 4217 三字母币种代码统一转大写
+    if (trimmed.length() == 3 && trimmed.chars().allMatch(Character::isLetter)) {
+      return trimmed.toUpperCase(java.util.Locale.ROOT);
+    }
+    return trimmed;
   }
 
   public List<TripExpense> findExpenses(String tripId) {

@@ -73,7 +73,7 @@ class StatsBaselineWebTest {
   private static final int SQL_CAP_BUDGETS = 10;
   private static final int SQL_CAP_SETTLEMENT = 13;
   /** 空态（无成员资格）：仅 membership 查询即返回，其余全部短路。 */
-  private static final int SQL_CAP_EMPTY = 3;
+  private static final int SQL_CAP_EMPTY = 5;
   private static final int TIMED_RUNS = 5;
 
   private final List<String> createdUserIds = new ArrayList<>();

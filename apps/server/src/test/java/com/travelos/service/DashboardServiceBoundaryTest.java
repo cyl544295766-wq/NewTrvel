@@ -64,13 +64,14 @@ class DashboardServiceBoundaryTest {
     PackingListMapper packingListMapper = mock(PackingListMapper.class);
     PackingItemMapper packingItemMapper = mock(PackingItemMapper.class);
     NotificationMapper notificationMapper = mock(NotificationMapper.class);
+    TripJournalService tripJournalService = mock(TripJournalService.class);
 
     when(notificationMapper.selectCount(any())).thenReturn(0L);
     when(userMapper.selectById(anyString())).thenReturn(new User());
 
     service = new DashboardService(tripMapper, tripMemberMapper, userMapper, expenseMapper,
         photoMapper, documentMapper, journalMapper, packingListMapper, packingItemMapper,
-        notificationMapper);
+        notificationMapper, tripJournalService);
   }
 
   // ==================== updatedAt 为空（防御场景） ====================

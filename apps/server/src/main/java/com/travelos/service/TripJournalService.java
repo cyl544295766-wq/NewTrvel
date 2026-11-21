@@ -309,6 +309,83 @@ public class TripJournalService {
         .stream().map(TripJournalAudience::getUserId).toList();
   }
 
+  /**
+   * 批量可见性过滤：供首页等列表场景用，避免逐条 canView 产生 N+1 查询。
+   * 规则与 {@link #canView} 完全一致：作者→草稿→public→friends→specified→private。
+   * 仅对需要查库的类别（friends / specified）做批量查询，每类至多 2 次批量查询。
+   */
+  public List<TripJournal> filterVisibleBatch(List<TripJournal> journals, String viewerId) {
+    if (journals == null || journals.isEmpty()) {
+      return List.of();
+    }
+    return bypassed(() -> {
+      // 第一轮内存过滤：作者 / 草稿 / public 直接判定
+      List<TripJournal> candidates = new ArrayList<>();
+      Set<String> friendAuthors = new LinkedHashSet<>();
+      List<String> specifiedJournalIds = new ArrayList<>();
+      for (TripJournal j : journals) {
+        if (j.getAuthorId() != null && j.getAuthorId().equals(viewerId)) {
+          candidates.add(j);
+          continue;
+        }
+        if (Boolean.TRUE.equals(j.getIsDraft())) {
+          continue;
+        }
+        String vis = j.getVisibility() == null ? "private" : j.getVisibility();
+        switch (vis) {
+          case "public" -> candidates.add(j);
+          case "friends" -> {
+            friendAuthors.add(j.getAuthorId());
+            candidates.add(j); // 临时加入，后续按好友关系筛除
+          }
+          case "specified" -> {
+            specifiedJournalIds.add(j.getId());
+            candidates.add(j); // 临时加入，后续按名单筛除
+          }
+          default -> { /* private → 不可见 */ }
+        }
+      }
+      // 批量查互为好友的作者（一次查询覆盖所有 friends 类游记）
+      Set<String> mutualFriendIds = new LinkedHashSet<>();
+      if (!friendAuthors.isEmpty()) {
+        mutualFriendIds.addAll(friendService.mutualFriendIds(viewerId, friendAuthors));
+      }
+      // 批量查指定受众（一次查询覆盖所有 specified 类游记）
+      Set<String> myAudienceJournalIds = new LinkedHashSet<>();
+      if (!specifiedJournalIds.isEmpty()) {
+        myAudienceJournalIds.addAll(audienceMapper.selectList(
+                new LambdaQueryWrapper<TripJournalAudience>()
+                    .in(TripJournalAudience::getJournalId, specifiedJournalIds)
+                    .eq(TripJournalAudience::getUserId, viewerId))
+            .stream().map(TripJournalAudience::getJournalId).toList());
+      }
+      // 第二轮筛除：friends 不是互为好友 → 剔除；specified 不在名单 → 剔除
+      List<TripJournal> result = new ArrayList<>();
+      for (TripJournal j : candidates) {
+        if (j.getAuthorId() != null && j.getAuthorId().equals(viewerId)) {
+          result.add(j);
+          continue;
+        }
+        String vis = j.getVisibility() == null ? "private" : j.getVisibility();
+        switch (vis) {
+          case "public" -> result.add(j);
+          case "friends" -> {
+            if (j.getAuthorId() != null && mutualFriendIds.contains(j.getAuthorId())) {
+              result.add(j);
+            }
+          }
+          case "specified" -> {
+            if (myAudienceJournalIds.contains(j.getId())) {
+              result.add(j);
+            }
+          }
+          default -> { /* private → 不可见 */ }
+        }
+      }
+      return result;
+    });
+  }
+
   /** 绕过行程数据范围过滤执行查询（好友/公开可见的读者不是行程成员）。 */
   private <T> T bypassed(Supplier<T> action) {
     boolean prev = TripScopeContext.isBypassed();

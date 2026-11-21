@@ -12,7 +12,10 @@ import com.travelos.entity.TripMember;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.BookingMapper;
 import com.travelos.mapper.PhotoMapper;
+import com.travelos.mapper.TravelDocumentMapper;
 import com.travelos.mapper.TripDayMapper;
+import com.travelos.mapper.TripExpenseMapper;
+import com.travelos.mapper.TripJournalMapper;
 import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripMemberMapper;
 import com.travelos.mapper.TripPlaceMapper;
@@ -40,10 +43,15 @@ public class TripService {
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
   private final BookingMapper bookingMapper;
+  private final TripExpenseMapper expenseMapper;
+  private final TripJournalMapper journalMapper;
+  private final TravelDocumentMapper documentMapper;
 
   public TripService(TripMapper tripMapper, TripMemberMapper tripMemberMapper,
       TripMemberService tripMemberService, PhotoMapper photoMapper, TripDayMapper tripDayMapper,
-      TripPlaceMapper tripPlaceMapper, BookingMapper bookingMapper) {
+      TripPlaceMapper tripPlaceMapper, BookingMapper bookingMapper,
+      TripExpenseMapper expenseMapper, TripJournalMapper journalMapper,
+      TravelDocumentMapper documentMapper) {
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
     this.tripMemberService = tripMemberService;
@@ -51,6 +59,9 @@ public class TripService {
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.bookingMapper = bookingMapper;
+    this.expenseMapper = expenseMapper;
+    this.journalMapper = journalMapper;
+    this.documentMapper = documentMapper;
   }
 
   @Transactional
@@ -169,12 +180,18 @@ public class TripService {
 
   @Transactional
   public Map<String, Object> update(String tripId, Map<String, Object> dto, String userId) {
-    validateDateRange(dto.get("startDate"), dto.get("endDate"));
     TripMember membership = tripMemberService.requireTripMember(tripId, userId);
     Trip trip = findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }
+    // 合并原值和新值后验证日期（TR-03：部分更新时只验提交字段会导致倒序）
+    // Date → yyyy-MM-dd 格式（Date.toString() 产生的 "Tue Sep 01..." 无法被 DateUtil.parse 解析）
+    Object effStart = dto.containsKey("startDate") ? dto.get("startDate")
+        : (trip.getStartDate() == null ? null : formatDateString(trip.getStartDate()));
+    Object effEnd = dto.containsKey("endDate") ? dto.get("endDate")
+        : (trip.getEndDate() == null ? null : formatDateString(trip.getEndDate()));
+    validateDateRange(effStart, effEnd);
 
     if (dto.containsKey("title")) {
       String title = string(dto.get("title"));
@@ -204,8 +221,12 @@ public class TripService {
     }
     trip.setUpdatedAt(new Date());
     tripMapper.updateById(trip);
-    syncDaysWithRange(tripId);
-    return Map.of("trip", toTripResponse(trip, membership.getRole(), null));
+    Map<String, Object> syncResult = syncDaysWithRange(tripId);
+    // TR-03：返回日期变动影响摘要（保留/移除的天）
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("trip", toTripResponse(trip, membership.getRole(), null));
+    result.put("daySync", syncResult);
+    return result;
   }
 
   /**
@@ -278,20 +299,33 @@ public class TripService {
 
     // 第四步：新范围之外的空天清理掉，有内容的天保留
     int removed = 0;
+    List<String> preservedDayIds = new ArrayList<>();
     for (TripDay day : days) {
       if (day.getDayIndex() == null || day.getDayIndex() <= dates.size()) {
         continue;
       }
       if (dayHasContent(day.getId())) {
+        preservedDayIds.add(day.getId());
         continue;
       }
       tripDayMapper.deleteById(day.getId());
       removed++;
     }
-    return Map.of("created", created, "updated", updated, "removed", removed);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("created", created);
+    result.put("updated", updated);
+    result.put("removed", removed);
+    result.put("preservedDayIds", preservedDayIds);
+    result.put("preservedCount", preservedDayIds.size());
+    return result;
   }
 
   private boolean dayHasContent(String dayId) {
+    if (dayId == null) {
+      return false;
+    }
+    // TR-03：检查所有实际引用该天的关联表（地点、预订、费用、照片、游记、文档）
+    // 不能仅凭地点或预订为空就判定该天无内容——费用/照片/游记也是用户排好的计划
     Long places = tripPlaceMapper.selectCount(new LambdaQueryWrapper<TripPlace>()
         .eq(TripPlace::getTripDayId, dayId));
     if (places != null && places > 0) {
@@ -299,11 +333,107 @@ public class TripService {
     }
     Long bookings = bookingMapper.selectCount(new LambdaQueryWrapper<Booking>()
         .eq(Booking::getTripDayId, dayId));
-    return bookings != null && bookings > 0;
+    if (bookings != null && bookings > 0) {
+      return true;
+    }
+    Long expenses = expenseMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TripExpense>()
+        .eq(com.travelos.entity.TripExpense::getTripDayId, dayId));
+    if (expenses != null && expenses > 0) {
+      return true;
+    }
+    Long photos = photoMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.Photo>()
+        .eq(com.travelos.entity.Photo::getTripDayId, dayId));
+    if (photos != null && photos > 0) {
+      return true;
+    }
+    Long journals = journalMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TripJournal>()
+        .eq(com.travelos.entity.TripJournal::getTripDayId, dayId));
+    if (journals != null && journals > 0) {
+      return true;
+    }
+    Long documents = documentMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TravelDocument>()
+        .eq(com.travelos.entity.TravelDocument::getTripDayId, dayId));
+    return documents != null && documents > 0;
   }
 
   private boolean sameDay(Date left, Date right) {
     return left != null && DateUtil.utcDay(left).equals(DateUtil.utcDay(right));
+  }
+
+  /** Date → yyyy-MM-dd 字符串（Date.toString() 格式无法被 DateUtil.parse 解析）。 */
+  private static String formatDateString(Date date) {
+    return new java.text.SimpleDateFormat("yyyy-MM-dd").format(date);
+  }
+
+  /** TR-03：日期变更预览——不实际修改，返回哪些天会移动/保留/移除。 */
+  public Map<String, Object> dateChangePreview(String tripId, Object newStart, Object newEnd,
+      String userId) {
+    tripMemberService.requireTripMember(tripId, userId);
+    Trip trip = findLive(tripId);
+    if (trip == null) {
+      throw ApiException.notFound("Trip not found");
+    }
+    // 合并原值
+    Object effStart = newStart != null ? newStart
+        : (trip.getStartDate() == null ? null : formatDateString(trip.getStartDate()));
+    Object effEnd = newEnd != null ? newEnd
+        : (trip.getEndDate() == null ? null : formatDateString(trip.getEndDate()));
+    validateDateRange(effStart, effEnd);
+    if (effStart == null || effEnd == null) {
+      return Map.of("message", "无日期草稿，补齐日期时会自动生成行程天");
+    }
+    List<Date> newDates = DateUtil.dayRange(
+        DateUtil.parse(effStart.toString()), DateUtil.parse(effEnd.toString()));
+    List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
+        .eq(TripDay::getTripId, tripId)
+        .orderByAsc(TripDay::getDayIndex));
+
+    List<Map<String, Object>> moves = new ArrayList<>();
+    List<Map<String, Object>> preserved = new ArrayList<>();
+    List<Map<String, Object>> removed = new ArrayList<>();
+    int createCount = 0;
+
+    Map<Integer, TripDay> byIndex = new LinkedHashMap<>();
+    for (TripDay day : days) {
+      if (day.getDayIndex() != null) {
+        byIndex.putIfAbsent(day.getDayIndex(), day);
+      }
+    }
+    for (int i = 0; i < newDates.size(); i++) {
+      TripDay day = byIndex.get(i + 1);
+      if (day == null) {
+        createCount++;
+      } else if (!sameDay(day.getDate(), newDates.get(i))) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("dayIndex", i + 1);
+        m.put("from", day.getDate());
+        m.put("to", newDates.get(i));
+        moves.add(m);
+      }
+    }
+    for (TripDay day : days) {
+      if (day.getDayIndex() == null || day.getDayIndex() <= newDates.size()) {
+        continue;
+      }
+      boolean hasContent = dayHasContent(day.getId());
+      Map<String, Object> entry = new LinkedHashMap<>();
+      entry.put("dayId", day.getId());
+      entry.put("dayIndex", day.getDayIndex());
+      entry.put("date", day.getDate());
+      if (hasContent) {
+        preserved.add(entry);
+      } else {
+        removed.add(entry);
+      }
+    }
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("newRange", Map.of("startDate", effStart, "endDate", effEnd));
+    body.put("moves", moves);
+    body.put("preserved", preserved);
+    body.put("removed", removed);
+    body.put("createCount", createCount);
+    body.put("hasRisk", !preserved.isEmpty());
+    return body;
   }
 
   /** 临时日期：远离真实行程日期且彼此不重复，仅供同步过程中的过渡使用。 */
