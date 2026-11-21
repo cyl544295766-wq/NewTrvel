@@ -115,7 +115,7 @@ case "$url" in
     exit 0;;
   *":3001/api/health"*)
     [ "$started" = "1" ] || exit 22
-    rid="$(sed -n 's/^TRAVEL_OS_RELEASE_ID=//p' "$FAKE_STATE/opt/travel-os/release.env" 2>/dev/null)"
+    rid="$(sed -n 's/^TRAVELOS_RELEASE_ID=//p' "$FAKE_STATE/opt/travel-os/release.env" 2>/dev/null)"
     if [ -n "$rid" ]; then
       echo "{\"status\":\"ok\",\"service\":\"travel-os-api\",\"release\":\"$rid\",\"timestamp\":\"x\"}"
     else
@@ -302,7 +302,7 @@ seed_prev() {
     "$FAKE_STATE/www/sub" "$FAKE_STATE/www/ci" "$FAKE_STATE/tmp"
   printf 'fake-prev-jar' > "$FAKE_STATE/opt/travel-os/travel-os-api.jar"
   printf "$PREVID\n" > "$FAKE_STATE/opt/travel-os/current-release.txt"
-  printf "TRAVEL_OS_RELEASE_ID=$PREVID\n" > "$FAKE_STATE/opt/travel-os/release.env"
+  printf "TRAVELOS_RELEASE_ID=$PREVID\n" > "$FAKE_STATE/opt/travel-os/release.env"
   printf '<html>prev</html>' > "$FAKE_STATE/www/index.html"
   printf 'old-file' > "$FAKE_STATE/www/sub/old.txt"
   printf 'ci-state' > "$FAKE_STATE/www/ci/status.html"
@@ -366,7 +366,7 @@ seed_prev
 code=$(run_publish "$SC" 0); echo "$code" > "$SC/code"
 assert_success "$SC"
 chk "current-release.txt 已更新为目标版本" "[ \"\$(cat \"$FAKE_STATE/opt/travel-os/current-release.txt\")\" = \"$NEWID\" ]"
-chk "release.env 已更新为目标版本" "grep -q \"TRAVEL_OS_RELEASE_ID=$NEWID\" \"$FAKE_STATE/opt/travel-os/release.env\""
+chk "release.env 已更新为目标版本" "grep -q \"TRAVELOS_RELEASE_ID=$NEWID\" \"$FAKE_STATE/opt/travel-os/release.env\""
 chk "前端 release.json 已随包发布" "grep -q '\"release\": \"$NEWID\"' \"$FAKE_STATE/www/release.json\""
 chk "上一版本 jar 备份存在" "ls \"$FAKE_STATE\"/opt/travel-os/backups/travel-os-api.jar.bak-* >/dev/null 2>&1"
 chk "旧前端文件被 --delete 清理、新文件就位" "[ ! -f \"$FAKE_STATE/www/sub/old.txt\" ] && [ -f \"$FAKE_STATE/www/index.html\" ]"

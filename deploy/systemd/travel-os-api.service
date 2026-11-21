@@ -7,7 +7,7 @@ Wants=docker.service
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/travel-os
-# 发布版本标识（TRAVEL_OS_RELEASE_ID）：publish.sh 在每次切换时原子重写 /opt/travel-os/release.env，
+# 发布版本标识（TRAVELOS_RELEASE_ID）：publish.sh 在每次切换时原子重写 /opt/travel-os/release.env，
 # restart 后新进程读入；/api/health 的 release 字段即来自它，用于「运行版本 == 目标版本」核验。
 # 前导 - 表示文件不存在（首次部署前）不报错。
 EnvironmentFile=-/opt/travel-os/release.env

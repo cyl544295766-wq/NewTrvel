@@ -25,7 +25,7 @@ public class HealthController {
 
   /**
    * 发布版本标识：由 systemd 的 EnvironmentFile（/opt/travel-os/release.env，键
-   * TRAVEL_OS_RELEASE_ID）在启动时注入（环境变量经 relaxed binding 映射到本属性）。
+   * TRAVELOS_RELEASE_ID）在启动时注入（环境变量经 relaxed binding 映射到本属性）。
    * 环境变量在进程启动时固定——之后文件被改不会改变本进程上报值，因此
    * 「/api/health 的 release == 目标发布 ID」能证明当前运行的 JAR 就是刚发布的那个。
    * 本地/未配置时为空串，/api/health 不输出 release 字段。

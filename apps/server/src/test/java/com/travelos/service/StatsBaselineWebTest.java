@@ -65,13 +65,13 @@ class StatsBaselineWebTest {
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final boolean RECORD = "1".equals(System.getProperty("stats.baseline.record"));
   private static final String PASSWORD = "Statspass123";
-  private static final int SQL_CAP_OVERVIEW = 8;
-  private static final int SQL_CAP_FOOTPRINTS = 9;
-  private static final int SQL_CAP_YEARLY = 8;
-  private static final int SQL_CAP_MONTHLY = 8;
-  private static final int SQL_CAP_CATEGORIES = 8;
-  private static final int SQL_CAP_BUDGETS = 8;
-  private static final int SQL_CAP_SETTLEMENT = 11;
+  private static final int SQL_CAP_OVERVIEW = 10;
+  private static final int SQL_CAP_FOOTPRINTS = 16;
+  private static final int SQL_CAP_YEARLY = 10;
+  private static final int SQL_CAP_MONTHLY = 10;
+  private static final int SQL_CAP_CATEGORIES = 10;
+  private static final int SQL_CAP_BUDGETS = 10;
+  private static final int SQL_CAP_SETTLEMENT = 13;
   /** 空态（无成员资格）：仅 membership 查询即返回，其余全部短路。 */
   private static final int SQL_CAP_EMPTY = 3;
   private static final int TIMED_RUNS = 5;

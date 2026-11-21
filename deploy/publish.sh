@@ -11,7 +11,7 @@
 #      才允许覆盖；HAS_PREVIOUS 记录是否存在旧版（首次部署=0）。
 #   S4 迁移：按文件名序全量重放（服务器 flock 内，ON_ERROR_STOP=1）。
 #      失败：中止——线上仍是上一版本组合；已执行部分靠幂等重放（非事务回滚），修复后重跑。
-#   S5 切换（同一 flock 内）：systemd unit + release.env（TRAVEL_OS_RELEASE_ID=目标版本）
+#   S5 切换（同一 flock 内）：systemd unit + release.env（TRAVELOS_RELEASE_ID=目标版本）
 #      → 原子替换 jar → rsync 前端（--delete，保留 /ci/）→ current-release.txt → restart。
 #   S6 验证（服务器本地有界轮询 12×5s）：/api/health（服务标识 + release=目标）
 #      + /api/health/ready（200，库可连+关键结构齐）+ :8082/release.json（release=目标）。
@@ -205,7 +205,7 @@ SWITCH_RC=0
 do_switch() {
   sudo cp "$TMPR/travel-os-api-$RELEASE_ID.service" /etc/systemd/system/travel-os-api.service || { echo "SWITCH_ERROR:unit" >&2; return 30; }
   sudo systemctl daemon-reload || { echo "SWITCH_ERROR:daemon-reload" >&2; return 30; }
-  printf 'TRAVEL_OS_RELEASE_ID=%s\n' "$RELEASE_ID" > "$RENV.new" && mv "$RENV.new" "$RENV" || { echo "SWITCH_ERROR:release.env" >&2; return 30; }
+  printf 'TRAVELOS_RELEASE_ID=%s\n' "$RELEASE_ID" > "$RENV.new" && mv "$RENV.new" "$RENV" || { echo "SWITCH_ERROR:release.env" >&2; return 30; }
   rm -rf "$TMPR/web-new-$RELEASE_ID" && mkdir -p "$TMPR/web-new-$RELEASE_ID"
   tar xzf "$RSTAGE/www.tar.gz" -C "$TMPR/web-new-$RELEASE_ID" || { echo "SWITCH_ERROR:untar-www" >&2; return 30; }
   rsync -a --delete --exclude "/ci/" "$TMPR/web-new-$RELEASE_ID/" "$RWWW/" || { echo "SWITCH_ERROR:rsync-www" >&2; return 30; }
@@ -244,7 +244,7 @@ tar xzf "$RBACKUP/www.bak-$BACKUP_TS.tar.gz" -C "$TMPR/web-restore-$BACKUP_TS"
 rsync -a --delete --exclude "/ci/" "$TMPR/web-restore-$BACKUP_TS/" "$RWWW/"
 [ $? -eq 0 ] || { echo "ROLLBACK_ERROR:rsync-www" >&2; exit 50; }
 rm -rf "$TMPR/web-restore-$BACKUP_TS"
-printf 'TRAVEL_OS_RELEASE_ID=%s\n' "$PREV_ID" > "$RENV.new" && mv "$RENV.new" "$RENV"
+printf 'TRAVELOS_RELEASE_ID=%s\n' "$PREV_ID" > "$RENV.new" && mv "$RENV.new" "$RENV"
 [ $? -eq 0 ] || { echo "ROLLBACK_ERROR:release.env" >&2; exit 50; }
 printf '%s\n' "$PREV_ID" > "$RCUR.new" && mv "$RCUR.new" "$RCUR"
 [ $? -eq 0 ] || { echo "ROLLBACK_ERROR:current-release" >&2; exit 50; }
@@ -283,7 +283,7 @@ fi
 LOCK_ACQUIRED=1
 trap cleanup_local EXIT
 
-SSHOPTS=(-i "$SSH_KEY" -p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new)
+SSHOPTS=(-i "$SSH_KEY" -o "Port=$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new)
 
 # ============ S1 预检（全部发生在修改线上文件之前） ============
 STAGE=preflight
