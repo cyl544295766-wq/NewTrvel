@@ -38,6 +38,8 @@ import java.util.TimeZone;
 public class TravelStatsService {
 
   private static final String PRIMARY_CURRENCY = "CNY";
+  /** 批量 IN 参数的单批上限：常规用户远小于此值（单批）；大批量时查询次数随批次数线性增长。 */
+  private static final int BATCH_SIZE = 500;
   private static final List<String> MONTH_LABELS = List.of("一月", "二月", "三月", "四月", "五月", "六月",
       "七月", "八月", "九月", "十月", "十一月", "十二月");
   private static final Map<String, String> CATEGORY_LABELS = Map.of(
@@ -70,6 +72,15 @@ public class TravelStatsService {
   /** 足迹地图：按目的地聚合用户全部未删除行程（城市/次数/天数/地点数/平均坐标/首末到访）。 */
   public Map<String, Object> footprints(String userId) {
     List<StatsTrip> trips = findTripsForUser(userId);
+    // 批量读取地点（仅目的地名非空的行程需要），按行程分组，消除逐行程查询
+    List<String> destinationTripIds = new ArrayList<>();
+    for (StatsTrip statsTrip : trips) {
+      Trip trip = statsTrip.trip();
+      if (trip.getDestination() != null && !trip.getDestination().isBlank()) {
+        destinationTripIds.add(trip.getId());
+      }
+    }
+    Map<String, List<TripPlace>> placesByTrip = placesByTrip(destinationTripIds);
     Map<String, Map<String, Object>> byCity = new LinkedHashMap<>();
     int totalDays = 0;
     int totalPlaces = 0;
@@ -78,8 +89,7 @@ public class TravelStatsService {
       if (trip.getDestination() == null || trip.getDestination().isBlank()) {
         continue;
       }
-      List<TripPlace> places = tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
-          .eq(TripPlace::getTripId, trip.getId()));
+      List<TripPlace> places = placesByTrip.getOrDefault(trip.getId(), List.of());
       totalDays += statsTrip.days().size();
       totalPlaces += places.size();
       double latSum = 0;
@@ -145,11 +155,13 @@ public class TravelStatsService {
         .compareTo(String.valueOf(b.get("firstDate"))));
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("cities", cities);
-    body.put("totals", Map.of(
-        "cityCount", cities.size(),
-        "tripCount", trips.size(),
-        "totalDays", totalDays,
-        "totalPlaces", totalPlaces));
+    // Map.of 键序不定 → 响应键序跨运行漂移；LinkedHashMap 固定输出顺序（键集与值不变，契约兼容）
+    Map<String, Object> totals = new LinkedHashMap<>();
+    totals.put("cityCount", cities.size());
+    totals.put("tripCount", trips.size());
+    totals.put("totalDays", totalDays);
+    totals.put("totalPlaces", totalPlaces);
+    body.put("totals", totals);
     return body;
   }
 
@@ -163,12 +175,13 @@ public class TravelStatsService {
 
   public Map<String, Object> getYearly(String userId, String yearValue) {
     int year = parseYear(yearValue);
-    return buildFiltered(year, buildSummary(filterByYear(findTripsForUser(userId), year)));
+    // 年份在读取阶段前置筛选（口径不变：行程开始日期的 UTC 年份），行程天/费用只加载该年份行程
+    return buildFiltered(year, buildSummary(findTripsForUser(userId, year)));
   }
 
   public Map<String, Object> getMonthly(String userId, String yearValue) {
     int year = parseYear(yearValue);
-    List<StatsTrip> trips = filterByYear(findTripsForUser(userId), year);
+    List<StatsTrip> trips = findTripsForUser(userId, year);
     List<Map<String, Object>> months = new ArrayList<>();
     for (int index = 0; index < 12; index++) {
       final int monthIndex = index;
@@ -385,9 +398,10 @@ public class TravelStatsService {
   /** 结算建议：把用户名下的每趟行程按费用分摊算净额，给出涉及该用户的转账建议。 */
   public Map<String, Object> getSettlementSuggestions(String userId) {
     List<StatsTrip> trips = findTripsForUser(userId);
-    List<Map<String, Object>> items = new ArrayList<>();
-    long inTotal = 0;
-    long outTotal = 0;
+    // 先收集参与结算的行程与 CNY 费用，随后一次性批量读取分摊与成员展示信息，
+    // 消除「每笔费用查分摊」「每行程查成员」「每成员查用户」的三层 N+1。
+    List<StatsTrip> settled = new ArrayList<>();
+    List<String> expenseIds = new ArrayList<>();
     for (StatsTrip statsTrip : trips) {
       Trip trip = statsTrip.trip();
       if ("archived".equals(trip.getStatus())) {
@@ -399,13 +413,32 @@ public class TravelStatsService {
       if (expenses.isEmpty()) {
         continue;
       }
-      Map<String, String> names = memberNames(trip.getId());
+      settled.add(statsTrip);
+      for (TripExpense expense : expenses) {
+        expenseIds.add(expense.getId());
+      }
+    }
+    Map<String, List<TripExpenseShare>> sharesByExpense = sharesByExpense(expenseIds);
+    List<String> nameTripIds = new ArrayList<>();
+    for (StatsTrip statsTrip : settled) {
+      nameTripIds.add(statsTrip.trip().getId());
+    }
+    Map<String, Map<String, String>> namesByTrip = memberNamesByTrip(nameTripIds);
+
+    List<Map<String, Object>> items = new ArrayList<>();
+    long inTotal = 0;
+    long outTotal = 0;
+    for (StatsTrip statsTrip : settled) {
+      Trip trip = statsTrip.trip();
+      List<TripExpense> expenses = statsTrip.expenses().stream()
+          .filter(expense -> PRIMARY_CURRENCY.equals(expense.getCurrency()))
+          .toList();
+      Map<String, String> names = namesByTrip.getOrDefault(trip.getId(), Map.of());
       Map<String, Long> paid = new LinkedHashMap<>();
       Map<String, Long> owed = new LinkedHashMap<>();
       for (TripExpense expense : expenses) {
         paid.merge(expense.getPayerUserId(), Math.round(expense.getAmount().doubleValue() * 100), Long::sum);
-        for (TripExpenseShare share : shareMapper.selectList(new LambdaQueryWrapper<TripExpenseShare>()
-            .eq(TripExpenseShare::getExpenseId, expense.getId()))) {
+        for (TripExpenseShare share : sharesByExpense.getOrDefault(expense.getId(), List.of())) {
           owed.merge(share.getUserId(), Math.round(share.getShareAmount().doubleValue() * 100), Long::sum);
         }
       }
@@ -470,21 +503,43 @@ public class TravelStatsService {
     return body;
   }
 
-  /** 行程成员 id → 展示名（优先 display_name，缺省用 username）。 */
-  private Map<String, String> memberNames(String tripId) {
-    Map<String, String> names = new LinkedHashMap<>();
-    List<TripMember> members = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
-        .eq(TripMember::getTripId, tripId));
-    for (TripMember member : members) {
-      User user = userMapper.selectById(member.getUserId());
-      if (user != null) {
-        String name = user.getDisplayName() == null || user.getDisplayName().isBlank()
-            ? user.getUsername()
-            : user.getDisplayName();
-        names.put(member.getUserId(), name);
+  /** 批量版成员展示名：tripId → (userId → 展示名)。成员与用户各一次批量查询（分批 IN）。 */
+  private Map<String, Map<String, String>> memberNamesByTrip(List<String> tripIds) {
+    Map<String, Map<String, String>> result = new LinkedHashMap<>();
+    if (tripIds.isEmpty()) {
+      return result;
+    }
+    Map<String, List<TripMember>> membersByTrip = new LinkedHashMap<>();
+    Set<String> userIds = new LinkedHashSet<>();
+    for (List<String> batch : partition(tripIds)) {
+      for (TripMember member : tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
+          .in(TripMember::getTripId, batch))) {
+        membersByTrip.computeIfAbsent(member.getTripId(), k -> new ArrayList<>()).add(member);
+        userIds.add(member.getUserId());
       }
     }
-    return names;
+    Map<String, User> userById = new LinkedHashMap<>();
+    if (!userIds.isEmpty()) {
+      for (List<String> batch : partition(new ArrayList<>(userIds))) {
+        for (User user : userMapper.selectBatchIds(batch)) {
+          userById.put(user.getId(), user);
+        }
+      }
+    }
+    for (Map.Entry<String, List<TripMember>> entry : membersByTrip.entrySet()) {
+      Map<String, String> names = new LinkedHashMap<>();
+      for (TripMember member : entry.getValue()) {
+        User user = userById.get(member.getUserId());
+        if (user != null) {
+          String name = user.getDisplayName() == null || user.getDisplayName().isBlank()
+              ? user.getUsername()
+              : user.getDisplayName();
+          names.put(member.getUserId(), name);
+        }
+      }
+      result.put(entry.getKey(), names);
+    }
+    return result;
   }
 
   private List<Map<String, Object>> buildYearlyComparison(List<StatsTrip> trips) {
@@ -580,21 +635,110 @@ public class TravelStatsService {
   }
 
   private List<StatsTrip> findTripsForUser(String userId) {
+    return findTripsForUser(userId, null);
+  }
+
+  /**
+   * 批量读取当前用户可访问（未删除）行程及其行程天/费用：
+   * 成员资格 1 次 → 行程批量 selectBatchIds → 行程天/费用各按行程 ID 分批 IN → 按行程 ID 分组，
+   * 消除「每行程 3 查询」的 N+1；year 非空时在加载行程天/费用**之前**按行程开始日期的 UTC 年份
+   * 前置筛选（与原内存 filterByYear 口径一致），空集合短路、空 IN 不会出现（分批函数跳过空表）。
+   */
+  private List<StatsTrip> findTripsForUser(String userId, Integer year) {
     List<TripMember> memberships = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
         .eq(TripMember::getUserId, userId));
-    List<StatsTrip> trips = new ArrayList<>();
+    if (memberships.isEmpty()) {
+      return List.of();
+    }
+    List<String> tripIds = new ArrayList<>();
     for (TripMember membership : memberships) {
-      Trip trip = tripMapper.selectById(membership.getTripId());
+      tripIds.add(membership.getTripId());
+    }
+    Map<String, Trip> tripById = new LinkedHashMap<>();
+    for (List<String> batch : partition(new ArrayList<>(new LinkedHashSet<>(tripIds)))) {
+      for (Trip trip : tripMapper.selectBatchIds(batch)) {
+        tripById.put(trip.getId(), trip);
+      }
+    }
+    // 顺序与原实现一致：按成员资格逐条展开（含历史重复资格语义），再按年份口径前置过滤
+    List<Trip> selected = new ArrayList<>();
+    for (TripMember membership : memberships) {
+      Trip trip = tripById.get(membership.getTripId());
       if (trip == null || trip.getDeletedAt() != null) {
         continue;
       }
-      List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
-          .eq(TripDay::getTripId, trip.getId()));
-      List<TripExpense> expenses = expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
-          .eq(TripExpense::getTripId, trip.getId()));
-      trips.add(new StatsTrip(trip, days, expenses));
+      if (year != null && (trip.getStartDate() == null || yearOf(trip.getStartDate()) != year)) {
+        continue;
+      }
+      selected.add(trip);
+    }
+    if (selected.isEmpty()) {
+      return List.of();
+    }
+    List<String> selectedIds = new ArrayList<>();
+    for (Trip trip : selected) {
+      selectedIds.add(trip.getId());
+    }
+    Map<String, List<TripDay>> daysByTrip = new LinkedHashMap<>();
+    for (List<String> batch : partition(selectedIds)) {
+      for (TripDay day : tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
+          .in(TripDay::getTripId, batch))) {
+        daysByTrip.computeIfAbsent(day.getTripId(), k -> new ArrayList<>()).add(day);
+      }
+    }
+    Map<String, List<TripExpense>> expensesByTrip = new LinkedHashMap<>();
+    for (List<String> batch : partition(selectedIds)) {
+      for (TripExpense expense : expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
+          .in(TripExpense::getTripId, batch))) {
+        expensesByTrip.computeIfAbsent(expense.getTripId(), k -> new ArrayList<>()).add(expense);
+      }
+    }
+    List<StatsTrip> trips = new ArrayList<>();
+    for (Trip trip : selected) {
+      trips.add(new StatsTrip(trip,
+          daysByTrip.getOrDefault(trip.getId(), List.of()),
+          expensesByTrip.getOrDefault(trip.getId(), List.of())));
     }
     return trips;
+  }
+
+  /** 批量读取行程地点，按行程 ID 分组（分批 IN，空输入返回空映射）。 */
+  private Map<String, List<TripPlace>> placesByTrip(List<String> tripIds) {
+    Map<String, List<TripPlace>> byTrip = new LinkedHashMap<>();
+    if (tripIds.isEmpty()) {
+      return byTrip;
+    }
+    for (List<String> batch : partition(tripIds)) {
+      for (TripPlace place : tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
+          .in(TripPlace::getTripId, batch))) {
+        byTrip.computeIfAbsent(place.getTripId(), k -> new ArrayList<>()).add(place);
+      }
+    }
+    return byTrip;
+  }
+
+  /** 批量读取费用分摊，按费用 ID 分组（分批 IN，空输入返回空映射）。 */
+  private Map<String, List<TripExpenseShare>> sharesByExpense(List<String> expenseIds) {
+    Map<String, List<TripExpenseShare>> byExpense = new LinkedHashMap<>();
+    if (expenseIds.isEmpty()) {
+      return byExpense;
+    }
+    for (List<String> batch : partition(expenseIds)) {
+      for (TripExpenseShare share : shareMapper.selectList(new LambdaQueryWrapper<TripExpenseShare>()
+          .in(TripExpenseShare::getExpenseId, batch))) {
+        byExpense.computeIfAbsent(share.getExpenseId(), k -> new ArrayList<>()).add(share);
+      }
+    }
+    return byExpense;
+  }
+
+  /** IN 参数分批：避免无限增长的 IN 列表（每批 {@link #BATCH_SIZE} 条）。 */
+  private static List<List<String>> partition(List<String> items) {
+    List<List<String>> batches = new ArrayList<>();
+    for (int i = 0; i < items.size(); i += BATCH_SIZE) {
+      batches.add(new ArrayList<>(items.subList(i, Math.min(items.size(), i + BATCH_SIZE))));
+    }
+    return batches;
   }
 
   private Map<String, Object> buildFiltered(int year, Map<String, Object> summary) {

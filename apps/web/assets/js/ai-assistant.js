@@ -34,6 +34,41 @@
 
   if (global.TravelOSAi && global.TravelOSAi.__loaded) return;
 
+  /* 发送策略（幂等键 + 失败去向判定）：由 pet.js 先行注入 ai-send-policy.js；
+   * 若缺失则使用内置保守兜底（失败一律“对齐而不盲目重发”）。 */
+  var policy = global.TravelOSSendPolicy || {
+    newRequestId: function () {
+      return 'r' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+    },
+    decideStreamFallback: function (state) {
+      if (!state || !state.streamSupported || !state.hasToken) {
+        return { action: 'fallback', reason: 'not-supported' };
+      }
+      if (state.fetchFailed) return { action: 'align', reason: 'network' };
+      if (state.status === 401 || state.status === 403) {
+        return { action: 'fallback', reason: 'unauthenticated' };
+      }
+      if (typeof state.status === 'number' && state.status >= 400) {
+        return { action: 'align', reason: 'error' };
+      }
+      if (!state.bodyReadable) return { action: 'align', reason: 'no-body' };
+      return { action: 'read', reason: 'ok' };
+    },
+    hasUserMessageWithText: function (messages, text) {
+      if (!Array.isArray(messages)) return false;
+      var target = String(text == null ? '' : text).trim();
+      for (var i = 0; i < messages.length; i++) {
+        var m = messages[i];
+        if (m && m.role === 'user' &&
+            String(m.content == null ? '' : m.content).trim() === target) return true;
+      }
+      return false;
+    },
+    shouldFallbackAfterAlign: function (messages, text) {
+      return !this.hasUserMessageWithText(messages, text);
+    }
+  };
+
   /* 会话 id 存储键：全局一个 + 每个行程一个 */
   var CONV_KEY_GLOBAL = 'travelos.ai.convId';
   var CONV_KEY_PREFIX = 'travelos.ai.convId.';
@@ -78,6 +113,7 @@
     bubbleOpen: false,
     convId: null,
     sending: false,
+    streamAbort: null,   /* 当前流式请求的 AbortController（用户主动停止用） */
     expanded: false,    /* 桌面展开为右侧抽屉 */
     mobile: false,      /* ≤720px：气泡即底部 sheet */
     convs: []           /* 当前上下文可切换的会话列表 */
@@ -218,10 +254,18 @@
     var h = S.pet.offsetHeight || 54;
     var b = bounds();
     var x = S.x, y = S.y;
-    if (edge === 'left')   { x = -w / 2; y = Math.min(b.maxY, Math.max(b.minY, S.y)); }
-    if (edge === 'right')  { x = window.innerWidth - w / 2; y = Math.min(b.maxY, Math.max(b.minY, S.y)); }
-    if (edge === 'top')    { x = Math.min(b.maxX, Math.max(b.minX, S.x)); y = -h / 2; }
-    if (edge === 'bottom') { x = Math.min(b.maxX, Math.max(b.minX, S.x)); y = window.innerHeight - h / 2; }
+    /* 吸附位改为完全在视口内（x=0 / x=innerWidth-w），保证吸附后仍可命中拖拽；
+       原半隐藏（x=-w/2）导致 pet 不可命中（elementFromPoint 命中其他元素） */
+    if (edge === 'left')   { x = 0; y = Math.min(b.maxY, Math.max(b.minY, S.y)); }
+    if (edge === 'right')  { x = window.innerWidth - w; y = Math.min(b.maxY, Math.max(b.minY, S.y)); }
+    if (edge === 'top')    { x = Math.min(b.maxX, Math.max(b.minX, S.x)); y = 0; }
+    if (edge === 'bottom') { x = Math.min(b.maxX, Math.max(b.minX, S.x)); y = window.innerHeight - h; }
+    /* 顶栏 z-index:60 > pet z-index:55，吸附位 y 不得进入顶栏区域（否则不可命中） */
+    var topbar = document.querySelector('.topbar, .tb-inner');
+    if (topbar) {
+      var th = topbar.getBoundingClientRect().height || 0;
+      if (th > 0 && y < th) y = th + 2;
+    }
     return { x: x, y: y };
   }
   function snapTo(edge, ms) {
@@ -340,10 +384,13 @@
     m.addEventListener('click', function () {
       if (S.expanded) setExpanded(false); else hideBubble();
     });
-    /* 注意：不能把事件处理函数直接绑到 send 上 —— 否则事件对象会冒充 preset 参数 */
-    S.el.send.addEventListener('click', function () { send(); });
+    /* 注意：不能把事件处理函数直接绑到 send 上 —— 否则事件对象会冒充 preset 参数
+     * 发送中再次点击 = 主动停止（中断流 → 服务端同步取消生成任务） */
+    S.el.send.addEventListener('click', function () {
+      if (S.sending) { stopSending(); } else { send(); }
+    });
     S.el.input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!S.sending) send(); }
     });
     /* 消息区内的事件委托：草稿「应用/放弃」 */
     S.el.body.addEventListener('click', function (e) {
@@ -750,7 +797,7 @@
 
   async function pdAction(kind, messageId, btn) {
     if (!S.convId || !messageId) return;
-    if (btn) btn.disabled = true;
+    if (btn) btn.disabled = true; // 体验优化：请求在途时禁用按钮（后端条件更新才是并发保证）
     try {
       await apiPost('/ai/conversations/' + encodeURIComponent(S.convId)
         + '/' + kind + '/' + encodeURIComponent(messageId), {});
@@ -760,6 +807,8 @@
     } catch (err) {
       if (btn) btn.disabled = false;
       toast(humanError(err));
+      // 409（正在应用中/状态已变化）等：同步服务端权威状态，避免用户基于过期状态重复点击
+      try { await refresh(); } catch (e) { /* ignore */ }
     }
   }
 
@@ -773,64 +822,132 @@
     }
   }
 
-  /* 流式发送（P0-4）：SSE 逐增量渲染临时气泡；任何失败静默回退普通接口 */
-  async function streamMessage(text, box) {
+  /* 流式发送：每次发送携带稳定 clientRequestId（与普通接口共享服务端幂等键）。
+   * 失败去向严格遵循 policy：
+   *  - 能确认未被服务端接受（不支持流式 / 无 Token / 401 / 403）→ 自动改用普通接口（同一 ID）；
+   *  - 可能已被接受（网络中断 / 5xx / 读体失败 / 流中断）→ 只拉权威消息列表对齐，不盲目重发；
+   *  - 服务端明确拒绝（429 等）→ 抛出展示，不重发；
+   *  - 用户主动停止 → 中断请求（服务端同步取消），既不重发也不恢复。 */
+  async function streamMessage(text, box, requestId) {
     var endpoint = '/ai/conversations/' + encodeURIComponent(S.convId) + '/messages/stream';
-    var fallback = function () {
-      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages', { content: text });
+    var normalSend = function () {
+      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages',
+        { content: text, clientRequestId: requestId });
     };
     var token = getToken();
-    if (!token || typeof fetch !== 'function' || !(typeof ReadableStream !== 'undefined')) {
-      return fallback();
-    }
-    var res;
+    var controller = (typeof AbortController === 'function') ? new AbortController() : null;
+    S.streamAbort = controller;
     try {
-      res = await fetch(API_BASE + endpoint, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: {
-          'Accept': 'text/event-stream',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token,
-        },
-        body: JSON.stringify({ content: text }),
+      var decision = policy.decideStreamFallback({
+        streamSupported: typeof fetch === 'function' && typeof ReadableStream !== 'undefined',
+        hasToken: !!token
       });
-    } catch (e) {
-      return fallback();
-    }
-    if (!res.ok || !res.body) return fallback();
+      if (decision.action === 'fallback') return await normalSend();
 
-    removeTyping();
-    box.insertAdjacentHTML('beforeend',
-      '<div class="pet-msg ai msg-streaming"><div class="txt"><span class="pet-typing"><i></i><i></i><i></i></span></div></div>');
-    var streamEl = box.querySelector('.msg-streaming .txt');
-    var acc = '';
-    var buf = '';
-    var decoder = new TextDecoder();
-    var reader = res.body.getReader();
-    try {
-      for (;;) {
-        var step = await reader.read();
-        if (step.done) break;
-        buf += decoder.decode(step.value, { stream: true });
-        var parts = buf.split('\n');
-        buf = parts.pop();
-        for (var i = 0; i < parts.length; i++) {
-          var line = parts[i].trim();
-          if (line.slice(0, 5) !== 'data:') continue;
-          var payload = line.slice(5).trim();
-          if (!payload) continue;
-          var obj = null;
-          try { obj = JSON.parse(payload); } catch (e) { continue; }
-          if (obj && typeof obj.text === 'string' && obj.text) {
-            acc += obj.text;
-            streamEl.innerHTML = mdText(acc);
-            box.scrollTop = box.scrollHeight;
+      var res = null;
+      var fetchFailed = false;
+      try {
+        res = await fetch(API_BASE + endpoint, {
+          method: 'POST',
+          credentials: 'same-origin',
+          signal: controller ? controller.signal : undefined,
+          headers: {
+            'Accept': 'text/event-stream',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
+          body: JSON.stringify({ content: text, clientRequestId: requestId }),
+        });
+      } catch (e) {
+        fetchFailed = true; // 请求可能已被服务端接受：禁止直接重发
+      }
+
+      decision = policy.decideStreamFallback({
+        streamSupported: true,
+        hasToken: !!token,
+        fetchFailed: fetchFailed,
+        status: res ? res.status : undefined,
+        bodyReadable: !!(res && res.body),
+      });
+      if (decision.action === 'fallback') return await normalSend();
+      if (decision.action === 'abort') {
+        var message = '发送失败，请稍后重试';
+        if (res) {
+          try {
+            var body = await res.json();
+            if (body && body.message) message = body.message;
+          } catch (e) { /* ignore */ }
+        }
+        var err = new Error(message);
+        err.status = res ? res.status : 0;
+        err.reason = decision.reason;
+        throw err;
+      }
+      if (decision.action === 'align') return await alignOrFallback(text, requestId);
+
+      removeTyping();
+      box.insertAdjacentHTML('beforeend',
+        '<div class="pet-msg ai msg-streaming"><div class="txt"><span class="pet-typing"><i></i><i></i><i></i></span></div></div>');
+      var streamEl = box.querySelector('.msg-streaming .txt');
+      var acc = '';
+      var buf = '';
+      var decoder = new TextDecoder();
+      var reader = res.body.getReader();
+      try {
+        for (;;) {
+          var step = await reader.read();
+          if (step.done) break;
+          buf += decoder.decode(step.value, { stream: true });
+          var parts = buf.split('\n');
+          buf = parts.pop();
+          for (var i = 0; i < parts.length; i++) {
+            var line = parts[i].trim();
+            if (line.slice(0, 5) !== 'data:') continue;
+            var payload = line.slice(5).trim();
+            if (!payload) continue;
+            var obj = null;
+            try { obj = JSON.parse(payload); } catch (e) { continue; }
+            if (obj && typeof obj.text === 'string' && obj.text) {
+              acc += obj.text;
+              streamEl.innerHTML = mdText(acc);
+              box.scrollTop = box.scrollHeight;
+            }
           }
         }
+      } catch (e) {
+        // 中途失败：区分「用户主动停止」与「意外中断」——
+        // 停止 = 绝不恢复/重发（服务端已取消任务，且再次发送必须是新 ID）；
+        // 意外中断 = 只对齐权威状态，不盲目重发（可能已部分生成）。
+        if (controller && controller.signal.aborted) return;
+        return await alignOrFallback(text, requestId);
       }
+      // 正常/服务端 error 事件结束：由 send() 拉取权威消息列表渲染
+    } finally {
+      S.streamAbort = null;
+    }
+  }
+
+  /** 流式失败后的“对齐优先”处理：读取权威消息列表，仅在确认未落库时用同一 ID 回退。 */
+  async function alignOrFallback(text, requestId) {
+    var messages = null;
+    try {
+      var d = await fetchMessages();
+      messages = d && d.messages;
     } catch (e) {
-      /* 中断：保留已接收文本，后续 fetchMessages 会对齐权威状态 */
+      messages = null; // 会话/网络异常：无法确认 → 不重发
+    }
+    if (messages === null) return;
+    if (policy.shouldFallbackAfterAlign(messages, text)) {
+      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages',
+        { content: text, clientRequestId: requestId });
+    }
+    // 已存在该用户消息：仅对齐（send() 随后会刷新渲染）
+  }
+
+  /** 用户主动停止：中断流式请求 → 服务端 SSE 回调立即取消生成任务。 */
+  function stopSending() {
+    if (S.streamAbort) {
+      try { S.streamAbort.abort(); } catch (e) { /* ignore */ }
     }
   }
 
@@ -838,8 +955,12 @@
     if (S.sending) return;
     var text = String(preset != null ? preset : S.el.input.value).trim();
     if (!text) return;
+    /* 每次发送生成稳定 clientRequestId（普通/流式共享幂等键；停止后的新发送必然是新 ID） */
+    var clientRequestId = policy.newRequestId();
     S.sending = true;
-    S.el.send.disabled = true;
+    var sendBtn = S.el.send;
+    var sendLabel = sendBtn ? sendBtn.textContent : '';
+    if (sendBtn) sendBtn.textContent = '■ 停止'; // 发送中按钮变为停止
     S.el.input.value = '';
     var box = S.el.body.querySelector('#petMsgs');
     if (!box) { S.el.body.innerHTML = '<div class="pb-msgs" id="petMsgs"></div>'; box = S.el.body.querySelector('#petMsgs'); }
@@ -853,8 +974,9 @@
     appendTyping();
     try {
       await ensureConversation(text);
-      await streamMessage(text, box);
-      /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配） */
+      await streamMessage(text, box, clientRequestId);
+      /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配，
+       * 同时也是流式中断/停止后的权威对齐——不会再次发送同一条消息） */
       var d = await fetchMessages();
       var items = (d.messages || []).slice();
       removeTyping();
@@ -870,7 +992,7 @@
       box.scrollTop = box.scrollHeight;
     }
     S.sending = false;
-    S.el.send.disabled = false;
+    if (sendBtn) sendBtn.textContent = sendLabel;
     S.el.input.focus();
   }
 

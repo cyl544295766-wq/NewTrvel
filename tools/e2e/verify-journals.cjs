@@ -1,43 +1,57 @@
-﻿// Verify journals page: write (publish/draft) / mood filter / state filter / hero card / edit + cleanup
+// Verify journals page: write (publish/draft) / mood filter / state filter / hero card / edit + cleanup
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner, writePngFile } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
-const SHOTS = 'D:/tmp/journals-shots';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const SHOTS = process.env.E2E_SHOTS || 'D:/tmp/journals-shots';
+assertLocalOrigin(ORIGIN);
 
+let biz = 0;
+function ok(msg) { console.log('  ok  ' + msg); }
+function check(cond, msg) { if (cond) ok(msg); else { biz++; console.error('  !!  ' + msg); } }
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
-async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
-  fs.mkdirSync(SHOTS, { recursive: true });
-  const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+const cleaner = new Cleaner();
+let browser = null;
+let tripId = null;
+let user = null;
 
-  // ---- seed 2 photos so journal can link them ----
-  console.log('--- seed photos ---');
+async function main() {
+  fs.mkdirSync(SHOTS, { recursive: true });
+
+  // ---- 夹具：自注册 + 行程 + 天 + 2 张配图照片（data URL，按 ID 登记） ----
+  user = await registerUser(ORIGIN, 'jn');
+  cleaner.addUser(user.id);
+  const apiU = api(ORIGIN, user.token);
+  tripId = cleaner.addTrip((await apiU.post('/api/trips', {
+    title: '游记验证行程（临时）', destination: '沙丘镇', startDate: '2026-06-10', endDate: '2026-06-12'
+  })).trip.id);
+  await apiU.post('/api/trips/' + tripId + '/days/generate', {});
+  writePngFile('D:/tmp/jn-a.png', 320, 200, [13, 110, 110]);
+  writePngFile('D:/tmp/jn-b.png', 200, 320, [90, 60, 120]);
   const seededPhotos = [];
-  for (const f of ['D:/tmp/p1-landscape.png', 'D:/tmp/p2-portrait.png']) {
+  for (const f of ['D:/tmp/jn-a.png', 'D:/tmp/jn-b.png']) {
     const dataUrl = 'data:image/png;base64,' + fs.readFileSync(f).toString('base64');
-    const r = await fetch(ORIGIN + '/api/trips/' + TRIP + '/photos', {
-      method: 'POST', headers: H, body: JSON.stringify({ url: dataUrl, caption: '游记配图' })
-    });
-    const j = await r.json();
-    seededPhotos.push(j.photo.id);
+    const j = await apiU.post('/api/trips/' + tripId + '/photos', { url: dataUrl, caption: '游记配图' });
+    const ph = j.photo || j;
+    seededPhotos.push(ph.id);
+    cleaner.addPhoto(ph.id, ph.url);
   }
-  console.log('seeded photos:', seededPhotos.length);
+  ok('夹具就绪 trip=' + tripId + '（配图 ' + seededPhotos.length + ' 张）');
 
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
-  await ctx.addInitScript(({ token, user }) => {
+  await ctx.addInitScript(({ token, u }) => {
     localStorage.setItem('travelos.token', token);
-    localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+    localStorage.setItem('travelos.user', JSON.stringify(u));
+  }, { token: user.token, u: { id: user.id, username: user.username, displayName: "" } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 
   console.log('--- load journals (empty) ---');
-  await page.goto(ORIGIN + '/journals/?trip=' + TRIP, { waitUntil: 'domcontentloaded' });
+  await page.goto(ORIGIN + '/journals/?trip=' + tripId, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.empty-state', { timeout: 8000 });
   console.log('empty state OK');
 
@@ -49,39 +63,39 @@ async function main() {
   await page.fill('#drContent', '今天的风很软，沙脊上的脚印很快被吹平。坐下来看了很久的日落，什么都不想做。' + '记录记录记录。'.repeat(4));
   await page.click('#drMoods button[data-mood="happy"]');
   const ppCount = await page.locator('#drPhotos .pp').count();
-  if (ppCount !== 2) bail('photo picker expected 2, got ' + ppCount);
+  check(ppCount === 2, '照片选择器 2 张: ' + ppCount);
   await page.locator('#drPhotos .pp').nth(0).click();
   await page.locator('#drPhotos .pp').nth(1).click();
   const pickedOn = await page.locator('#drPhotos .pp.on').count();
-  if (pickedOn !== 2) bail('expected 2 picked photos, got ' + pickedOn);
+  check(pickedOn === 2, '选中 2 张: ' + pickedOn);
   // new journal defaults to publish mode
   const lab0 = (await page.locator('#drSave').textContent()).trim();
-  if (lab0 !== '保存并发布') bail('new journal should default to 保存并发布, got ' + lab0);
+  check(lab0 === '保存并发布', '新游记默认保存并发布: ' + lab0);
   // toggle to draft and back, verifying label sync
   await page.click('#drDraftSw');
   const lab1 = (await page.locator('#drSave').textContent()).trim();
-  if (lab1 !== '存为草稿') bail('after toggle expect 存为草稿, got ' + lab1);
+  check(lab1 === '存为草稿', '切换后存为草稿: ' + lab1);
   const labTxt = (await page.locator('#drDraftLab').textContent()).trim();
-  if (labTxt !== '先存为草稿') bail('draft label expected 先存为草稿, got ' + labTxt);
+  check(labTxt === '先存为草稿', '草稿标签: ' + labTxt);
   await page.click('#drDraftSw');
   const lab2 = (await page.locator('#drSave').textContent()).trim();
-  if (lab2 !== '保存并发布') bail('after untoggle expect 保存并发布, got ' + lab2);
+  check(lab2 === '保存并发布', '切回保存并发布: ' + lab2);
   await page.click('#drSave');
   await page.waitForSelector('#jGrid .hero-card', { timeout: 10000 });
   await page.waitForTimeout(600);
 
   const heroTitle = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
-  if (heroTitle !== '验证游记一') bail('hero title wrong: ' + heroTitle);
+  check(heroTitle === '验证游记一', 'hero 标题: ' + heroTitle);
   const moodChip = (await page.locator('#jGrid .hero-card .mood-chip').textContent()).trim();
-  if (!moodChip.includes('开心')) bail('mood chip expected 开心, got ' + moodChip);
+  check(moodChip.includes('开心'), '心情 chip 开心: ' + moodChip);
   const heroPhotos = await page.locator('#jGrid .hero-card .hero-photos img').count();
-  if (heroPhotos !== 2) bail('hero photos expected 2, got ' + heroPhotos);
+  check(heroPhotos === 2, 'hero 配图 2 张: ' + heroPhotos);
   const ovCount = (await page.locator('#ovCount').textContent()).trim();
   const ovWords = (await page.locator('#ovWords').textContent()).replace(/,/g, '');
   const ovPhotos = (await page.locator('#ovPhotos').textContent()).trim();
-  if (ovCount !== '1') bail('ovCount expected 1, got ' + ovCount);
-  if (Number(ovWords) < 20) bail('ovWords too small: ' + ovWords);
-  if (ovPhotos !== '2') bail('ovPhotos expected 2, got ' + ovPhotos);
+  check(ovCount === '1', '游记计数 = 1: ' + ovCount);
+  check(Number(ovWords) >= 20, '字数统计 >=20: ' + ovWords);
+  check(ovPhotos === '2', '配图统计 = 2: ' + ovPhotos);
   console.log('write #1 OK: hero card + 开心 chip + 2 photos, words =', ovWords);
   await page.screenshot({ path: path.join(SHOTS, 'hero.png'), fullPage: true });
 
@@ -95,16 +109,16 @@ async function main() {
   // switch to draft mode explicitly
   await page.click('#drDraftSw');
   const draftOn = await page.locator('#drDraftToggle').evaluate(el => el.classList.contains('on'));
-  if (!draftOn) bail('draft toggle should be on after click');
+  check(draftOn, '草稿开关开启');
   await page.click('#drSave');
   await page.waitForTimeout(1500);
 
   const cards = await page.locator('#jGrid .j-card').count();
-  if (cards !== 1) bail('expected 1 normal card, got ' + cards);
+  check(cards === 1, '普通卡 1 张: ' + cards);
   const draftBadges = await page.locator('.draft-badge').count();
-  if (draftBadges !== 1) bail('expected 1 DRAFT badge, got ' + draftBadges);
+  check(draftBadges === 1, 'DRAFT 徽标 1 个: ' + draftBadges);
   const ovDrafts = (await page.locator('#ovDrafts').textContent()).trim();
-  if (ovDrafts !== '1') bail('ovDrafts expected 1, got ' + ovDrafts);
+  check(ovDrafts === '1', '草稿统计 = 1: ' + ovDrafts);
   console.log('write #2 OK: draft badge + ovDrafts=1');
 
   // ---- state filter: draft ----
@@ -112,9 +126,9 @@ async function main() {
   await page.click('#stateSeg button[data-s="draft"]');
   await page.waitForTimeout(400);
   const draftView = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
-  if (draftView !== 1) bail('draft filter expected 1, got ' + draftView);
+  check(draftView === 1, '草稿筛选 1 张: ' + draftView);
   const isDraftHero = await page.locator('#jGrid .hero-card.draft, #jGrid .j-card.draft').count();
-  if (!isDraftHero) bail('filtered result should be the draft');
+  check(isDraftHero > 0, '筛选结果为草稿卡');
   await page.click('#stateSeg button[data-s="all"]');
   await page.waitForTimeout(400);
 
@@ -122,9 +136,9 @@ async function main() {
   await page.click('#moodFilter button[data-m="happy"]');
   await page.waitForTimeout(400);
   const happyView = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
-  if (happyView !== 1) bail('happy filter expected 1, got ' + happyView);
+  check(happyView === 1, '开心筛选 1 张: ' + happyView);
   const happyHero = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
-  if (happyHero !== '验证游记一') bail('happy filter should show 游记一, got ' + happyHero);
+  check(happyHero === '验证游记一', '开心筛选显示游记一: ' + happyHero);
   await page.click('#moodFilter button[data-m=""]');
   await page.waitForTimeout(400);
   console.log('filters OK (state=draft 1, mood=happy 1)');
@@ -137,19 +151,19 @@ async function main() {
   await page.waitForSelector('#drawer:not([hidden])', { timeout: 3000 });
   const preTitle = await page.locator('#drName').inputValue();
   const preContent = await page.locator('#drContent').inputValue();
-  if (preTitle !== '验证游记一') bail('edit prefill title wrong: ' + preTitle);
-  if (!preContent.includes('今天的风很软')) bail('edit prefill content wrong');
+  check(preTitle === '验证游记一', '编辑预填标题: ' + preTitle);
+  check(preContent.includes('今天的风很软'), '编辑预填正文');
   const prePicked = await page.locator('#drPhotos .pp.on').count();
-  if (prePicked !== 2) bail('edit should prefill 2 picked photos, got ' + prePicked);
+  check(prePicked === 2, '编辑预填 2 张配图: ' + prePicked);
   const preMood = await page.locator('#drMoods button[aria-pressed="true"]').getAttribute('data-mood');
-  if (preMood !== 'happy') bail('edit should prefill mood happy, got ' + preMood);
+  check(preMood === 'happy', '编辑预填心情: ' + preMood);
   const drTitleLab = (await page.locator('#drTitle').textContent()).trim();
-  if (drTitleLab !== '编辑游记') bail('drawer title expected 编辑游记, got ' + drTitleLab);
+  check(drTitleLab === '编辑游记', '抽屉标题 = 编辑游记: ' + drTitleLab);
   await page.fill('#drName', '验证游记一（改）');
   await page.click('#drSave');
   await page.waitForTimeout(1500);
   const heroTitle2 = (await page.locator('#jGrid .hero-card h2').textContent()).trim();
-  if (heroTitle2 !== '验证游记一（改）') bail('edited title not reflected: ' + heroTitle2);
+  check(heroTitle2 === '验证游记一（改）', '改名已反映: ' + heroTitle2);
   console.log('edit OK (prefill title/content/mood/2 photos + rename)');
 
   // mobile shot before deletion
@@ -168,36 +182,37 @@ async function main() {
   await norm.locator('.card-ops .del').click();
   await page.waitForTimeout(1200);
   const afterDel = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
-  if (afterDel !== 1) bail('expected 1 left after deleting normal card, got ' + afterDel);
+  check(afterDel === 1, '删普通卡后剩 1: ' + afterDel);
   page.once('dialog', d => d.accept());
   await page.locator('#jGrid .hero-card').first().hover();
   await page.locator('#jGrid .hero-card').first().locator('.hero-ops .del').click();
   await page.waitForTimeout(1200);
   const afterDel2 = await page.locator('#jGrid .hero-card, #jGrid .j-card').count();
-  if (afterDel2 !== 0) bail('expected 0 after deleting hero, got ' + afterDel2);
+  check(afterDel2 === 0, '删 hero 后归零: ' + afterDel2);
   const backToEmpty = await page.locator('.empty-state').count();
-  if (!backToEmpty) bail('empty state should return after deleting all');
+  check(backToEmpty > 0, '回到空态');
   console.log('delete OK (card + hero, back to empty state)');
 
-  await browser.close();
-
-  // ---- cleanup ----
-  console.log('--- cleanup ---');
-  const jRes2 = await fetch(ORIGIN + '/api/trips/' + TRIP + '/journals', { headers: { 'Authorization': 'Bearer ' + token } });
-  const jList2 = (await jRes2.json()).journals || [];
-  for (const j of jList2) {
-    const rr = await fetch(ORIGIN + '/api/trips/' + TRIP + '/journals/' + j.id, {
-      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
-    });
-    console.log('delete journal', j.id, rr.status);
-  }
-  for (const pid of seededPhotos) {
-    const rr = await fetch(ORIGIN + '/api/trips/' + TRIP + '/photos/' + pid, {
-      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
-    });
-    console.log('delete photo', pid, rr.status);
-  }
-  console.log('OK');
+  check(biz === 0, '业务断言失败数 = ' + biz);
+  if (biz > 0) bail('存在业务断言失败');
+  console.log('=== ALL PASS ===');
 }
 
-main().catch(e => bail(e.stack || String(e)));
+(async () => {
+  let failed = null;
+  try {
+    await main();
+  } catch (e) {
+    failed = e;
+    console.error(e.stack || String(e));
+  }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try {
+    cleaner.run();
+    console.log('cleanup OK（残留核验 0）');
+  } catch (e) {
+    if (!failed) failed = e;
+    console.error('清理失败: ' + (e && e.message));
+  }
+  process.exit(failed ? 1 : 0);   // 显式退出：事件循环可能有残留句柄（playwright/fetch keep-alive），不显式退出会挂住批量 runner
+})();

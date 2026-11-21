@@ -68,7 +68,7 @@ public class TripService {
     trip.setStartDate(toDateOrNull(dto.get("startDate")));
     trip.setEndDate(toDateOrNull(dto.get("endDate")));
     trip.setStatus("draft");
-    trip.setCoverImageUrl(toNullable(dto.get("coverImageUrl")));
+    trip.setCoverImageUrl(validateCoverImageUrl(dto.get("coverImageUrl"), null, null));
     if (dto.containsKey("budget")) {
       trip.setBudget(toBudgetOrNull(dto.get("budget")));
     }
@@ -196,7 +196,8 @@ public class TripService {
       trip.setStatus(dto.get("status").toString());
     }
     if (dto.containsKey("coverImageUrl")) {
-      trip.setCoverImageUrl(toNullable(dto.get("coverImageUrl")));
+      trip.setCoverImageUrl(
+          validateCoverImageUrl(dto.get("coverImageUrl"), tripId, trip.getCoverImageUrl()));
     }
     if (dto.containsKey("budget")) {
       trip.setBudget(toBudgetOrNull(dto.get("budget")));
@@ -359,7 +360,7 @@ public class TripService {
     trip.setStartDate(source.getStartDate());
     trip.setEndDate(source.getEndDate());
     trip.setStatus("draft");
-    trip.setCoverImageUrl(source.getCoverImageUrl());
+    trip.setCoverImageUrl(duplicatedCover(source));
     trip.setOwnerId(userId);
     trip.setIsFavorite(false);
     tripMapper.insert(trip);
@@ -450,6 +451,49 @@ public class TripService {
     map.put("createdAt", trip.getCreatedAt());
     map.put("updatedAt", trip.getUpdatedAt());
     return map;
+  }
+
+  /**
+   * 行程封面写路径加固（对象级授权的前置防线）：
+   * <ul>
+   *   <li>外部 http(s) 地址：放行；</li>
+   *   <li>受管 /files/** 地址：仅限「当前封面原值」或「本行程已有的照片」——
+   *       禁止把他人行程/他人的受管文件设为封面（否则可借公开行程泄露私有文件）；</li>
+   *   <li>其余（data URL、javascript:、协议相对地址等）：400。</li>
+   * </ul>
+   */
+  private String validateCoverImageUrl(Object raw, String tripId, String current) {
+    String value = toNullable(raw);
+    if (value == null) {
+      return null;
+    }
+    if (com.travelos.common.ManagedFileNames.isManagedUrl(value)) {
+      if (value.equals(current)) {
+        return value; // 编辑时保留原值
+      }
+      if (tripId != null && photoMapper.selectCount(new LambdaQueryWrapper<Photo>()
+          .eq(Photo::getTripId, tripId)
+          .eq(Photo::getUrl, value)) > 0) {
+        return value;
+      }
+      throw ApiException.badRequest("封面仅支持外部图片地址或本行程照片");
+    }
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      return value;
+    }
+    throw ApiException.badRequest("封面地址格式不正确");
+  }
+
+  /**
+   * 复制行程时的封面传播规则：外部地址照搬；受管文件仅在源行程 public 时传播——
+   * 私有/好友可见行程的照片不允许借「复制」带到新行程，避免绕过原行程成员边界。
+   */
+  private String duplicatedCover(Trip source) {
+    String cover = source.getCoverImageUrl();
+    if (cover == null || !com.travelos.common.ManagedFileNames.isManagedUrl(cover)) {
+      return cover;
+    }
+    return "public".equals(source.getVisibility()) ? cover : null;
   }
 
   private String string(Object value) {

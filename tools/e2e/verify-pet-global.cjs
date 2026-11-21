@@ -1,14 +1,18 @@
 // Verify AI pet appears on ALL pages, layering below overlays, no JS errors
 const { chromium } = require('playwright-core');
 const fs = require('fs');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+assertLocalOrigin(ORIGIN);
+const cleaner = new Cleaner();
+let browser = null;
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 const PAGES = ['home', 'login', 'trips', 'trip-detail', 'trip-form', 'itinerary', 'expenses',
   'packing', 'documents', 'photos', 'journals', 'journal-detail', 'bookings', 'vouchers',
   'stats', 'notifications', 'account', 'map'];
-const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
+let TRIP = '';
 const PAGE_QS = {
   'trip-detail': '?id=' + TRIP, 'trip-form': '?id=' + TRIP, 'itinerary': '?trip=' + TRIP,
   'expenses': '?trip=' + TRIP, 'packing': '?trip=' + TRIP, 'documents': '?trip=' + TRIP,
@@ -17,13 +21,23 @@ const PAGE_QS = {
 };
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
+  const user = await registerUser(ORIGIN, 'pg');
+  cleaner.addUser(user.id);
+  const token = user.token;
+
+  // 自建行程（替代固定种子）
+  const apiU = api(ORIGIN, token);
+  const tripRes = await apiU.post('/api/trips', {
+    title: '宠物全局验证行程（临时）', destination: '宠物镇', startDate: '2026-07-01', endDate: '2026-07-03'
+  });
+  TRIP = (tripRes.trip || tripRes).id;
+  cleaner.addTrip(TRIP);
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await ctx.addInitScript(({ token, user }) => {
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
 
   let failures = 0;
   const page = await ctx.newPage();
@@ -41,7 +55,12 @@ async function main() {
       await page.waitForSelector('.pet', { timeout: 9000 });
     } catch (e) {
       const redirected = /\/login\//.test(page.url());
-      if (p === 'login' || redirected) { console.log('  ok  ' + p + ' （重定向到登录页，宠物在登录页出现）'); continue; }
+      if (p === 'login') { console.log('  ok  ' + p + ' （登录页，宠物匿名可见）'); continue; }
+      if (redirected) {
+        // 独立用例：验证匿名/重定向行为（不混入主流程成功判定）
+        console.log('  ok  ' + p + ' [独立用例] 重定向到登录页，宠物在登录页出现');
+        continue;
+      }
       console.log('  !!  ' + p + ' 未出现宠物'); failures++; continue;
     }
     const z = await page.locator('.pet-host').evaluate(el => getComputedStyle(el).zIndex);
@@ -61,7 +80,7 @@ async function main() {
   catch (e) { tripReady = false; }
   await page.waitForSelector('.pet', { timeout: 9000 });
   if (!tripReady) {
-    console.log('  (skip) 种子行程缺失，trip-detail 未渲染模块，跳过分层测试');
+    console.log('  !!  trip-detail 未渲染模块（本次自建行程）'); failures++;
   } else {
     await page.locator('.pet').click();
     await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
@@ -106,4 +125,11 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch(e => { console.error('[ERROR]', (e && e.stack) || e); process.exit(1); });
+(async () => {
+  let failed = null;
+  try { await main(); } catch (e) { failed = e; console.error('[ERROR]', (e && e.stack) || e); }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try { cleaner.run(); console.log('cleanup OK（残留核验 0）'); }
+  catch (e) { if (!failed) failed = e; console.error('清理失败: ' + (e && e.message)); }
+  process.exit(failed ? 1 : 0);
+})();

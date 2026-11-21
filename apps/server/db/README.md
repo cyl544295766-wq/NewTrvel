@@ -13,7 +13,8 @@ for f in $(ls db/migration/*.sql | sort); do
 done
 ```
 
-CI 中这一步见 `.github/workflows/deploy.yml` 的「应用数据库迁移」任务。
+CI 中这一步见 `.github/workflows/ci.yml` 后端 job 的「应用全量数据库迁移」步骤
+（一次性 PostgreSQL 16 service 容器 + `ON_ERROR_STOP=1`，任一 SQL 失败即令工作流失败）。
 
 ## 命名约定
 

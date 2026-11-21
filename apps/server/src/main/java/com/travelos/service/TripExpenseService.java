@@ -142,7 +142,7 @@ public class TripExpenseService {
     } else {
       ensureDayBelongsToTrip(tripDayId, tripId);
     }
-    String receiptUrl = validateReceipt(dto.get("receiptUrl"));
+    String receiptUrl = validateReceipt(dto.get("receiptUrl"), null, userId);
 
     TripExpense expense = new TripExpense();
     expense.setTripId(tripId);
@@ -215,7 +215,7 @@ public class TripExpenseService {
       expense.setPayerUserId(payerUserId);
     }
     if (dto.containsKey("receiptUrl")) {
-      expense.setReceiptUrl(validateReceipt(dto.get("receiptUrl")));
+      expense.setReceiptUrl(validateReceipt(dto.get("receiptUrl"), expense.getReceiptUrl(), userId));
     }
     if (dto.containsKey("tripDayId")) {
       String tripDayId = optionalString(dto.get("tripDayId"));
@@ -846,15 +846,23 @@ public class TripExpenseService {
     return day == null ? null : day.getId();
   }
 
-  /** 小票图片校验：data URL（≤5MB）或 http(s) 外链。 */
-  private String validateReceipt(Object raw) {
+  /**
+   * 小票图片校验：data URL（≤5MB，落盘转受管地址）或 http(s) 外链。
+   * 写路径加固：受管地址只允许「原值保留」——禁止把他人 /files/** 文件挂到自己的凭证上。
+   *
+   * @param current 该费用当前的 receiptUrl（新建时为 null）
+   * @param userId  文件创建者（file_metadata 归属）
+   */
+  private String validateReceipt(Object raw, String current, String userId) {
     String url = toNullable(raw);
     if (url == null) {
       return null;
     }
-    // P3-1：受管文件路径（此前已落盘的 URL）直接放行
     if (fileStorageService.isManagedFileUrl(url)) {
-      return url;
+      if (url.equals(current)) {
+        return url; // 编辑时保留原值
+      }
+      throw ApiException.badRequest("凭证仅支持上传图片或外链地址");
     }
     if (url.startsWith("data:")) {
       String[] parts = PhotoUtil.parsePhotoDataUrl(url);
@@ -865,7 +873,7 @@ public class TripExpenseService {
         throw ApiException.badRequest("小票图片不能超过 5MB");
       }
       // P3-1 文件出库：data URL 落盘，DB 只存访问路径
-      return fileStorageService.storeDataUrl(url);
+      return fileStorageService.storeDataUrl(url, userId);
     }
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       throw ApiException.badRequest("小票地址格式不正确");

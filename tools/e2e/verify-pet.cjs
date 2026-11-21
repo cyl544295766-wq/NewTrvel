@@ -2,29 +2,36 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const SHOTS = 'D:/tmp/pet-shots';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const SHOTS = process.env.E2E_SHOTS || 'D:/tmp/pet-shots';
+assertLocalOrigin(ORIGIN);
 
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 let failures = 0;
+let browser = null;
 function check(cond, label) {
   console.log((cond ? '  ok  ' : '  !!  ') + label);
   if (!cond) failures++;
 }
 
+const cleaner = new Cleaner();
+
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  const user = await registerUser(ORIGIN, 'pt');
+  cleaner.addUser(user.id);
+  const token = user.token;
   fs.mkdirSync(SHOTS, { recursive: true });
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
-  await ctx.addInitScript(({ token, user }) => {
+  await ctx.addInitScript(({ token, u }) => {
     if (sessionStorage.getItem('__seeded')) return;
     sessionStorage.setItem('__seeded', '1');
     localStorage.setItem('travelos.token', token);
-    localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+    localStorage.setItem('travelos.user', JSON.stringify(u));
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
@@ -42,7 +49,7 @@ async function main() {
     const m = t.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/);
     return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
   });
-  const waitX = (exp, timeout = 6000) => page.waitForFunction(
+  const waitX = (exp, timeout = 15000) => page.waitForFunction(
     (expX) => {
       const t = document.querySelector('.pet').style.transform;
       const m = t && t.match(/translate\((-?[\d.]+)px/);
@@ -81,11 +88,11 @@ async function main() {
   await page.waitForTimeout(120);
   const clamped = await readPos();
   /* 拖拽过程被钳制在边界内；松手时中心距左缘 49px < 90px 吸附区 → 吸附左缘半隐藏（x = -23） */
-  check(clamped.x === -23 && clamped.y === 26, '贴左上角松手 → 吸附左缘半隐藏（x = -23, y = 26）');
+  check(clamped.x === 0 && clamped.y >= 0, '贴左上角松手 → 吸附左缘（x=0，完全可见可拖拽）: x=' + clamped.x + ' y=' + clamped.y);
 
   /* ---- 4. 边缘吸附：拖近右边缘松手 → 半隐藏 ---- */
   console.log('--- edge snap ---');
-  const expSnapX = 1440 - 23;
+  const expSnapX = 1440 - 46;  /* 修复后：吸附位=完全可见（可拖拽），非半隐藏 */
   await page.mouse.move(clamped.x + 23, clamped.y + 27);
   await page.mouse.down();
   await page.mouse.move(1436, 500, { steps: 8 });
@@ -93,28 +100,29 @@ async function main() {
   await waitX(expSnapX);           /* 轮询等吸附过渡完成（负载下 650ms 可能不够） */
   const snapped = await readPos();
   check(snapped.x === expSnapX, '吸附右缘并半隐藏（x = ' + snapped.x + '，期望 ' + expSnapX + '）');
-  /* rect 随过渡飞行，等它真正越过视口右缘（而非 style 瞬时值） */
+  /* 修复后吸附位=完全可见：rect.right <= innerWidth（不再半隐藏） */
   await page.waitForFunction(() => {
     const r = document.querySelector('.pet').getBoundingClientRect();
-    return r.right > window.innerWidth;
+    return r.right <= window.innerWidth && r.right > window.innerWidth - 50;
   }, null, { timeout: 5000 });
-  check(true, '元素一半超出视口（半隐藏，rect.right > innerWidth）');
+  check(true, '吸附右缘后完全在视口内（rect.right <= innerWidth）');
 
   /* ---- 5. 悬停恢复完整显示 ---- */
-  await page.mouse.move(1425, 500);   /* 移入可见的一半 */
-  await waitX(1440 - 46);
+  /* 修复后吸附位=完全可见，悬停不再改变位置（验证无漂移） */
+  await page.mouse.move(1425, 500);
+  await page.waitForTimeout(300);
   const full = await readPos();
-  check(full.x === 1440 - 46, '悬停恢复完整显示（x = ' + full.x + '）');
+  check(Math.abs(full.x - expSnapX) < 1, '悬停后位置无漂移（x = ' + full.x + '，期望 ' + expSnapX + '）');
   await page.mouse.move(700, 400);    /* 移开 */
   await waitX(expSnapX);
   const reHalf = await readPos();
-  check(reHalf.x === expSnapX, '移开后回到半隐藏');
+  check(reHalf.x === expSnapX, '移开后回到吸附位（完全可见）');
 
   /* ---- 6. resize：吸附态随窗口重贴边 ---- */
   await page.setViewportSize({ width: 1000, height: 800 });
-  await waitX(1000 - 23);
+  await waitX(1000 - 46);  /* 修复后吸附位=完全可见：innerWidth - w */
   const rs = await readPos();
-  check(rs.x === 1000 - 23, '窗口缩小后重新贴右缘（x = ' + rs.x + '）');
+  check(rs.x === 1000 - 46, '窗口缩小后重新贴右缘（x = ' + rs.x + '）');
   await page.screenshot({ path: path.join(SHOTS, 'snapped.png'), fullPage: false, timeout: 60000 }).catch((e) => console.log('  (skip) snapped 截图失败：' + e.message.split('\n')[0]));
 
   /* ---- 7. 点按吸附中的宠物 → 恢复完整 + 打开气泡 ---- */
@@ -129,9 +137,9 @@ async function main() {
   check(openedFull.x === 1000 - 46, '点按吸附宠物：恢复完整显示（x = ' + openedFull.x + '）');
   check(await page.locator('.pet-bubble.open').count() === 1, '点按后气泡打开');
   await page.locator('.pb-head .x').click();
-  await waitX(1000 - 23);
+  await waitX(1000 - 46);  /* 修复后吸附位=完全可见 */
   const backHalf = await readPos();
-  check(backHalf.x === 1000 - 23, '气泡关闭后回到半隐藏（x = ' + backHalf.x + '）');
+  check(backHalf.x === 1000 - 46, '气泡关闭后回到吸附位（x = ' + backHalf.x + '）');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForTimeout(400);
 

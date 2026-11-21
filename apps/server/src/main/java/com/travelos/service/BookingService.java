@@ -34,28 +34,34 @@ public class BookingService {
       "flight", "transport", "train", "transport", "hotel", "hotel",
       "ticket", "ticket", "other", "other");
 
+  /** 凭证附件上限（前端提示为「图片 / PDF，≤ 5MB」） */
+  private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
   private final BookingMapper bookingMapper;
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
   private final TripExpenseService tripExpenseService;
+  private final com.travelos.service.FileStorageService fileStorageService;
 
   public BookingService(BookingMapper bookingMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
-      AuditService auditService, TripExpenseService tripExpenseService) {
+      AuditService auditService, TripExpenseService tripExpenseService,
+      com.travelos.service.FileStorageService fileStorageService) {
     this.bookingMapper = bookingMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
     this.tripMemberService = tripMemberService;
     this.auditService = auditService;
     this.tripExpenseService = tripExpenseService;
+    this.fileStorageService = fileStorageService;
   }
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
     tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
-    Booking booking = fillFromDto(new Booking(), dto);
+    Booking booking = fillFromDto(new Booking(), dto, userId);
     String type = booking.getType();
     if (type == null || !TYPES.contains(type)) {
       throw ApiException.badRequest("预订类型必须是 flight/hotel/train/ticket/other");
@@ -86,7 +92,7 @@ public class BookingService {
     Booking booking = requireBooking(tripId, bookingId);
     // 数据隔离：仅创建者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
-    fillFromDto(booking, dto);
+    fillFromDto(booking, dto, userId);
     if (dto.containsKey("tripDayId")) {
       String tripDayId = optionalString(dto.get("tripDayId"));
       if (tripDayId != null) {
@@ -261,7 +267,7 @@ public class BookingService {
   }
 
   /** 从 DTO 提取通用字段；extra 为类型特有字段包（前端按类型动态组装）。 */
-  private Booking fillFromDto(Booking booking, Map<String, Object> dto) {
+  private Booking fillFromDto(Booking booking, Map<String, Object> dto, String userId) {
     if (dto.containsKey("type") && dto.get("type") != null) {
       booking.setType(dto.get("type").toString());
     }
@@ -288,13 +294,48 @@ public class BookingService {
       booking.setCurrency(dto.get("currency").toString().trim());
     }
     if (dto.containsKey("attachmentUrl")) {
-      booking.setAttachmentUrl(toNullable(dto.get("attachmentUrl")));
+      booking.setAttachmentUrl(
+          validateAttachment(dto.get("attachmentUrl"), booking.getAttachmentUrl(), userId));
     }
     if (dto.containsKey("extra")) {
       Object extra = dto.get("extra");
       booking.setExtra(extra == null ? null : com.travelos.common.JsonUtil.write(extra));
     }
     return booking;
+  }
+
+  /**
+   * 凭证附件校验：data URL（图片/PDF ≤5MB，落盘转受管地址）或 http(s) 外链。
+   * 写路径加固：受管地址只允许「原值保留」——禁止引用他人 /files/** 文件。
+   *
+   * @param current 该预订当前的 attachmentUrl（新建时为 null）
+   * @param userId  文件创建者（file_metadata 归属）
+   */
+  private String validateAttachment(Object raw, String current, String userId) {
+    String url = toNullable(raw);
+    if (url == null) {
+      return null;
+    }
+    if (fileStorageService.isManagedFileUrl(url)) {
+      if (url.equals(current)) {
+        return url; // 编辑时保留原值
+      }
+      throw ApiException.badRequest("凭证附件仅支持上传文件或外链地址");
+    }
+    if (fileStorageService.isDataUrl(url)) {
+      String[] parts = com.travelos.common.PhotoUtil.parseDocumentDataUrl(url);
+      if (parts == null) {
+        throw ApiException.badRequest("凭证附件仅支持图片或 PDF 文件");
+      }
+      if (com.travelos.common.PhotoUtil.base64Bytes(parts[1]) > MAX_ATTACHMENT_BYTES) {
+        throw ApiException.badRequest("凭证附件不能超过 5MB");
+      }
+      return fileStorageService.storeDataUrl(url, userId);
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      throw ApiException.badRequest("凭证附件地址格式不正确");
+    }
+    return url;
   }
 
   /**

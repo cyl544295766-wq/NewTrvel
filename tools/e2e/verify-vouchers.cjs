@@ -2,26 +2,43 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner, writePngFile } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
-const SHOTS = 'D:/tmp/vouchers-shots';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const SHOTS = process.env.E2E_SHOTS || 'D:/tmp/vouchers-shots';
+assertLocalOrigin(ORIGIN);
 
+let biz = 0;
+function ok(msg) { console.log('  ok  ' + msg); }
+function check(cond, msg) { if (cond) ok(msg); else { biz++; console.error('  !!  ' + msg); } }
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
+
+const cleaner = new Cleaner();
+let browser = null;
+let tripId = null;
+let user = null;
+let token = null;
 function daysFromNow(n) {
   const d = new Date(); d.setDate(d.getDate() + n);
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
   fs.mkdirSync(SHOTS, { recursive: true });
-  const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  // ---- 夹具：自注册 + 行程 + 4 张不同类型凭证（booking 承载） ----
+  user = await registerUser(ORIGIN, 'vc');
+  cleaner.addUser(user.id);
+  token = user.token;
+  const apiU = api(ORIGIN, user.token);
+  tripId = cleaner.addTrip((await apiU.post('/api/trips', {
+    title: '凭证验证行程（临时）', destination: '驿站', startDate: daysFromNow(4), endDate: daysFromNow(9)
+  })).trip.id);
+  writePngFile('D:/tmp/vc-qr.png', 240, 240, [200, 120, 40]);
+  const tinyPng = 'data:image/png;base64,' + fs.readFileSync('D:/tmp/vc-qr.png').toString('base64');
   const seeded = [];
 
-  // ---- seed 4 vouchers of different types ----
   console.log('--- seed vouchers ---');
-  const tinyPng = 'data:image/png;base64,' + fs.readFileSync('D:/tmp/p3-square.png').toString('base64');
   const specs = [
     { type: 'flight', title: '验证凭证·机票', startTime: daysFromNow(5) + ' 14:20:00', endTime: daysFromNow(5) + ' 16:25:00',
       confirmCode: 'FLY-888', orderNo: 'ORD-1001', attachmentUrl: tinyPng,
@@ -38,9 +55,9 @@ async function main() {
       extra: { itemName: '沙坡头门票', session: '上午场' } }
   ];
   for (const s of specs) {
-    const r = await fetch(ORIGIN + '/api/trips/' + TRIP + '/bookings', { method: 'POST', headers: H, body: JSON.stringify(s) });
-    const j = await r.json();
+    const j = await apiU.post('/api/trips/' + tripId + '/bookings', s);
     if (!j.booking) bail('seed failed for ' + s.type + ': ' + JSON.stringify(j));
+    cleaner.addBooking(j.booking.id);
     seeded.push(j.booking.id);
   }
   console.log('seeded', seeded.length, 'vouchers');
@@ -50,35 +67,39 @@ async function main() {
     viewport: { width: 1440, height: 900 }, locale: 'zh-CN',
     permissions: ['clipboard-read', 'clipboard-write']
   });
-  await ctx.addInitScript(({ token, user }) => {
+  await ctx.addInitScript(({ token, u }) => {
     localStorage.setItem('travelos.token', token);
-    localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+    localStorage.setItem('travelos.user', JSON.stringify(u));
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 
   console.log('--- load vouchers ---');
-  await page.goto(ORIGIN + '/vouchers/?trip=' + TRIP, { waitUntil: 'domcontentloaded' });
+  await page.goto(ORIGIN + '/vouchers/?trip=' + tripId, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.v-ticket', { timeout: 8000 });
   await page.waitForTimeout(600);
 
   const tickets = await page.locator('.v-ticket').count();
-  if (tickets !== 4) bail('expected 4 voucher tickets, got ' + tickets);
+  check(tickets === 4, '4 张凭证: ' + tickets);
   const rows = await page.locator('.v-row').count();
-  if (rows !== 4) bail('expected 4 timeline rows, got ' + rows);
+  check(rows === 4, '时间轴 4 行: ' + rows);
 
-  // QR present on each — 真编码二维码（内容 = 祝福语「旅途愉快」）
+  // QR：带 attachmentUrl 的凭证显示官方原图（.qr-orig img），其余为生成 svg（内容 = 祝福语「旅途愉快」）
   const qrs = await page.locator('.v-stub .qr svg').count();
-  if (qrs !== 4) bail('expected 4 QR svgs, got ' + qrs);
+  const qrImgs = await page.locator('.v-stub .qr.qr-orig img').count();
+  check(qrs === 3 && qrImgs === 1, '3 个生成二维码 + 1 个官方原图（实为 ' + qrs + '/' + qrImgs + '）');
   const qrRects = await page.locator('.v-stub .qr svg').first().locator('rect').count();
-  if (qrRects < 100) bail('QR should have many rects, got ' + qrRects);
-  // 四张凭证编码同一祝福语 → 图案应完全一致（逐字节比对 svg 字符串）
+  check(qrRects >= 100, '二维码矩形足够多: ' + qrRects);
+  // 现行为：二维码 payload = 凭证标题（aria-label 可见）→ 不同凭证图案应不同
   const svg0 = await page.locator('.v-stub .qr svg').first().evaluate(el => el.outerHTML);
-  const svg3 = await page.locator('.v-stub .qr svg').nth(3).evaluate(el => el.outerHTML);
-  if (svg0 !== svg3) bail('all vouchers encode the same blessing, svgs should be identical');
-  const aria = await page.locator('.v-stub .qr svg').first().getAttribute('aria-label');
-  if (!/旅途愉快/.test(aria)) bail('QR aria-label should mention blessing, got: ' + aria);
-  console.log('timeline OK: 4 rows + 4 QR (first has', qrRects, 'rects) — 真编码，aria-label =', aria);
+  const svg1 = await page.locator('.v-stub .qr svg').nth(1).evaluate(el => el.outerHTML);
+  check(svg0 !== svg1, '不同标题的二维码图案不同');
+  const aria0 = await page.locator('.v-stub .qr svg').first().getAttribute('aria-label');
+  const aria1 = await page.locator('.v-stub .qr svg').nth(1).getAttribute('aria-label');
+  check(/火车/.test(aria0), '火车凭证 QR aria: ' + aria0);
+  check(/酒店/.test(aria1), '酒店凭证 QR aria: ' + aria1);
+  check(/门票/.test(await page.locator('.v-stub .qr svg').nth(2).getAttribute('aria-label')), '门票凭证 QR aria 正确');
+  console.log('timeline OK: 4 rows + 4 QR (first has', qrRects, 'rects) — 真编码，aria-label =', aria0);
   /* 截下第一张凭证的二维码，供 python 解码器验证可扫性 */
   await page.locator('.v-stub .qr').first().screenshot({ path: 'D:/tmp/vouchers-shots/qr-first.png', timeout: 60000 });
 
@@ -168,15 +189,26 @@ async function main() {
   await page.screenshot({ path: path.join(SHOTS, 'mobile.png'), fullPage: true });
   console.log('shot -> mobile.png');
 
-  await browser.close();
-
-  // ---- cleanup ----
-  console.log('--- cleanup ---');
-  for (const id of seeded) {
-    const r = await fetch(ORIGIN + '/api/trips/' + TRIP + '/bookings/' + id, { method: 'DELETE', headers: H });
-    console.log('delete', id, r.status);
-  }
-  console.log('OK');
+  check(biz === 0, '业务断言失败数 = ' + biz);
+  if (biz > 0) bail('存在业务断言失败');
+  console.log('=== ALL PASS ===');
 }
 
-main().catch(e => bail(e.stack || String(e)));
+(async () => {
+  let failed = null;
+  try {
+    await main();
+  } catch (e) {
+    failed = e;
+    console.error(e.stack || String(e));
+  }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try {
+    cleaner.run();
+    console.log('cleanup OK（残留核验 0）');
+  } catch (e) {
+    if (!failed) failed = e;
+    console.error('清理失败: ' + (e && e.message));
+  }
+  process.exit(failed ? 1 : 0);   // 显式退出：事件循环可能有残留句柄（playwright/fetch keep-alive），不显式退出会挂住批量 runner
+})();

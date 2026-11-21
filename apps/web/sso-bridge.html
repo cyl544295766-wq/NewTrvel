@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>NewTrevl · 自动登录</title>
+</head>
+<body style="font-family: system-ui, sans-serif; display: grid; place-items: center; height: 100vh; margin: 0; color: #6b7280; background: #f7f8fb">
+  <p id="tip">正在登录 NewTrevl…</p>
+  <script>
+    // NewTrevl SSO 桥接页：用 /api/auth/login 拿 token，
+    // 按前端约定写入 localStorage travelos.token / travelos.user。
+    const DEFAULT_TARGET = '/home/'
+    const params = new URLSearchParams(location.search)
+    const parentOrigin = params.get('parent')
+    const defaultTarget = params.get('target') || DEFAULT_TARGET
+
+    function post(msg) { parent.postMessage(msg, parentOrigin || '*') }
+
+    window.addEventListener('message', async (e) => {
+      if (parentOrigin && e.origin !== parentOrigin) return
+      const d = e.data || {}
+      if (d.type !== 'sso-login') return
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: d.username, password: d.password }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok || !data || !data.token) {
+          throw new Error((data && data.message) || ('登录失败 HTTP ' + res.status))
+        }
+        localStorage.setItem('travelos.token', data.token)
+        localStorage.setItem('travelos.user', JSON.stringify(data.user || { username: d.username }))
+        location.replace(d.target || defaultTarget)
+      } catch (err) {
+        post({ type: 'sso-error', message: String((err && err.message) || err) })
+      }
+    })
+
+    window.addEventListener('load', () => {
+      if (!parentOrigin) { location.replace(defaultTarget); return }
+      post({ type: 'sso-ready' })
+    })
+  </script>
+</body>
+</html>

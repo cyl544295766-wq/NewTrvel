@@ -2,14 +2,33 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const SHOTS = 'D:/tmp/account-shots';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const SHOTS = process.env.E2E_SHOTS || 'D:/tmp/account-shots';
+assertLocalOrigin(ORIGIN);
 
+const cleaner = new Cleaner();
+let browser = null;
+let biz = 0;
+function ok(msg) { console.log('  ok  ' + msg); }
+function check(cond, msg) { if (cond) ok(msg); else { biz++; console.error('  !!  ' + msg); } }
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
+function assertTrue(cond, msg) { if (!cond) bail(msg); }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  // ---- 夹具：自注册用户（口令已知）+ 一个含费用的行程（导出 JSON 需要） ----
+  const user = await registerUser(ORIGIN, 'ac');
+  cleaner.addUser(user.id);
+  const token = user.token;
+  const apiU = api(ORIGIN, user.token);
+  const fxTrip = cleaner.addTrip((await apiU.post('/api/trips', {
+    title: '账户验证行程（临时）', destination: '账户镇', startDate: '2026-06-10', endDate: '2026-06-12'
+  })).trip.id);
+  const fxExp = await apiU.post('/api/trips/' + fxTrip + '/expenses', {
+    amount: '55.00', category: 'food', title: '账户验证费用', payerUserId: user.id, shareUserIds: [user.id]
+  });
+  cleaner.addExpense(fxExp.expense ? fxExp.expense.id : fxExp.id);
   fs.mkdirSync(SHOTS, { recursive: true });
 
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
@@ -22,7 +41,7 @@ async function main() {
     sessionStorage.setItem('__seeded', '1');
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token, user: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 
@@ -72,14 +91,14 @@ async function main() {
   console.log('--- change password ---');
   await cpBtn.click();
   if (!(await page.locator('#pwdForm').isVisible())) bail('password form did not open');
-  await page.fill('#pfOld', 'admin123');
+  await page.fill('#pfOld', user.password);
   await page.fill('#pfNew', 'weak');
   await page.fill('#pfNew2', 'weak');
   if (!(await page.locator('#pfSave').isDisabled())) bail('weak new password should keep save disabled');
   const hintWeak = (await page.locator('#pfHint').textContent()).trim();
   if (!/至少 8 位/.test(hintWeak)) bail('weak-password hint wrong: ' + hintWeak);
-  await page.fill('#pfNew', 'admin123');
-  await page.fill('#pfNew2', 'admin123');
+  await page.fill('#pfNew', user.password);
+  await page.fill('#pfNew2', user.password);
   const hintSame = (await page.locator('#pfHint').textContent()).trim();
   if (!/不能与当前密码相同/.test(hintSame)) bail('same-password hint wrong: ' + hintSame);
   await page.fill('#pfNew', 'NewPass999');
@@ -91,35 +110,52 @@ async function main() {
   // verify via API: old password rejected, new accepted, then change back
   const badLogin = await fetch(ORIGIN + '/api/auth/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' })
+    body: JSON.stringify({ username: user.username, password: user.password })
   });
   if (badLogin.status !== 400) bail('old password should be rejected after change, got ' + badLogin.status);
   const newLogin = await fetch(ORIGIN + '/api/auth/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'NewPass999' })
+    body: JSON.stringify({ username: user.username, password: 'NewPass999' })
   });
-  if (newLogin.status !== 200) bail('login with new password failed: ' + newLogin.status);
+  if (newLogin.status !== 200) {
+    const bodyTxt = await newLogin.text();
+    bail('login with new password failed: ' + newLogin.status + ' body=' + bodyTxt.slice(0, 160));
+  }
   const newTok = (await newLogin.json()).token;
   const back = await fetch(ORIGIN + '/api/auth/password', {
     method: 'POST', headers: { 'Authorization': 'Bearer ' + newTok, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ oldPassword: 'NewPass999', newPassword: 'admin123' })
+    body: JSON.stringify({ oldPassword: 'NewPass999', newPassword: user.password })
   });
-  if (back.status !== 200) bail('restore admin123 failed: ' + back.status);
-  console.log('change password OK (weak/same hints, real change, restored admin123)');
+  if (back.status !== 200) bail('restore original password failed: ' + back.status);
+  console.log('change password OK (weak/same hints, real change, restored original password)');
+
+  // ---- 改密后页面强制清登录态（P2-1 安全语义）→ 重新登录再测偏好 ----
+  console.log('--- re-login after password change ---');
+  await waitFor('回到登录页', () => /\/login\//.test(page.url()), 10000);
+  await page.fill('#username', user.username);
+  await page.fill('#password', user.password);
+  await page.click('#submitBtn');
+  await waitFor('登录成功（离开登录页）', () => !/\/login\//.test(page.url()), 15000);
+  await page.goto(ORIGIN + '/account/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => {
+    const el = document.getElementById('hpName');
+    return el && el.textContent !== '…';
+  }, { timeout: 10000 });
+  ok('已用原口令重新登录');
+  // 改密后旧 token 全部失效（token_valid_after 水位）——改用页面新 token 调 API
+  const freshToken = await page.evaluate(() => localStorage.getItem('travelos.token'));
+  assertTrue(!!freshToken, '页面持有新 token');
+  const apiFresh = api(ORIGIN, freshToken);
 
   // ---- preferences: enabled selects populated from API, save + persist + restore ----
   console.log('--- preferences ---');
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.getElementById('hpName').textContent !== '…', { timeout: 8000 });
-  await page.waitForTimeout(600);
   const enabledSelects = await page.locator('#sec-pref select:enabled').count();
   if (enabledSelects !== 6) bail('prefs expected 6 enabled selects, got ' + enabledSelects);
   if (await page.locator('#sec-pref .notice').count()) bail('prefs notice should be gone');
   const nfSw = await page.locator('#sec-pref .sw[data-ns]').count();
   if (nfSw !== 4) bail('expected 4 notification switches, got ' + nfSw);
   if (!(await page.locator('#btnSavePref').isDisabled())) bail('save button should start disabled');
-  const prefsApi = await (await fetch(ORIGIN + '/api/auth/preferences', {
-    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  const prefsApi = await apiFresh.get('/api/auth/preferences');
   const p0 = prefsApi.preferences;
   const themeVal = await page.locator('#prTheme').inputValue();
   if (themeVal !== p0.theme) bail('theme select not populated from API: ' + themeVal + ' vs ' + p0.theme);
@@ -133,8 +169,7 @@ async function main() {
   if (await page.locator('#btnSavePref').isDisabled()) bail('save should enable after edits');
   await page.click('#btnSavePref');
   await page.waitForTimeout(700);
-  const saved = await (await fetch(ORIGIN + '/api/auth/preferences', {
-    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  const saved = await apiFresh.get('/api/auth/preferences');
   if (saved.preferences.theme !== 'dark' || saved.preferences.distanceUnit !== 'mi' || saved.preferences.notifySummary !== true) {
     bail('saved prefs wrong: ' + JSON.stringify(saved.preferences));
   }
@@ -152,8 +187,7 @@ async function main() {
   await page.locator('.sw[data-ns="notifySummary"]').click();
   await page.click('#btnSavePref');
   await page.waitForTimeout(700);
-  const restored = await (await fetch(ORIGIN + '/api/auth/preferences', {
-    headers: { 'Authorization': 'Bearer ' + token } })).json();
+  const restored = await apiFresh.get('/api/auth/preferences');
   if (restored.preferences.theme === 'dark' || restored.preferences.distanceUnit === 'mi' || restored.preferences.notifySummary === true) {
     bail('restore failed: ' + JSON.stringify(restored.preferences));
   }
@@ -209,22 +243,24 @@ async function main() {
   if (tok) bail('token should be cleared after logout, got ' + tok);
   console.log('logout OK: navigated to /login/, token cleared');
 
-  await browser.close();
-
-  // ---- restore token file for later sessions ----
-  const re = await fetch(ORIGIN + '/api/auth/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' })
-  });
-  const rj = await re.json();
-  if (rj.token) {
-    fs.writeFileSync('D:/tmp/login.json', JSON.stringify(rj, null, 2));
-    fs.writeFileSync('D:/tmp/token.txt', rj.token);
-    console.log('token file refreshed (login still works)');
-  } else {
-    bail('re-login failed: ' + JSON.stringify(rj));
-  }
-  console.log('OK');
+  console.log('=== ALL PASS ===');
 }
 
-main().catch(e => bail(e.stack || String(e)));
+(async () => {
+  let failed = null;
+  try {
+    await main();
+  } catch (e) {
+    failed = e;
+    console.error(e.stack || String(e));
+  }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try {
+    cleaner.run();
+    console.log('cleanup OK（残留核验 0）');
+  } catch (e) {
+    if (!failed) failed = e;
+    console.error('清理失败: ' + (e && e.message));
+  }
+  process.exit(failed ? 1 : 0);   // 显式退出：事件循环可能有残留句柄（playwright/fetch keep-alive），不显式退出会挂住批量 runner
+})();

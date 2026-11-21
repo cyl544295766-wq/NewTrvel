@@ -59,7 +59,7 @@ public class TravelDocumentService {
     validateDocumentUrl(url);
     // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
     if (fileStorageService.isDataUrl(url)) {
-      url = fileStorageService.storeDataUrl(url);
+      url = fileStorageService.storeDataUrl(url, userId);
     }
     long count = documentMapper.selectCount(new LambdaQueryWrapper<TravelDocument>()
         .eq(TravelDocument::getTripId, tripId));
@@ -99,9 +99,11 @@ public class TravelDocumentService {
     if (dto.containsKey("url") && dto.get("url") != null) {
       validateDocumentUrl(dto.get("url").toString());
       String newUrl = dto.get("url").toString();
-      // P3-1：data URL 落盘替换，并清理被替换的旧受管文件
+      // P3-1：data URL 落盘替换，并清理被替换的旧受管文件；
+      // validateDocumentUrl 已保证只接受 data URL——受管地址 / 外链均在此 400，
+      // 因此不存在「引用其他对象的受管文件」的可能
       if (fileStorageService.isDataUrl(newUrl)) {
-        newUrl = fileStorageService.storeDataUrl(newUrl);
+        newUrl = fileStorageService.storeDataUrl(newUrl, userId);
         fileStorageService.deleteIfManaged(document.getUrl());
       }
       document.setUrl(newUrl);

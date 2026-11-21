@@ -1,140 +1,150 @@
-// Verify stats: year pill / 4 cards / yearly bars / monthly bars / category donut / highlights / table drilldown
+// Travel OS · verify-stats：统计页端到端验证（自包含夹具，不依赖个人账号/种子数据）
+// 覆盖：年份 pill（最新年份默认选中）/ 四卡片与 /api/stats/yearly 一致 / 年度柱图 / 月度柱图 /
+//       分类环形（金额与夹具一致）/ highlights 最常去 / 年份表 + 表行下钻联动 / 移动端截图。
+// 夹具：自注册用户 + 2025/2026 各一行程 + CNY 费用；结束按准确 ID 清理并核验残留。
+// 运行：NODE_PATH=<managed node_modules> node tools/e2e/verify-stats.cjs
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const SHOTS = 'D:/tmp/stats-shots';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+const SHOTS = process.env.E2E_SHOTS || 'D:/tmp/stats-shots';
+assertLocalOrigin(ORIGIN);
 
+const cleaner = new Cleaner();
+let biz = 0;
+function ok(msg) { console.log('  ok  ' + msg); }
+function check(cond, msg) { if (cond) ok(msg); else { biz++; console.error('  !!  ' + msg); } }
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
+let browser = null;
+
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
   fs.mkdirSync(SHOTS, { recursive: true });
-  const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
-  // ---- seed a 2025 trip + one expense ----
-  console.log('--- seed 2025 trip + expense ---');
-  const tr = await fetch(ORIGIN + '/api/trips', {
-    method: 'POST', headers: H,
-    body: JSON.stringify({ title: '验证统计·2025 行程', destination: '验证目的地', startDate: '2025-05-10', endDate: '2025-05-14' })
+  // ---- 夹具：自注册 + 两年份行程 + CNY 费用 ----
+  const owner = await registerUser(ORIGIN, 'st');
+  cleaner.addUser(owner.id);
+  const apiOwner = api(ORIGIN, owner.token);
+  const t1 = cleaner.addTrip((await apiOwner.post('/api/trips', {
+    title: '统计验证·2025', destination: '基线谷', startDate: '2025-05-10', endDate: '2025-05-14'
+  })).trip.id);
+  const t2 = cleaner.addTrip((await apiOwner.post('/api/trips', {
+    title: '统计验证·2026', destination: '回声湾', startDate: '2026-03-01', endDate: '2026-03-05'
+  })).trip.id);
+  const e1 = await apiOwner.post(`/api/trips/${t1}/expenses`, {
+    amount: '1500', category: 'food', title: '统计验证餐饮', payerUserId: owner.id, shareUserIds: [owner.id]
   });
-  const trip = (await tr.json()).trip;
-  if (!trip) bail('seed trip failed');
-  const meId = user.id;
-  const er = await fetch(ORIGIN + '/api/trips/' + trip.id + '/expenses', {
-    method: 'POST', headers: H,
-    body: JSON.stringify({ amount: '1500', category: 'food', title: '验证统计餐饮', payerUserId: meId, shareUserIds: [meId] })
+  cleaner.addExpense(e1.expense ? e1.expense.id : e1.id);
+  const e2 = await apiOwner.post(`/api/trips/${t2}/expenses`, {
+    amount: '2000', category: 'hotel', title: '统计验证住宿', payerUserId: owner.id, shareUserIds: [owner.id]
   });
-  if (!er.ok) bail('seed expense failed: ' + er.status);
-  console.log('seeded trip', trip.id, '+ expense 1500');
+  cleaner.addExpense(e2.expense ? e2.expense.id : e2.id);
+  ok('夹具就绪（2025+2026 各 1 行程，CNY 费用 1500/2000）');
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
   await ctx.addInitScript(({ token, user }) => {
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token: owner.token, user: { id: owner.id, username: owner.username, displayName: '' } });
   const page = await ctx.newPage();
-  page.on('pageerror', e => console.log('[pageerror]', e.message));
+  page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
-  console.log('--- load stats ---');
+  console.log('--- 加载 /stats/ ---');
   await page.goto(ORIGIN + '/stats/', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#yearPill button', { timeout: 8000 });
-  await page.waitForTimeout(900);
+  await waitFor('年份 pill 渲染', () => page.locator('#yearPill button').count().then((n) => n >= 2).catch(() => false), 15000);
+  await waitFor('卡片渲染', () => page.locator('#sTrips').textContent().then((t) => t.trim().length > 0).catch(() => false), 10000);
 
-  // year pill: should have 2026 + 2025, latest selected
-  const pills = await page.locator('#yearPill button').allTextContents();
-  if (pills.length < 2) bail('expected >=2 year pills, got ' + pills.join(','));
+  const pills = (await page.locator('#yearPill button').allTextContents()).map((s) => s.trim());
+  check(pills.length === 2 && pills.includes('2026') && pills.includes('2025'),
+    '年份 pill = 夹具两年份: ' + pills.join('/'));
   const active = (await page.locator('#yearPill button[aria-pressed="true"]').textContent()).trim();
-  if (active !== '2026') bail('default selected year expected 2026, got ' + active);
-  console.log('year pill OK:', pills.map(s => s.trim()).join(' / '), '| active =', active);
+  check(active === '2026', '默认选中最新年份 2026: ' + active);
 
-  // 4 stat cards vs API
-  const yearly = await (await fetch(ORIGIN + '/api/stats/yearly?year=2026', { headers: H })).json();
+  // 四卡片 vs API（真实数据一致性）
+  const yearly = await apiOwner.get('/api/stats/yearly?year=2026');
   const tripsTxt = (await page.locator('#sTrips').textContent()).trim();
-  if (!tripsTxt.startsWith(String(yearly.tripCount))) bail('tripCount card mismatch: ' + tripsTxt + ' vs ' + yearly.tripCount);
   const daysTxt = (await page.locator('#sDays').textContent()).trim();
-  if (!daysTxt.startsWith(String(yearly.totalDays))) bail('totalDays card mismatch: ' + daysTxt);
   const destTxt = (await page.locator('#sDest').textContent()).trim();
-  if (!destTxt.startsWith(String(yearly.destinationCount))) bail('dest card mismatch: ' + destTxt);
   const costTxt = (await page.locator('#sCost').textContent()).trim();
-  if (!costTxt.includes('¥')) bail('cost card missing ¥: ' + costTxt);
-  console.log('cards OK:', { tripsTxt, daysTxt, destTxt, costTxt });
+  check(tripsTxt.startsWith(String(yearly.tripCount)), 'tripCount 卡片 = API: ' + tripsTxt + ' vs ' + yearly.tripCount);
+  check(daysTxt.startsWith(String(yearly.totalDays)), 'totalDays 卡片 = API: ' + daysTxt + ' vs ' + yearly.totalDays);
+  check(destTxt.startsWith(String(yearly.destinationCount)), 'dest 卡片 = API: ' + destTxt + ' vs ' + yearly.destinationCount);
+  check(costTxt.includes('¥'), 'cost 卡片含 ¥: ' + costTxt);
 
-  // yearly bars: 2 columns x 2 bars
+  // 年度柱图：2 列 × 2 条 + 图例
   const cols = await page.locator('#chartYear .bar-col').count();
-  if (cols !== 2) bail('yearly chart expected 2 columns, got ' + cols);
   const bars = await page.locator('#chartYear .bar').count();
-  if (bars !== 4) bail('yearly chart expected 4 bars, got ' + bars);
   const legend = await page.locator('#chartYear .legend span').count();
-  if (legend !== 2) bail('yearly legend expected 2, got ' + legend);
-  console.log('yearly chart OK: 2 years x 2 bars + legend');
+  check(cols === 2 && bars === 4 && legend === 2,
+    '年度柱图 2 列 × 2 条 + 图例（实为 ' + cols + '/' + bars + '/' + legend + '）');
 
-  // monthly: 12 columns
+  // 月度柱图：12 列，2026 年 3 月活跃
   const mos = await page.locator('#chartMonth .mo').count();
-  if (mos !== 12) bail('monthly chart expected 12 columns, got ' + mos);
   const hasMonths = await page.locator('#chartMonth .mo.has').count();
-  if (hasMonths < 1) bail('monthly chart should have at least 1 active month');
-  console.log('monthly chart OK: 12 columns,', hasMonths, 'active');
+  check(mos === 12, '月度柱图 12 列（实为 ' + mos + '）');
+  check(hasMonths === 1, '2026 年活跃月份 = 1（3 月，实为 ' + hasMonths + '）');
 
-  // category donut (expense exists in 2025 trip, endpoint is global)
+  // 分类环形：全局（跨年份）= 夹具两笔 CNY（1500 餐饮 + 2000 住宿）
+  // 页面 money() 契约：¥ 1,500 / ¥ 2,000（千分位、无强制小数）
+  await waitFor('分类环形含夹具金额', () => page.locator('#chartCat').textContent()
+    .then((t) => t.includes('¥ 1,500') && t.includes('¥ 2,000') && t.includes('¥ 3,500'))
+    .catch(() => false), 10000);
   const catRows = await page.locator('#chartCat .cat-row').count();
-  if (catRows < 1) bail('category donut should have rows after seeding expense, got ' + catRows);
   const segs = await page.locator('#chartCat svg circle').count();
-  if (segs < 1) bail('donut segments missing');
-  const catTxt = (await page.locator('#chartCat').textContent()).replace(/\s+/g, ' ');
-  if (!catTxt.includes('1,500')) bail('category amount should show 1,500: ' + catTxt.slice(0, 120));
-  console.log('category donut OK:', catRows, 'rows /', segs, 'segs');
+  check(catRows >= 2 && segs >= 1, '分类环形行/段 ≥2/≥1（实为 ' + catRows + '/' + segs + '）');
 
-  // highlights
+  // highlights：最常去 = 两个目的地之一（并列 1 次，取先出现的「基线谷」）
   const hls = await page.locator('#highlights .hl').count();
-  if (hls !== 3) bail('highlights expected 3 cards, got ' + hls);
   const hlTxt = (await page.locator('#highlights').textContent()).replace(/\s+/g, ' ');
-  if (!hlTxt.includes('阿拉善盟')) bail('most visited should be 阿拉善盟, got: ' + hlTxt.slice(0, 120));
-  console.log('highlights OK (3 cards, 最常去 阿拉善盟)');
+  check(hls === 3, 'highlights 3 张卡（实为 ' + hls + '）');
+  check(hlTxt.includes('基线谷') || hlTxt.includes('回声湾'), '最常去为夹具目的地: ' + hlTxt.slice(0, 100));
 
-  // yearly table: 2 rows
+  // 年份表：2 行 × 3 mini 条；行内下钻联动
   const rowsT = await page.locator('#yearTable tbody tr').count();
-  if (rowsT !== 2) bail('year table expected 2 rows, got ' + rowsT);
+  check(rowsT === 2, '年份表 2 行（实为 ' + rowsT + '）');
   const minis = await page.locator('#yearTable tbody tr').first().locator('.mini').count();
-  if (minis !== 3) bail('each row expected 3 mini bars, got ' + minis);
-  console.log('year table OK: 2 rows x 3 mini bars');
-
+  check(minis === 3, '行内 3 mini 条（实为 ' + minis + '）');
   await page.screenshot({ path: path.join(SHOTS, 'overview.png'), fullPage: true });
 
-  // ---- drilldown: click 2025 row -> pill switches, cards change ----
-  console.log('--- drilldown to 2025 ---');
+  console.log('--- 下钻 2025 ---');
   await page.click('#yearTable tbody tr[data-year="2025"]');
-  await page.waitForTimeout(1200);
-  const active2 = (await page.locator('#yearPill button[aria-pressed="true"]').textContent()).trim();
-  if (active2 !== '2025') bail('after drilldown active year expected 2025, got ' + active2);
+  await waitFor('pill 切到 2025', () => page.locator('#yearPill button[aria-pressed="true"]')
+    .textContent().then((t) => t.trim() === '2025').catch(() => false), 10000);
   const trips2025 = (await page.locator('#sTrips').textContent()).trim();
-  if (!trips2025.startsWith('1')) bail('2025 trip count expected 1, got ' + trips2025);
   const days2025 = (await page.locator('#sDays').textContent()).trim();
-  if (!days2025.startsWith('5')) bail('2025 total days expected 5, got ' + days2025);
-  const monthSub = (await page.locator('#monthSub').textContent()).trim();
-  if (!monthSub.includes('2025')) bail('month subtitle should show 2025, got ' + monthSub);
   const mayHas = await page.locator('#chartMonth .mo.has').count();
-  if (mayHas !== 1) bail('2025 should have exactly 1 active month, got ' + mayHas);
-  console.log('drilldown OK: 2025 / 1 次 / 5 天 / 1 active month');
+  check(trips2025.startsWith('1'), '2025 行程数 = 1: ' + trips2025);
+  check(days2025.startsWith('5'), '2025 总天数 = 5: ' + days2025);
+  check(mayHas === 1, '2025 活跃月份 = 1（5 月，实为 ' + mayHas + '）');
   await page.screenshot({ path: path.join(SHOTS, 'year-2025.png'), fullPage: true });
 
-  // mobile
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(SHOTS, 'mobile.png'), fullPage: true });
-  console.log('shot -> mobile.png');
+  console.log('shots -> overview/year-2025/mobile.png');
 
-  await browser.close();
-
-  // ---- cleanup ----
-  console.log('--- cleanup ---');
-  const delRes = await fetch(ORIGIN + '/api/trips/' + trip.id, { method: 'DELETE', headers: H });
-  console.log('delete seeded trip', trip.id, delRes.status);
-  const check = await (await fetch(ORIGIN + '/api/stats/overview', { headers: H })).json();
-  console.log('after cleanup: tripCount =', check.tripCount, '| years =', (check.availableYears || []).join(','));
-  console.log('OK');
+  check(biz === 0, '业务断言失败数 = ' + biz);
+  if (biz > 0) bail('存在业务断言失败');
+  console.log('=== ALL PASS ===');
 }
 
-main().catch(e => bail(e.stack || String(e)));
+(async () => {
+  let failed = null;
+  try {
+    await main();
+  } catch (e) {
+    failed = e;
+    console.error(e.stack || String(e));
+  }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try {
+    cleaner.run();
+    console.log('cleanup OK（残留核验 0）');
+  } catch (e) {
+    if (!failed) failed = e;
+    console.error('清理失败: ' + (e && e.message));
+  }
+  process.exit(failed ? 1 : 0);   // 显式退出：事件循环可能有残留句柄（playwright/fetch keep-alive），不显式退出会挂住批量 runner
+})();

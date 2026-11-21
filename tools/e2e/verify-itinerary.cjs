@@ -2,8 +2,12 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+assertLocalOrigin(ORIGIN);
+const cleaner = new Cleaner();
+let browser = null;
 let TRIP = null;              // 动态创建的验证行程
 const SHOTS = 'D:/tmp/itinerary-shots';
 const SEED_DAYS = 3, SEED_PLACES = [4, 3, 3];   // 3 天 / 10 地点
@@ -31,7 +35,9 @@ async function seedPlaces(token, tripId, dayId, names) {
 }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  const user = await registerUser(ORIGIN, 'it');
+  cleaner.addUser(user.id);
+  const token = user.token;
   fs.mkdirSync(SHOTS, { recursive: true });
 
   /* --- 自建验证行程（不再依赖固定种子数据） --- */
@@ -53,12 +59,12 @@ async function main() {
   }
   const expectDate = (d => ('0' + (d.getMonth() + 1)).slice(-2) + ' / ' + ('0' + d.getDate()).slice(-2))(new Date(String(tripStartDate).slice(0, 10) + 'T00:00:00'));
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
   await ctx.addInitScript(({ token, user }) => {
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 

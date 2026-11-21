@@ -1304,7 +1304,7 @@
   }
 
   /* ================= Hero：聚焦「下一趟旅程」 ================= */
-  function renderHero(dash, ov, trip) {
+  function renderHero(dash) {
     /* 数据选择：出发日期不早于今天的行程按出发日升序取第一条；
        倒计时 / 名称 / 日期 / 目的地 / 继续规划入口全部使用同一条行程 */
     var today = startOfDay(new Date());
@@ -1776,11 +1776,9 @@
   if (typeof requireLogin === 'function' && requireLogin('/login/')) {
     initUser();
     Promise.allSettled([
-      apiGet('/dashboard'),
-      apiGet('/stats/overview')
+      apiGet('/dashboard')
     ]).then(function (res) {
       var dash = res[0] && res[0].status === 'fulfilled' ? res[0].value : null;
-      var ov   = res[1] && res[1].status === 'fulfilled' ? res[1].value : null;
 
       if (!dash) {
         fatal(typeof humanError === 'function' ? humanError(res[0].reason) : '总览数据读取失败');
@@ -1788,7 +1786,7 @@
       }
       var trip = (dash.upcomingTrips || [])[0] || (dash.recentTrips || [])[0] || null;
 
-      renderHero(dash, ov, trip);
+      renderHero(dash);
       renderStats(dash);
       renderMap(trip);
       renderTrips(dash.recentTrips, !!trip);

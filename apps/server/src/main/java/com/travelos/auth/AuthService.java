@@ -20,10 +20,20 @@ public class AuthService {
 
   private static final long SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60L;
   private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,20}$");
+  /** 登录失败统一文案：不存在 / 口令错误 / 已注销 / 已禁用 返回完全一致的 400（防账号枚举） */
+  static final String LOGIN_FAILED_MESSAGE = "用户名或密码错误";
+  /**
+   * 用户不存在时用于「等时比较」的占位哈希：让不存在账号的登录也执行一次 BCrypt，
+   * 避免用响应耗时差异区分账号是否存在（防枚举补充手段，该哈希不可能比对成功）。
+   */
+  private static final String NONEXISTENT_ACCOUNT_HASH =
+      new BCryptPasswordEncoder().encode("travel-os-nonexistent-account-placeholder");
 
   private final UserService userService;
   private final com.travelos.service.AuditService auditService;
   private final com.travelos.service.FileStorageService fileStorageService;
+  private final com.travelos.service.NotificationStreamService streamService;
+  private final AuthRateLimiter rateLimiter;
   private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
   private final String jwtSecret;
   private final String cookieName;
@@ -32,12 +42,16 @@ public class AuthService {
   public AuthService(UserService userService,
       com.travelos.service.AuditService auditService,
       com.travelos.service.FileStorageService fileStorageService,
+      com.travelos.service.NotificationStreamService streamService,
+      AuthRateLimiter rateLimiter,
       @Value("${jwt.secret}") String jwtSecret,
       @Value("${auth.cookie-name:access_token}") String cookieName,
       @Value("${auth.secure-cookie:false}") boolean secureCookie) {
     this.userService = userService;
     this.auditService = auditService;
     this.fileStorageService = fileStorageService;
+    this.streamService = streamService;
+    this.rateLimiter = rateLimiter;
     this.jwtSecret = jwtSecret;
     this.cookieName = cookieName;
     this.secureCookie = secureCookie;
@@ -83,28 +97,44 @@ public class AuthService {
         && password.chars().anyMatch(Character::isDigit);
   }
 
-  /** 登录：区分「用户不存在 / 密码错误 / 已注销 / 已禁用」。 */
-  public Map<String, Object> login(String username, String password) {
-    User user = userService.findByUsername(username);
-    if (user == null) {
-      throw ApiException.badRequest("用户不存在");
+  /**
+   * 登录（带来源 IP 的限流上下文）：
+   * <ul>
+   *   <li>先<b>原子预占</b>额度（三维度检查 + 计数一次完成，见
+   *       {@link AuthRateLimiter#beginLoginAttempt}）——并发下进入用户查询/BCrypt 的
+   *       请求不会超过阈值，其余直接 429；</li>
+   *   <li>「用户不存在 / 口令错误 / 已注销 / 已禁用」返回<b>完全一致</b>的 400 与文案，
+   *       消除账号枚举差异；不存在账号也执行一次 BCrypt 比对，压缩耗时侧信道；</li>
+   *   <li>认证失败：预占即失败计数（不回退）；成功：只撤销自己的预占并清除该
+   *       (账号, IP) 的计数；<b>意外异常</b>回退预占，避免系统性错误吃掉用户额度。</li>
+   * </ul>
+   */
+  public Map<String, Object> login(String username, String password, String clientIp) {
+    AuthRateLimiter.LoginPermit permit = rateLimiter.beginLoginAttempt(clientIp, username);
+    try {
+      String candidate = password == null ? "" : password;
+      User user = userService.findByUsername(username);
+      String storedHash = user != null && user.getPasswordHash() != null
+          ? user.getPasswordHash() : NONEXISTENT_ACCOUNT_HASH;
+      boolean passwordMatches = passwordEncoder.matches(candidate, storedHash);
+      boolean active = user != null && "active".equals(user.getStatus());
+      if (!active || !passwordMatches) {
+        throw ApiException.badRequest(LOGIN_FAILED_MESSAGE); // 计数保留（失败计入）
+      }
+      userService.updateLastLoginAt(user.getId());
+      String token = JwtUtil.sign(jwtSecret,
+          Map.of("sub", user.getId(), "username", user.getUsername()), SEVEN_DAYS_SECONDS);
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("user", userService.toPublicUser(user));
+      body.put("token", token);
+      rateLimiter.completeLoginSuccess(permit); // 结算放在最后：之后不再有可失败步骤
+      return body;
+    } catch (ApiException ex) {
+      throw ex; // 统一 400（认证失败）：预占保留即失败计数；429 不会在本 try 内产生
+    } catch (RuntimeException ex) {
+      rateLimiter.abandonLoginAttempt(permit); // 意外异常回退，不留下错误计数
+      throw ex;
     }
-    if ("deleted".equals(user.getStatus())) {
-      throw ApiException.forbidden("账户已注销");
-    }
-    if ("disabled".equals(user.getStatus())) {
-      throw ApiException.forbidden("账户已被禁用");
-    }
-    if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-      throw ApiException.badRequest("密码错误");
-    }
-    userService.updateLastLoginAt(user.getId());
-    String token = JwtUtil.sign(jwtSecret, Map.of("sub", user.getId(), "username", user.getUsername()),
-        SEVEN_DAYS_SECONDS);
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("user", userService.toPublicUser(user));
-    body.put("token", token);
-    return body;
   }
 
   /** 注销：需密码确认；软删除（status=deleted + deleted_at），Cookie 由 Controller 清除。 */
@@ -121,6 +151,8 @@ public class AuthService {
     user.setDeletedAt(new Date());
     user.setTokenValidAfter(new Date()); // P2-1：作废全部存量令牌（防复活的边界场景）
     userService.updateUser(user);
+    // 会话撤销同步：主动结束该用户既有通知 SSE（多标签页连接全部关闭并清理注册表）
+    streamService.closeAll(user.getId());
     auditService.record(user.getId(), null, "account_deactivated", "user", user.getId(),
         Map.of("username", user.getUsername()));
   }
@@ -148,6 +180,9 @@ public class AuthService {
     user.setPasswordHash(passwordEncoder.encode(newPassword));
     user.setTokenValidAfter(new Date());
     userService.updateUser(user);
+    // 会话撤销同步：主动结束该用户既有通知 SSE（改密后旧 Cookie/Bearer 的新请求
+    // 已被水位作废，这里让已建立的流也立即结束，前端失效检测随后清登录态跳登录）
+    streamService.closeAll(user.getId());
     auditService.record(user.getId(), null, "password_changed", "user", user.getId(),
         Map.of("username", user.getUsername()));
   }
@@ -179,11 +214,12 @@ public class AuthService {
       if (value.isEmpty()) {
         user.setAvatarUrl(null);
       } else if (fileStorageService.isDataUrl(value)) {
-        user.setAvatarUrl(fileStorageService.storeDataUrl(value));
-      } else if (fileStorageService.isManagedFileUrl(value)) {
+        user.setAvatarUrl(fileStorageService.storeDataUrl(value, user.getId()));
+      } else if (fileStorageService.isManagedFileUrl(value) && value.equals(old)) {
+        // 只允许保留当前头像地址：禁止借用他人 /files/** 文件做头像（写路径加固）
         user.setAvatarUrl(value);
       } else {
-        throw ApiException.badRequest("头像仅支持上传图片（data URL）或受管文件地址");
+        throw ApiException.badRequest("头像仅支持上传图片（data URL）或保持当前头像地址");
       }
       if (old != null && !old.equals(user.getAvatarUrl())) {
         fileStorageService.deleteIfManaged(old);

@@ -2,30 +2,57 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
-const TRIP = 'cmrykzwh90000fmvg8xr7bclf';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+assertLocalOrigin(ORIGIN);
+const cleaner = new Cleaner();
+let browser = null;
+let TRIP = '';
+let memberA = null, memberB = null;
 const SHOTS = 'D:/tmp/expenses-shots';
 
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  const user = await registerUser(ORIGIN, 'ex');
+  cleaner.addUser(user.id);
+  const token = user.token;
   fs.mkdirSync(SHOTS, { recursive: true });
   const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
-  // ---- 自包含 seed：3 笔费用（320 三人均分 / 200 单人 / 60 按比例 2:1），跑完自动删除 ----
-  console.log('--- seed 3 expenses ---');
-  const memRes = await fetch(ORIGIN + '/api/trips/' + TRIP + '/members', { headers: H });
-  const members = ((await memRes.json()).members || []);
-  const byName = (n) => (members.find((m) => (m.displayName || '').trim() === n) || {}).userId;
-  const admin = byName('Admin') || (members[0] || {}).userId;
-  const m02 = byName('member02');
-  const v02 = byName('viewer02');
-  if (!admin || !m02 || !v02) {
-    throw new Error('expenses seed 需要成员 Admin/member02/viewer02，实际: '
-      + JSON.stringify(members.map((m) => m.displayName)));
-  }
+  // ---- 夹具：建行程 + 注册 2 成员 + 好友 + 邀请 ----
+  console.log('--- 夹具：建行程 + 成员 ---');
+  const tripRes = await fetch(ORIGIN + '/api/trips', {
+    method: 'POST', headers: H,
+    body: JSON.stringify({ title: '费用验证行程（临时）', destination: '费用镇', startDate: '2026-07-01', endDate: '2026-07-05', budget: '6000' })
+  });
+  const tripData = (await tripRes.json()).trip;
+  TRIP = tripData.id;
+  cleaner.addTrip(TRIP);
+
+  // 注册 2 个成员
+  memberA = await registerUser(ORIGIN, 'exA');
+  cleaner.addUser(memberA.id);
+  memberB = await registerUser(ORIGIN, 'exB');
+  cleaner.addUser(memberB.id);
+
+  // 互为好友（邀请前提）
+  const apiOwner = api(ORIGIN, token, true);
+  const apiA = api(ORIGIN, memberA.token, true);
+  const apiB = api(ORIGIN, memberB.token, true);
+  await apiOwner.post('/api/friends', { userId: memberA.id });
+  await apiA.post('/api/friends/' + user.id + '/accept');
+  await apiOwner.post('/api/friends', { userId: memberB.id });
+  await apiB.post('/api/friends/' + user.id + '/accept');
+
+  // 邀请成员
+  await apiOwner.post('/api/trips/' + TRIP + '/members', { username: memberA.username, role: 'member' });
+  await apiOwner.post('/api/trips/' + TRIP + '/members', { username: memberB.username, role: 'member' });
+
+  const admin = user.id;
+  const m02 = memberA.id;
+  const v02 = memberB.id;
   const seedOne = async (body) => {
     const r = await fetch(ORIGIN + '/api/trips/' + TRIP + '/expenses', {
       method: 'POST', headers: H, body: JSON.stringify(body)
@@ -40,12 +67,12 @@ async function main() {
   seededIds.push(await seedOne({ amount: '60', category: 'ticket', title: '沙湖门票', payerUserId: admin, shares: [{ userId: admin, ratio: '2' }, { userId: m02, ratio: '1' }] }));
   console.log('seeded:', seededIds.join(', '));
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
   await ctx.addInitScript(({ token, user }) => {
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 
@@ -117,7 +144,7 @@ async function main() {
   for (let i = 0; i < mpCount; i++) {
     const el = mp.nth(i);
     const txt = await el.textContent();
-    const keep = txt.includes('Admin') || txt.includes('member02');
+    const keep = txt.includes(user.username) || txt.includes(memberA.username);
     const isOn = (await el.getAttribute('class')).includes('on');
     if (keep && !isOn) await el.click();
     if (!keep && isOn) await el.click();

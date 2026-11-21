@@ -16,15 +16,15 @@ NewTrevl/
 ├── apps/
 │   ├── server/                      ← 服务端（Java 17 / Spring Boot + MyBatis-Plus）
 │   │   ├── src/main/java/com/travelos/
-│   │   │   ├── controller/          REST 接口层（27 个 Controller）
-│   │   │   ├── service/             业务逻辑层（29 个 Service）
+│   │   │   ├── controller/          REST 接口层（28 个 Controller）
+│   │   │   ├── service/             业务逻辑层（30 个 Service）
 │   │   │   ├── mapper/              数据访问层（MyBatis-Plus Mapper）
-│   │   │   ├── entity/              数据实体（28 张表）
-│   │   │   ├── auth/                登录态与身份（AuthInterceptor / UserContext / CurrentUser）
+│   │   │   ├── entity/              数据实体（30 张表）
+│   │   │   ├── auth/                登录态与身份（AuthInterceptor / UserContext / 限流 AuthRateLimiter）
 │   │   │   ├── trip/                行程级权限（成员制校验 + @RequireTripRole 切面）
-│   │   │   ├── ai/                  AI 旅行助手（OpenAI 兼容协议）
-│   │   │   ├── config/              Spring 配置（静态资源托管 / CORS / 拦截器注册）
-│   │   │   └── common/              通用设施（异常、JSON、统一响应、.env 加载）
+│   │   │   ├── ai/                  AI 旅行助手（会话编排 / 有界执行 AiTaskManager / 发送幂等 / 草稿应用）
+│   │   │   ├── config/              Spring 配置（静态资源 / CORS / 拦截器 / 文件404 / 种子守卫）
+│   │   │   └── common/              通用设施（异常、JSON、统一响应、文件统一错误、.env 加载）
 │   │   ├── src/main/resources/      application.yml、内嵌中文字体（PDF 导出用）
 │   │   ├── db/migration/            数据库迁移脚本（按文件名顺序执行，只增不改）
 │   │   ├── start-api.cmd            单独启动服务端（Maven）
@@ -79,12 +79,32 @@ NewTrevl/
 | 层 | 选型 |
 | --- | --- |
 | 服务端 | Java 17、Spring Boot 2.7、MyBatis-Plus、Spring AOP |
-| 数据库 | PostgreSQL 16（Docker），迁移为纯 SQL 脚本顺序执行 |
+| 数据库 | PostgreSQL 16（Docker），迁移为纯 SQL 脚本顺序执行（只增不改且幂等） |
 | 认证 | JWT；`Authorization: Bearer` 优先、HttpOnly Cookie 兜底 |
+| AI | OpenAI 兼容协议 `/chat/completions`（tools + 流式 SSE）；未配置 `llm.*` 自动降级关闭 |
 | 文档与导出 | PDFBox（行程 PDF 导出）、Thumbnailator + TwelveMonkeys（图片处理，含 WebP） |
 | 前端 | 原生 HTML / CSS / JavaScript，无框架、无构建步骤 |
 | 地图 | 高德地图 JS API 2.0（Key 见 `apps/web/assets/js/amap.js`） |
 | 运维 | Docker、Nginx、systemd、GitHub Actions（构建验证）；部署走本地一键发布 `deploy/publish.sh` |
+
+## 安全与资源防护
+
+围绕「同源托管 + 私人部署」的威胁面，已落地以下防线（全部有自动化测试覆盖，见下节）：
+
+- **统一失败响应与登录防护**：业务错误统一 JSON（`statusCode/message/error`）；429 统一带 `Retry-After`；
+  登录/注册按 IP+账号维度限流（`AuthRateLimiter`）、防枚举统一「用户名或密码错误」文案、
+  生产环境默认/弱管理员密码启动即拒绝（`AdminPasswordGuard`，`seed.allow-default-admin-password` 仅本地）。
+- **文件访问**：`/files/**` 走对象级授权（`FileAccessService` + `file_metadata` 表，属主/行程成员才可读）；
+  非法路径、越权与不存在统一返回 JSON 404（`FileAwareErrorReportValve` + `FileErrorDispatchInterceptor`），
+  不再泄漏容器默认 HTML/400；合法 GET/HEAD/Range/401 行为保持不变。
+- **AI 发送链路**：`AiTaskManager` 组合准入——单用户并发 / 全局并发 / 等待队列 / 频率窗口 /
+  **UTC 自然日每日预算**（`ai.concurrency.*`、`ai.rate-limit.*`、`ai.budget.*`，全部可配置，单实例进程内计数）；
+  每次生成有总时限（`ai.task.timeout-ms`），客户端断开会把取消传播到模型 HTTP 连接与后续工具轮次。
+- **AI 消息发送幂等**：普通与流式共享 `clientRequestId`（`ai_request_keys` 表 + `execution_token` 状态机，
+  条件更新接管/回放/失败重试，保留期自动清理）。
+- **AI 草稿应用互斥**：`pending → applying → applied / discarded` 全部为数据库条件更新；
+  `applying` 带租约（`ai.draft.apply-stale-ms`，默认 60s）可条件接管，完成落账带执行令牌 fencing——
+  并发应用/放弃只有一个赢家，业务写入 + 审计 + 终态在同一事务，旧执行者被接管后整体回滚不产生副作用。
 
 ## 本地运行
 
@@ -110,6 +130,47 @@ mvn spring-boot:run
 > 端口、数据库地址、密钥等由**仓库根目录的 `.env`** 提供，服务端启动时通过
 > `com.travelos.common.EnvLoader` 读入系统属性（查找顺序：`./.env` → `../.env` → `../../.env`）。
 > 变量清单见 `deploy/app.env.example`。
+
+## 测试与回归
+
+```bash
+# 后端全量（apps/server 下）：单元 + 真实 HTTP 集成（含模拟模型，不调用付费模型）
+mvn -B verify                                  # 本地（Windows）基线：280 用例 / 0 失败 / 1 跳过（符号链接）
+
+# 前端（仓库根目录）：通知流 + AI 发送策略；文档预览
+node --test apps/web/tests/notifications-stream.test.cjs apps/web/tests/ai-send-policy.test.cjs   # 29
+node apps/web/tests/doc-preview.test.cjs                                                      # 28 断言
+
+# E2E 错误分类回归（纯分类，无浏览器/账号/数据库/网络依赖）
+node tools/e2e/selftest-map-classify.cjs --classify-only
+```
+
+- 测试数据源与生产一致（真实 PostgreSQL），并发/幂等/租约类断言均基于数据库条件更新语义；
+  AI 相关集成测试内嵌模拟模型服务，CI 不产生模型费用。
+- surefire 配置（`pom.xml`）含**仅测试生效**的 Hikari 收敛（单池 ≤3、空闲收缩）——
+  防止多个 `@SpringBootTest` 上下文累积连接打满本地 PG `max_connections=100`，勿删。
+
+### CI 执行范围（.github/workflows/ci.yml）
+
+- **后端 job**：Ubuntu runner 上的 **一次性 PostgreSQL 16 service 容器**（CI 专用账号
+  `travel_os_ci` / 库 `travel_os_ci`，随 job 销毁，绝不连接本地或生产库）→ 有界等待就绪 →
+  按 `apps/server/db/migration` 文件名顺序**全量重放迁移**（逐文件执行、`ON_ERROR_STOP=1`，
+  任一 SQL 失败即工作流失败）→ JDK 17 + **Maven 3.9.11** `mvn -B verify`。
+- **数据源配置来源**：CI checkout 无 `.env`（已 gitignore），EnvLoader 找不到 `.env` 即空转；
+  数据源由 **`SPRING_DATASOURCE_URL/USERNAME/PASSWORD` 环境变量**（Spring relaxed binding）
+  提供——**只设 `DATABASE_URL` 环境变量不会生效**（EnvLoader 只解析来自 `.env` 文件的值）。
+  CI 同时注入安全值：非默认种子口令 + `SEED_ALLOW_DEFAULT_ADMIN_PASSWORD=false`、
+  独立 `JWT_SECRET` + `JWT_ALLOW_DEFAULT=false`、`FILES_DIR` 收敛到 runner 工作区。
+- **前端 job**：Node 22 运行通知流/AI 发送策略/文档预览测试 + `selftest-map-classify.cjs
+  --classify-only` 纯分类回归（不启动浏览器、不建账号、不连库）。
+- **产物**：后端失败时上传 Surefire 报告（保留 7 天），不含 `.env`、密钥与数据目录。
+- 依赖真实高德服务的完整地图 E2E 与浏览器故障注入自检（selftest 不带参数）**不在常规 CI 内**，
+  仍按 `tools/e2e/README.md` 本地运行。
+- **本地复现 CI**：`docker run -d --name ci-pg-verify -e POSTGRES_USER=travel_os_ci
+  -e POSTGRES_PASSWORD=... -e POSTGRES_DB=travel_os_ci -p 127.0.0.1:15432:5432 postgres:16`
+  → 按上法重放迁移 → 在 `apps/server` 下以
+  `SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:15432/travel_os_ci?stringtype=unspecified
+  SPRING_DATASOURCE_USERNAME=travel_os_ci SPRING_DATASOURCE_PASSWORD=... mvn -B verify` 复跑。
 
 ## 部署
 

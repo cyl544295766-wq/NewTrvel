@@ -1,0 +1,1 @@
+{"cities":[{"destination":"大连","tripCount":1,"totalDays":2,"placeCount":1,"lat":38.88,"lng":121.59,"firstDate":"2026-06-10","lastDate":"2026-06-11"},{"destination":"上海","tripCount":1,"totalDays":3,"placeCount":1,"lat":31.24,"lng":121.49,"firstDate":"2027-01-05","lastDate":"2027-01-07"}],"totals":{"cityCount":2,"tripCount":5,"totalDays":12,"totalPlaces":2}}

@@ -61,7 +61,7 @@ public class PhotoService {
     validatePhotoUrl(url);
     // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
     if (fileStorageService.isDataUrl(url)) {
-      url = fileStorageService.storeDataUrl(url);
+      url = fileStorageService.storeDataUrl(url, userId);
     }
     long count = photoMapper.selectCount(new LambdaQueryWrapper<Photo>()
         .eq(Photo::getTripId, tripId));

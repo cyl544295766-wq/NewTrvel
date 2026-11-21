@@ -13,8 +13,12 @@ import com.travelos.service.TripMemberService;
 import com.travelos.service.TripService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -22,9 +26,12 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TimeZone;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -59,9 +66,6 @@ public class AiChatService {
       Map.entry('四', 4), Map.entry('五', 5), Map.entry('六', 6), Map.entry('七', 7),
       Map.entry('八', 8), Map.entry('九', 9), Map.entry('十', 10));
 
-  /** 每用户同时最多 1 个进行中的对话请求（并发限流）。 */
-  private final Set<String> inFlightUsers = ConcurrentHashMap.newKeySet();
-
   private final AiConversationMapper conversationMapper;
   private final AiMessageMapper messageMapper;
   private final LlmGatewayService llm;
@@ -72,12 +76,20 @@ public class AiChatService {
   private final AiPromptBuilder promptBuilder;
   private final AiToolRegistry toolRegistry;
   private final ItineraryDraftEngine draftEngine;
+  private final AiTaskManager taskManager;
+  private final AiIdempotencyService idempotency;
+  /** 草稿应用业务事务（业务+审计+最终落账原子；与独立的抢占/释放自动提交分开）。 */
+  private final TransactionTemplate businessTx;
+  /** applying 租约过期阈值（毫秒）：超过才允许条件接管（ai.draft.apply-stale-ms）。 */
+  private final long draftApplyStaleMs;
 
   public AiChatService(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       LlmGatewayService llm, TripService tripService, TripDayService tripDayService,
       TripMemberService tripMemberService, AuditService auditService,
       AiPromptBuilder promptBuilder, AiToolRegistry toolRegistry,
-      ItineraryDraftEngine draftEngine) {
+      ItineraryDraftEngine draftEngine, AiTaskManager taskManager,
+      AiIdempotencyService idempotency, PlatformTransactionManager transactionManager,
+      @Value("${ai.draft.apply-stale-ms:60000}") long draftApplyStaleMs) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.llm = llm;
@@ -88,6 +100,11 @@ public class AiChatService {
     this.promptBuilder = promptBuilder;
     this.toolRegistry = toolRegistry;
     this.draftEngine = draftEngine;
+    this.taskManager = taskManager;
+    this.idempotency = idempotency;
+    this.businessTx = transactionManager == null ? null
+        : new TransactionTemplate(transactionManager);
+    this.draftApplyStaleMs = Math.max(100, draftApplyStaleMs);
   }
 
   // ==================== 会话管理 ====================
@@ -178,19 +195,229 @@ public class AiChatService {
     return Map.of("success", true);
   }
 
-  // ==================== 发送消息（工具循环） ====================
+  // ==================== 发送消息（幂等 + 组合准入 + 有界执行） ====================
 
+  /**
+   * 普通发送（同步等待结果）：校验 → 幂等回放/占位 → 组合准入（429 在此同步返回，
+   * 不写任何消息）→ 有界线程池执行 → 等待结果。幂等状态由执行体统一收尾。
+   */
   public Map<String, Object> sendMessage(String conversationId, String userId,
       Map<String, Object> dto) {
-    return sendMessageStream(conversationId, userId, dto, null);
+    String content = validateContent(dto);
+    String clientRequestId = extractClientRequestId(dto);
+    requireOwnedConversation(conversationId, userId); // 先做归属校验，避免无效键残留
+
+    AiIdempotencyService.Begin begin =
+        idempotency.begin(userId, conversationId, clientRequestId);
+    Map<String, Object> replay = replayOrConflict(begin);
+    if (replay != null) {
+      return replay;
+    }
+
+    AiTaskManager.TaskHandle handle;
+    try {
+      handle = submitTurn(conversationId, userId, content, begin, null, null, null);
+    } catch (ApiException ex) {
+      idempotency.abandon(userId, conversationId, begin); // 准入被拒：只清本请求自己的占位
+      throw ex;
+    }
+    long waitMs = Math.max(5_000L,
+        handle.context().deadlineMillis() - System.currentTimeMillis()
+            + llm.readTimeoutMs() + 10_000L);
+    try {
+      Map<String, Object> result = handle.await(waitMs);
+      if (result == null) {
+        // 执行体被取消（服务关闭/中断）：结果不可用，保持 cancelled 语义
+        idempotency.markCancelled(userId, conversationId, begin);
+        throw ApiException.serviceUnavailable("请求已取消，请稍后重试");
+      }
+      return result;
+    } catch (CancellationException ex) {
+      idempotency.markCancelled(userId, conversationId, begin);
+      throw ApiException.serviceUnavailable("请求已取消，请稍后重试");
+    } catch (TimeoutException ex) {
+      handle.cancel("await-timeout");
+      idempotency.markFailed(userId, conversationId, begin);
+      throw ApiException.serviceUnavailable("AI 生成超时，请稍后重试");
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      handle.cancel("interrupted");
+      idempotency.markFailed(userId, conversationId, begin);
+      throw ApiException.serviceUnavailable("请求已中断，请稍后重试");
+    } catch (ExecutionException ex) {
+      Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+      if (cause instanceof AiCancelledException) {
+        throw ApiException.serviceUnavailable("请求已取消，请稍后重试");
+      }
+      if (cause instanceof AiTimeoutException) {
+        // 入口/排队即超时（尚未写入任何消息）：明确 503，不留半截数据
+        throw ApiException.serviceUnavailable("AI 生成排队超时，请稍后再试");
+      }
+      if (cause instanceof ApiException api) {
+        throw api; // 幂等状态已由执行体收尾（failed/…）
+      }
+      if (cause instanceof RuntimeException runtime) {
+        throw runtime;
+      }
+      throw new IllegalStateException(cause);
+    }
   }
 
   /**
-   * 流式变体：onDelta 实时回调正文增量（传 null 即非流式）。
-   * 校验、并发闸、持久化与草稿装配与 sendMessage 完全一致。
+   * 流式发送：<b>准入与幂等前置在返回响应之前完成</b>——被限流时抛 429（统一 JSON），
+   * 而不是先 200 再用 error 事件表达。已进入流式后的运行时异常走统一 error 事件。
+   * 客户端断开（SSE 完成/超时/错误回调、delta 写失败）→ 取消任务并传播到模型与工具循环。
    */
-  public Map<String, Object> sendMessageStream(String conversationId, String userId,
-      Map<String, Object> dto, java.util.function.Consumer<String> onDelta) {
+  public SseEmitter startStream(String conversationId, String userId,
+      Map<String, Object> dto) {
+    String content = validateContent(dto);
+    String clientRequestId = extractClientRequestId(dto);
+    requireOwnedConversation(conversationId, userId);
+
+    SseEmitter emitter = new SseEmitter(taskManager.taskTimeoutMs() + 15_000L);
+    java.util.concurrent.atomic.AtomicBoolean ownComplete =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    AiIdempotencyService.Begin begin =
+        idempotency.begin(userId, conversationId, clientRequestId);
+    switch (begin.state()) {
+      case RUNNING:
+        emitAndComplete(emitter, "inprogress",
+            Map.of("clientRequestId", String.valueOf(begin.key())));
+        return emitter;
+      case SUCCEEDED:
+        emitAndComplete(emitter, "done", begin.result() == null ? Map.of() : begin.result());
+        return emitter;
+      case CANCELLED:
+        emitAndComplete(emitter, "cancelled",
+            Map.of("clientRequestId", String.valueOf(begin.key()),
+                "message", "上一次请求已停止，请以新的请求重新发送"));
+        return emitter;
+      case NEW:
+      default:
+        break;
+    }
+
+    AiTaskManager.TaskHandle handle;
+    try {
+      handle = submitTurn(conversationId, userId, content, begin,
+          (ctx, delta) -> {
+            try {
+              emitter.send(SseEmitter.event().name("delta").data(Map.of("text", delta)));
+            } catch (Exception ex) {
+              // 写失败 = 客户端断开：标记取消，下个检查点立即停止模型/工具/写库
+              ctx.cancel("client-disconnected");
+            }
+          },
+          (ctx, result) -> {
+            if (ctx.isCancelled()) {
+              return; // 已断开：不再发 done（数据已落库，幂等记录为 succeeded）
+            }
+            try {
+              emitter.send(SseEmitter.event().name("done").data(result));
+              ownComplete.set(true); // 先标记“我方正常完成”，避免 onCompletion 回调误判为断开
+              emitter.complete();
+            } catch (Exception ex) {
+              // done 事件写失败：连接已断；结果有效，不回滚
+            }
+          },
+          (ctx, error) -> {
+            // 已进入流式后的运行时异常：统一 error 事件（取消/已完成则不再发）
+            if (ctx.isCancelled() || ownComplete.get()) {
+              return;
+            }
+            String message = error instanceof com.travelos.common.ApiException api
+                ? api.getMessage()
+                : error instanceof AiTimeoutException
+                    ? "生成超时（排队等待过久），请稍后再试" : "AI 服务异常，请稍后再试";
+            try {
+              emitter.send(SseEmitter.event().name("error").data(Map.of("message", message)));
+              ownComplete.set(true);
+              emitter.complete();
+            } catch (Exception ignored) {
+              // 连接已断
+            }
+          });
+    } catch (ApiException ex) {
+      idempotency.abandon(userId, conversationId, begin);
+      throw ex; // 429/400 → 控制器直接以 JSON 返回（SSE 尚未提交）
+    }
+    final AiTaskManager.TaskHandle started = handle;
+    emitter.onCompletion(() -> {
+      if (!ownComplete.get() && !started.context().isFinished()) {
+        started.cancel("client-completed");
+      }
+    });
+    emitter.onTimeout(() -> started.cancel("client-timeout"));
+    emitter.onError(e -> started.cancel("client-error"));
+    return emitter;
+  }
+
+  /**
+   * 提交一次生成：执行体 = 工具循环 + 幂等收尾（succeeded / cancelled / failed）。
+   * deltaSink 为空即非流式；afterResult 在结果落库后、幂等成功标记前执行（流式发 done 用）；
+   * onError 在执行体以运行时异常逃逸时回调（流式发 error 事件）。
+   */
+  private AiTaskManager.TaskHandle submitTurn(String conversationId, String userId, String content,
+      AiIdempotencyService.Begin begin, java.util.function.BiConsumer<AiTaskContext, String> deltaSink,
+      java.util.function.BiConsumer<AiTaskContext, Map<String, Object>> afterResult,
+      java.util.function.BiConsumer<AiTaskContext, Throwable> onError) {
+    return taskManager.submit(userId, conversationId, begin.key(), ctx -> {
+      try {
+        Map<String, Object> result = executeTurn(ctx, conversationId, userId, content,
+            deltaSink == null ? null : delta -> deltaSink.accept(ctx, delta));
+        if (afterResult != null) {
+          afterResult.accept(ctx, result);
+        }
+        idempotency.markSucceeded(userId, conversationId, begin, result);
+        return result;
+      } catch (AiCancelledException ex) {
+        idempotency.markCancelled(userId, conversationId, begin);
+        throw ex;
+      } catch (RuntimeException ex) {
+        // 取消与失败分别落不同状态：取消不阻断同键语义（前端换新 ID），失败允许同键重试
+        if (ctx.isCancelled()) {
+          idempotency.markCancelled(userId, conversationId, begin);
+        } else {
+          idempotency.markFailed(userId, conversationId, begin);
+        }
+        if (onError != null) {
+          try {
+            onError.accept(ctx, ex);
+          } catch (Exception ignored) {
+            // 事件发送失败不改变任务状态
+          }
+        }
+        throw ex;
+      }
+    });
+  }
+
+  /** 幂等回放：非 NEW 状态给出统一结果（null = 继续执行）。 */
+  private Map<String, Object> replayOrConflict(AiIdempotencyService.Begin begin) {
+    switch (begin.state()) {
+      case RUNNING:
+        return Map.of("inProgress", true, "clientRequestId", String.valueOf(begin.key()));
+      case SUCCEEDED:
+        return begin.result() == null ? Map.of() : begin.result();
+      case CANCELLED:
+        return Map.of("cancelled", true, "clientRequestId", String.valueOf(begin.key()),
+            "message", "上一次请求已停止，请以新的请求重新发送");
+      case NEW:
+      default:
+        return null;
+    }
+  }
+
+  private void emitAndComplete(SseEmitter emitter, String name, Map<String, Object> payload) {
+    try {
+      emitter.send(SseEmitter.event().name(name).data(payload));
+      emitter.complete();
+    } catch (Exception ex) {
+      // 连接已断：幂等状态已经是权威结果，无需重试写入
+    }
+  }
+
+  private String validateContent(Map<String, Object> dto) {
     String content = dto.get("content") == null ? "" : dto.get("content").toString().trim();
     if (content.isEmpty()) {
       throw ApiException.badRequest("消息内容不能为空");
@@ -198,24 +425,35 @@ public class AiChatService {
     if (content.length() > 4000) {
       throw ApiException.badRequest("消息内容过长（最多 4000 字）");
     }
-    if (!inFlightUsers.add(userId)) {
-      throw ApiException.conflict("上一条回复还在生成中，请稍候");
-    }
-    try {
-      return doSend(conversationId, userId, content, onDelta);
-    } finally {
-      inFlightUsers.remove(userId);
-    }
+    return content;
   }
 
-  private Map<String, Object> doSend(String conversationId, String userId, String content,
-      java.util.function.Consumer<String> onDelta) {
+  private String extractClientRequestId(Map<String, Object> dto) {
+    Object raw = dto.get("clientRequestId");
+    if (raw == null) {
+      return null;
+    }
+    String value = raw.toString().trim();
+    return value.isEmpty() ? null : value;
+  }
+
+  /**
+   * 工具调用主循环（执行体）。进度检查点：每个模型调用前后、每个工具调用前后、
+   * 每次写库之前都会 {@link AiTaskContext#checkActive()}——取消后不再开始下一轮模型与工具，
+   * 超时后立即收口（恰好一条超时提示消息，不重复降级）。
+   */
+  Map<String, Object> executeTurn(AiTaskContext ctx, String conversationId, String userId,
+      String content, java.util.function.Consumer<String> onDelta) {
     AiConversation conversation = requireOwnedConversation(conversationId, userId);
 
+    // 用户消息：取消发生在写入前则直接终止（策略：未写入的不再写）
+    ctx.checkActive();
     AiMessage userMessage = insertMessage(conversationId, userId, "user", content, null, null);
+    ctx.markUserMessageWritten();
 
     // 未配置 key：友好降级为一条助手消息，不影响其他功能
     if (!llm.isEnabled()) {
+      ctx.checkActive();
       AiMessage reply = insertMessage(conversationId, userId, "assistant",
           llm.disabledMessage(), null, null);
       return Map.of("userMessage", toMessageResponse(userMessage),
@@ -236,9 +474,12 @@ public class AiChatService {
       int draftClaimRetries = 0;  /* 「声称生成了草稿但实际没调用工具」的纠正次数 */
       Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        ctx.checkActive(); // 每轮模型调用前：取消/超时立即收口
         Map<String, Object> message = onDelta == null
             ? llm.chat(llmMessages, toolRegistry.toolDefinitions())
-            : llm.chatStream(llmMessages, toolRegistry.toolDefinitions(), onDelta);
+            : llm.chatStream(llmMessages, toolRegistry.toolDefinitions(), onDelta,
+                ctx::isCancelled); // 流式读取中逐行检查取消
+        ctx.checkActive(); // 模型返回后、处理前
         List<Map<String, Object>> toolCalls = llm.extractToolCalls(message);
         String messageContent = message.get("content") == null ? ""
             : message.get("content").toString();
@@ -264,6 +505,7 @@ public class AiChatService {
           }
           finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
           String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
+          ctx.checkActive(); // 写最终回复前最后检查（取消则不写）
           finalReply = insertMessage(conversationId, userId, "assistant", finalContent,
               toolRegistry.buildReplyMeta(navigation, replyOptions), null);
           break;
@@ -277,6 +519,7 @@ public class AiChatService {
         llmMessages.add(assistantTurn);
 
         for (Map<String, Object> call : toolCalls) {
+          ctx.checkActive(); // 每个工具调用前：断开/超时后不再执行新工具
           String result = toolRegistry.executeTool(call, conversation, userId);
           if ("open_page".equals(call.get("name"))) {
             navigation = toolRegistry.extractNavigation(result);
@@ -305,6 +548,7 @@ public class AiChatService {
         } else {
           fallback = "这个请求有点复杂，我先停在这里。你可以换个说法或拆成几步再试。";
         }
+        ctx.checkActive();
         finalReply = insertMessage(conversationId, userId, "assistant", fallback,
             toolRegistry.buildReplyMeta(navigation, replyOptions), null);
       }
@@ -313,9 +557,25 @@ public class AiChatService {
       return Map.of("userMessage", toMessageResponse(userMessage),
           "assistantMessage", toMessageResponse(finalReply),
           "newMessages", newMessagesSince(conversationId, userMessage.getCreatedAt()));
+    } catch (AiCancelledException ex) {
+      throw ex; // 取消：不写降级回复（已写入的用户消息/草稿保留）
+    } catch (AiTimeoutException ex) {
+      // 总超时：恰好一条超时提示（不与其他降级重复），随后正常收尾
+      log.warn("AI task timeout after {}ms (task {})", ex.getTimeoutMs(), ctx.taskId());
+      AiMessage reply = insertMessage(conversationId, userId, "assistant",
+          "这次回复超时了（超过 " + Math.max(1, ex.getTimeoutMs() / 1000)
+              + " 秒），我先停下来。可以再发一次或把请求拆小一点。",
+          null, null);
+      return Map.of("userMessage", toMessageResponse(userMessage),
+          "assistantMessage", toMessageResponse(reply),
+          "newMessages", newMessagesSince(conversationId, userMessage.getCreatedAt()));
     } catch (ApiException ex) {
+      if (ctx.isCancelled()) {
+        throw new AiCancelledException(ctx.cancelReason());
+      }
       // 模型超时/报错/未启用：友好提示落成一条助手消息，绝不向上抛
       log.warn("AI chat degraded: {}", ex.getMessage());
+      ctx.checkActive();
       AiMessage reply = insertMessage(conversationId, userId, "assistant",
           ex.getStatusCode() == 503
               ? "AI 服务暂时不可用：" + ex.getMessage()
@@ -325,7 +585,14 @@ public class AiChatService {
           "assistantMessage", toMessageResponse(reply),
           "newMessages", newMessagesSince(conversationId, userMessage.getCreatedAt()));
     } catch (Exception ex) {
-      log.warn("AI chat failed", ex);
+      if (ctx.isCancelled()) {
+        throw new AiCancelledException(ctx.cancelReason());
+      }
+      if (ex instanceof AiTimeoutException timeout) {
+        throw timeout;
+      }
+      log.warn("AI chat failed", ex.getClass().getSimpleName());
+      ctx.checkActive();
       AiMessage reply = insertMessage(conversationId, userId, "assistant",
           "AI 服务暂时不可用，请稍后再试。行程、预订、记账等核心功能不受影响。", null, null);
       return Map.of("userMessage", toMessageResponse(userMessage),
@@ -384,56 +651,192 @@ public class AiChatService {
 
   // ==================== 草稿确认机制 ====================
 
-  /** 应用草稿：行程变更走 ItineraryDraftEngine（底层 TripPlaceService），记账/预订同理；幂等。 */
-  @Transactional
+  /**
+   * 应用草稿。状态机：<b>pending → applying → applied</b>（另有 pending → discarded，互斥）。
+   *
+   * <p><b>原子抢占</b>：调用任何行程/费用/预订业务 Service 之前，先以数据库条件更新
+   * （pending → applying + 执行令牌 + 租约起点，影响行数 = 1）抢占；并发请求只有一个赢家，
+   * 其余按最新状态返回：applied → 回放既有成功结果（不重新执行业务）、applying（未过期）→
+   * 409 进行中、discarded → 400。多实例下同一套数据库条件更新保持互斥。</p>
+   *
+   * <p><b>事务边界</b>：业务写入 + 审计 + 最终落账（applying + 本令牌 → applied + 结果 JSON）
+   * 在同一事务中——业务/落账失败整体回滚，绝不留下错误的 applied 或半应用行程；
+   * 抢占与释放为独立自动提交（失败释放后立即回到 pending 可重试）。</p>
+   *
+   * <p><b>fencing</b>：最终落账必须同时匹配 applying 与本执行令牌；被接管后的旧执行者
+   * 影响行数 = 0 → 其业务事务回滚（不产生业务副作用）、不能覆盖新执行者状态。
+   * <b>过期接管</b>：applying 超过 ai.draft.apply-stale-ms 才允许条件接管
+   * （状态 + 旧令牌 + 旧租约起点三条件，恢复者只有一个赢家）；崩溃遗留由租约恢复，
+   * 不会永久卡死，也绝不“超时改回 pending 让新旧执行者同时写业务”。</p>
+   *
+   * <p><b>结果回放</b>：成功结果持久化在 draft_apply_result，同稿重试返回与首次完全一致的
+   * 结果（历史无结果的 applied 行回退通用成功响应）。</p>
+   */
   public Map<String, Object> applyDraft(String conversationId, String messageId, String userId) {
-    AiMessage message = requireDraftMessage(conversationId, messageId, userId);
-    if ("applied".equals(message.getDraftStatus())) {
-      // 幂等：重复点击不重复写入
-      return Map.of("success", true, "status", "applied", "message", "该草稿已应用过");
+    AiMessage message = requireDraftMessage(conversationId, messageId, userId); // 授权/归属校验（不变）
+    String myToken = UUID.randomUUID().toString();
+
+    // ---- 1) 原子抢占（条件更新；失败则按最新状态决策，最多重读 6 次收敛） ----
+    boolean claimed = false;
+    AiMessage row = message; // 首轮直接用授权读到的状态（与 discard 路径对称，无额外预读）
+    for (int attempt = 0; attempt < 6 && !claimed; attempt++) {
+      if (row == null || row.getDraftStatus() == null) {
+        throw ApiException.notFound("草稿不存在");
+      }
+      switch (row.getDraftStatus()) {
+        case "applied":
+          return appliedReplay(row); // 已应用：回放既有结果，不再调用业务 Service
+        case "discarded":
+          throw ApiException.badRequest("该草稿已放弃，无法应用");
+        case "applying": {
+          if (!draftLeaseExpired(row)) {
+            throw ApiException.conflict("该草稿正在应用中，请稍后再试");
+          }
+          Date leaseAt = row.getDraftApplyStartedAt() != null
+              ? row.getDraftApplyStartedAt() : row.getCreatedAt();
+          int took = messageMapper.takeoverDraftApply(messageId, row.getDraftApplyToken(),
+              leaseAt, myToken, new Date());
+          if (took == 1) {
+            claimed = true; // 过期接管成功：本请求成为唯一执行者，旧令牌立即失效
+          } else {
+            row = messageMapper.selectById(messageId); // 接管竞争失败 → 重读最新状态
+          }
+          break;
+        }
+        case "pending": {
+          int took = messageMapper.claimDraftApply(messageId, myToken, new Date());
+          if (took == 1) {
+            claimed = true;
+          } else {
+            row = messageMapper.selectById(messageId); // 已被他人抢走 → 重读决策
+          }
+          break;
+        }
+        default:
+          throw ApiException.conflict("草稿状态异常，请刷新后重试");
+      }
     }
-    if ("discarded".equals(message.getDraftStatus())) {
-      throw ApiException.badRequest("该草稿已放弃，无法应用");
+    if (!claimed) {
+      throw ApiException.conflict("请求正在处理中，请稍后重试");
     }
+
+    // ---- 2) 业务应用 + 审计 + 最终落账（同一事务；落账 fencing 失败 → 整体回滚） ----
     Map<String, Object> draft = JsonUtil.readObject(message.getToolCalls() == null
         ? "{}" : message.getToolCalls());
     String type = String.valueOf(draft.get("type"));
-    int applied = 0;
-    if ("itinerary_change".equals(type)) {
-      String tripId = String.valueOf(draft.get("tripId"));
-      applied = draftEngine.applyItineraryChanges(tripId, draft, userId);
-      auditService.record(userId, tripId, "ai_itinerary_applied", "ai_message", messageId,
-          Map.of("changes", applied));
-    } else if ("expense".equals(type)) {
-      String tripId = String.valueOf(draft.get("tripId"));
-      draftEngine.applyExpenseDraft(tripId, draft, userId);
-      applied = 1;
-      auditService.record(userId, tripId, "ai_expense_applied", "ai_message", messageId,
-          Map.of("amount", String.valueOf(draft.getOrDefault("summary", ""))));
-    } else if ("booking".equals(type)) {
-      String tripId = String.valueOf(draft.get("tripId"));
-      draftEngine.applyBookingDraft(tripId, draft, userId);
-      applied = 1;
-      auditService.record(userId, tripId, "ai_booking_applied", "ai_message", messageId,
-          Map.of("summary", String.valueOf(draft.getOrDefault("summary", ""))));
-    } else {
-      throw ApiException.badRequest("未知草稿类型");
+    try {
+      return businessTx.execute(status -> {
+        int applied;
+        if ("itinerary_change".equals(type)) {
+          String tripId = String.valueOf(draft.get("tripId"));
+          applied = draftEngine.applyItineraryChanges(tripId, draft, userId);
+          auditService.record(userId, tripId, "ai_itinerary_applied", "ai_message", messageId,
+              Map.of("changes", applied));
+        } else if ("expense".equals(type)) {
+          String tripId = String.valueOf(draft.get("tripId"));
+          draftEngine.applyExpenseDraft(tripId, draft, userId);
+          applied = 1;
+          auditService.record(userId, tripId, "ai_expense_applied", "ai_message", messageId,
+              Map.of("amount", String.valueOf(draft.getOrDefault("summary", ""))));
+        } else if ("booking".equals(type)) {
+          String tripId = String.valueOf(draft.get("tripId"));
+          draftEngine.applyBookingDraft(tripId, draft, userId);
+          applied = 1;
+          auditService.record(userId, tripId, "ai_booking_applied", "ai_message", messageId,
+              Map.of("summary", String.valueOf(draft.getOrDefault("summary", ""))));
+        } else {
+          throw ApiException.badRequest("未知草稿类型");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("status", "applied");
+        payload.put("appliedCount", applied);
+        int fin = messageMapper.finishDraftApply(messageId, myToken,
+            JsonUtil.write(payload), new Date());
+        if (fin != 1) {
+          // 已被接管（fencing）：抛出以回滚本事务的全部业务写入，旧执行者不留副作用
+          throw ApiException.conflict("草稿应用状态已变化，请刷新后重试");
+        }
+        return payload;
+      });
+    } catch (RuntimeException ex) {
+      // ---- 3) 失败恢复：区分“提交实际成功”与“需释放重试” ----
+      AiMessage after = messageMapper.selectById(messageId);
+      if (after != null && "applied".equals(after.getDraftStatus())) {
+        // 结果未知的失败但事务已提交（或他方已完成）：回放既有结果，绝不重复执行业务
+        return appliedReplay(after);
+      }
+      try {
+        // 释放自己的占位（仅当仍持有）→ 回到 pending 立即可重试；
+        // 若已被接管/状态已变则影响行数 = 0，交给租约机制处理
+        messageMapper.releaseDraftApply(messageId, myToken);
+      } catch (RuntimeException releaseEx) {
+        log.warn("ai draft release failed: {}", releaseEx.getClass().getSimpleName());
+      }
+      throw ex;
     }
-    message.setDraftStatus("applied");
-    messageMapper.updateById(message);
-    return Map.of("success", true, "status", "applied", "appliedCount", applied);
   }
 
-  /** 放弃草稿：仅标记状态。 */
-  @Transactional
+  /**
+   * 放弃草稿：与 apply 参与同一套互斥——仅 <b>pending → discarded</b> 条件更新。
+   * apply 抢先（applying/applied）时 discard 得到 409/400，绝不覆盖；
+   * discard 先成功时 apply 抢占失败 → 400 且不产生任何业务写入。
+   * 已 discarded 重复放弃幂等返回成功。
+   */
   public Map<String, Object> discardDraft(String conversationId, String messageId, String userId) {
-    AiMessage message = requireDraftMessage(conversationId, messageId, userId);
-    if ("applied".equals(message.getDraftStatus())) {
+    requireDraftMessage(conversationId, messageId, userId); // 授权/归属校验（不变）
+    AiMessage row = null;
+    for (int attempt = 0; attempt < 4; attempt++) {
+      int rows = messageMapper.discardDraftIfPending(messageId);
+      if (rows == 1) {
+        return Map.of("success", true, "status", "discarded");
+      }
+      row = messageMapper.selectById(messageId);
+      if (row == null || row.getDraftStatus() == null) {
+        throw ApiException.notFound("草稿不存在");
+      }
+      if (!"pending".equals(row.getDraftStatus())) {
+        break; // 已被 apply 抢走或已是终态 → 按状态返回
+      }
+      // 仍为 pending：上一持有者刚释放（极小概率窗口）→ 重试抢占
+    }
+    String status = row == null ? null : row.getDraftStatus();
+    if ("discarded".equals(status)) {
+      return Map.of("success", true, "status", "discarded"); // 幂等
+    }
+    if ("applied".equals(status)) {
       throw ApiException.badRequest("该草稿已应用，无法放弃");
     }
-    message.setDraftStatus("discarded");
-    messageMapper.updateById(message);
-    return Map.of("success", true, "status", "discarded");
+    if ("applying".equals(status)) {
+      throw ApiException.conflict("该草稿正在应用中，无法放弃");
+    }
+    throw ApiException.conflict("请求正在处理中，请稍后重试");
+  }
+
+  /** 已应用草稿的重试回放：返回与首次成功完全一致的持久化结果（历史行回退通用响应）。 */
+  private Map<String, Object> appliedReplay(AiMessage row) {
+    String saved = row.getDraftApplyResult();
+    if (saved != null && !saved.isBlank()) {
+      try {
+        Map<String, Object> result = JsonUtil.readObject(saved);
+        if (result.get("success") != null) {
+          return result;
+        }
+      } catch (Exception ex) {
+        log.warn("ai draft result unreadable, use generic replay: {}", row.getId());
+      }
+    }
+    return Map.of("success", true, "status", "applied", "message", "该草稿已应用过");
+  }
+
+  /** 租约是否过期：超过 ai.draft.apply-stale-ms 才允许接管；无租约信息（防御）视为可接管。 */
+  private boolean draftLeaseExpired(AiMessage row) {
+    Date startedAt = row.getDraftApplyStartedAt() != null
+        ? row.getDraftApplyStartedAt() : row.getCreatedAt();
+    if (startedAt == null) {
+      return true;
+    }
+    return System.currentTimeMillis() - startedAt.getTime() > draftApplyStaleMs;
   }
 
   /**

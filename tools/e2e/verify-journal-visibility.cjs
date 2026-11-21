@@ -93,21 +93,27 @@ async function main() {
   one = await api('GET', '/api/journals/' + jPriv.id, null, D.token);
   check(one.status === 403, 'D 看私有篇 → 403');
 
-  console.log('\n=== 5. 可见性修改与名单校验 ===');
-  let r = await api('PATCH', `/api/trips/${trip.id}/journals/${jSpec.id}`,
+  console.log('\n===5 可见性修改与名单校验（现行契约：全局 PATCH /api/journals/{id} + 编辑锁） ===');
+  // 现行权限模型：全局更新走 PATCH /api/journals/{journalId}，且必须先持有编辑锁（collab 服务）
+  const lockA = await api('POST', `/api/journals/${jSpec.id}/edit-lock`, null, A.token);
+  check(lockA.status === 200, '作者获取编辑锁 200');
+  let r = await api('PATCH', `/api/journals/${jSpec.id}`,
     { visibility: 'specified', visibleFriendIds: [D.id] }, A.token);
   check(r.status === 400 && /不是你的好友/.test(r.message), '指定非好友 → 400「所选用户均不是你的好友」');
-  r = await api('PATCH', `/api/trips/${trip.id}/journals/${jSpec.id}`,
+  r = await api('PATCH', `/api/journals/${jSpec.id}`,
     { visibility: 'specified', visibleFriendIds: [] }, A.token);
   check(r.status === 400 && /至少选择一位/.test(r.message), '指定但名单为空 → 400');
-  r = await api('PATCH', `/api/trips/${trip.id}/journals/${jSpec.id}`,
+  r = await api('PATCH', `/api/journals/${jSpec.id}`,
     { visibility: 'friends' }, A.token);
   check(r.status === 200, '改为好友可见 200');
+  await api('DELETE', `/api/journals/${jSpec.id}/edit-lock`, null, A.token);
   one = await api('GET', '/api/journals/' + jSpec.id, null, B.token);
   check(one.status === 200, 'B（好友）随之可见');
-  r = await api('PATCH', `/api/trips/${trip.id}/journals/${jPublic.id}`, { visibility: 'no_such' }, A.token);
+  const lockB = await api('POST', `/api/journals/${jPublic.id}/edit-lock`, null, A.token);
+  check(lockB.status === 200, '再次获取编辑锁（非法值用例前置）');
+  r = await api('PATCH', `/api/journals/${jPublic.id}`, { visibility: 'no_such' }, A.token);
   check(r.status === 400, '非法可见性值 → 400');
-
+  await api('DELETE', `/api/journals/${jPublic.id}/edit-lock`, null, A.token);
   console.log('\n=== 6. 清理 ===');
   await api('DELETE', `/api/trips/${trip.id}`, null, A.token);
   for (const u of [A, B, C, D]) await api('POST', '/api/auth/deactivate', { password: 'friend1234' }, u.token);

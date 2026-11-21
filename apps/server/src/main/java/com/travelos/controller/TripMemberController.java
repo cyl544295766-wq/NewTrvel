@@ -3,6 +3,7 @@ package com.travelos.controller;
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import com.travelos.trip.RequireTripRole;
+import com.travelos.trip.TripPermission;
 import com.travelos.service.TripMemberService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,7 +32,7 @@ public class TripMemberController {
     return tripMemberService.findMembers(tripId, user.id());
   }
 
-  @RequireTripRole({"owner", "admin", "member"})
+  @RequireTripRole({TripPermission.OWNER, TripPermission.ADMIN})
   @PostMapping
   public Map<String, Object> invite(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
@@ -44,7 +45,7 @@ public class TripMemberController {
         username.toString(), role == null ? null : role.toString());
   }
 
-  @RequireTripRole({"owner", "admin", "member"})
+  @RequireTripRole({TripPermission.OWNER, TripPermission.ADMIN})
   @PatchMapping("/{memberId}/role")
   public Map<String, Object> updateRole(@PathVariable String tripId,
       @PathVariable String memberId, @RequestBody Map<String, Object> dto,
@@ -56,7 +57,7 @@ public class TripMemberController {
     return tripMemberService.updateRole(tripId, memberId, role.toString(), user.id());
   }
 
-  @RequireTripRole({"owner", "admin", "member"})
+  @RequireTripRole({TripPermission.OWNER, TripPermission.ADMIN})
   @DeleteMapping("/{memberId}")
   public Map<String, Object> remove(@PathVariable String tripId, @PathVariable String memberId,
       @CurrentUser UserContext user) {

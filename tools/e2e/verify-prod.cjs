@@ -66,6 +66,9 @@ async function main() {
   await api('POST', `/api/trips/${TEMP}/days/generate`, {});
   const days = (await api('GET', `/api/trips/${TEMP}/days`)).json.days || [];
   check(days.length === 3, '行程天生成 3 天');
+  // 天级编辑互斥（TripPlaceController）：往某天加地点必须先持有该天的编辑锁（真实 UI 流程）
+  const lock = await api('POST', `/api/trips/${TEMP}/days/${days[0].id}/edit-lock`, {});
+  check(lock.status === 200, '获取天编辑锁 200');
   const p1 = await api('POST', `/api/trips/${TEMP}/places`, {
     tripDayId: days[0].id, name: '布达拉宫', type: 'attraction',
     longitude: 91.1169468, latitude: 29.6571781
@@ -74,6 +77,7 @@ async function main() {
     tripDayId: days[0].id, name: '大昭寺', type: 'attraction',
     longitude: 91.1313060, latitude: 29.6529325
   });
+  await api('DELETE', `/api/trips/${TEMP}/days/${days[0].id}/edit-lock`);
   check(p1.status === 200, '添加带坐标地点 ×2');
   const daysAfter = (await api('GET', `/api/trips/${TEMP}/days`)).json.days;
   const withCoord = daysAfter[0].places.filter(p => p.latitude != null && p.longitude != null).length;
@@ -135,14 +139,14 @@ async function main() {
   await page.goto(ORIGIN + '/home/', { waitUntil: 'networkidle', timeout: 30000 });
   await page.waitForTimeout(800);
   const home = await page.evaluate(() => ({
-    statsInHero: !!document.querySelector('.hero .stats'),
+    statsInHero: !!document.querySelector('.stats a.stat'),
     statLinks: Array.from(document.querySelectorAll('a.stat')).map(a => a.getAttribute('href')),
     sideLogout: !!document.getElementById('sideLogout'),
-    sticky: getComputedStyle(document.querySelector('.side')).position
+    sticky: document.querySelector('.topbar') ? getComputedStyle(document.querySelector('.topbar')).position : null
   }));
-  check(home.statsInHero, '首页统计条已融入 Hero 背景图');
+  check(home.statsInHero, '首页统计四联已渲染');
   check(home.statLinks.join() === '/trips/,/expenses/,/stats/,/packing/', '统计卡跳转链接正确');
-  check(home.sideLogout && home.sticky === 'sticky', '侧栏退出按钮可见且吸附视口');
+  check(home.sideLogout && home.sticky === 'sticky', '顶栏退出按钮可见且顶栏吸附视口');
 
   // 地图页（临时行程，2 个带坐标地点）
   await page.goto(ORIGIN + '/map/?trip=' + TEMP, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -161,7 +165,7 @@ async function main() {
   await page.waitForSelector('#modules .module', { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1200);
   const badges = (await page.locator('#modules .module .badge').allTextContents()).map(s => s.trim());
-  check(badges.length === 8 && !badges.includes('–'), '行程详情 8 模块计数真实：' + badges.join(' | '));
+  check(badges.length === 9 && !badges.includes('–'), '行程详情 9 模块计数真实：' + badges.join(' | '));
   check(errors.length === 0, '访问页面无 JS 报错' + (errors.length ? '（' + errors[0] + '）' : ''));
   await browser.close();
 

@@ -125,8 +125,9 @@ GitHub push(main)
    → 健康检查失败则自动回滚到上一版 jar
 ```
 
-服务器侧：Nginx 监听 80，`/api/` 反代到本机 3000，其余走静态文件；
-systemd 托管后端进程。细节见 `deploy/服务器初始化手册.md`。
+服务器侧：Nginx 监听 **8082**（80 归其他项目整合页），`/api/` 与 `/files/` 反代到本机
+**3001**，其余走静态文件；systemd 托管后端进程。细节见 `deploy/服务器初始化手册.md`。
 
-> 端口差异：本地 `.env` 中 `APP_PORT=3001`（配合 `start.cmd`），
-> 生产 `deploy/app.env.example` 中为 `3000`（配合 Nginx 反代）。由环境变量控制，代码无需改动。
+> 端口约定：本地 `.env` 与生产 `/opt/travel-os/.env`（模板 `deploy/app.env.example`）的
+> `APP_PORT` 均为 **3001**；对外入口由 Nginx 监听 **8082**。3000 已被其他项目占用，
+> 由环境变量控制，代码无需改动。

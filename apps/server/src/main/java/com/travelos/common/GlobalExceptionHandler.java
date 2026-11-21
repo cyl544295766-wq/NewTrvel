@@ -26,7 +26,13 @@ public class GlobalExceptionHandler {
     body.put("message", ex.getMessage());
     body.put("error", HttpStatus.resolve(ex.getStatusCode()).getReasonPhrase());
     body.put("statusCode", ex.getStatusCode());
-    return ResponseEntity.status(ex.getStatusCode()).body(body);
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.getStatusCode());
+    // 限流（429）：携带 Retry-After，客户端据此退避；其余错误不受影响
+    if (ex.getRetryAfterSeconds() != null) {
+      builder.header(org.springframework.http.HttpHeaders.RETRY_AFTER,
+          String.valueOf(ex.getRetryAfterSeconds()));
+    }
+    return builder.body(body);
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

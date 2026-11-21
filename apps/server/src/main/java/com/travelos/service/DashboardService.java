@@ -37,6 +37,9 @@ import java.util.TimeZone;
 @Service
 public class DashboardService {
 
+  /** 人民币累计口径：与 TravelStatsService.PRIMARY_CURRENCY 保持一致，仅精确等于 "CNY"。 */
+  private static final String PRIMARY_CURRENCY = "CNY";
+
   private final TripMapper tripMapper;
   private final TripMemberMapper tripMemberMapper;
   private final UserMapper userMapper;
@@ -77,22 +80,40 @@ public class DashboardService {
     Map<String, Trip> tripMap = loadTrips(memberships);
     Map<String, User> userMapByPayer = new LinkedHashMap<>();
 
-    List<TripMember> recent = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
-        .eq(TripMember::getUserId, userId)
-        .inSql(TripMember::getTripId, "SELECT id FROM trips WHERE deleted_at IS NULL")
-        .last("LIMIT 8"));
-    recent.sort((left, right) -> {
+    // 最近行程：在用户全部可访问（未删除）的行程中完成排序后再截取展示数量。
+    // 原实现先 `LIMIT 8`（无排序）再内存排序截3条——用户行程超过8个时，真正应展示的
+    // 行程可能不在候选集中；这里直接复用上方已批量载入的 memberships + tripMap，不新增查询。
+    List<TripMember> ranked = new ArrayList<>(memberships);
+    ranked.sort((left, right) -> {
       Trip leftTrip = tripMap.get(left.getTripId());
       Trip rightTrip = tripMap.get(right.getTripId());
-      Date leftKey = leftTrip == null ? new Date(0) : leftTrip.getUpdatedAt();
-      Date rightKey = rightTrip == null ? new Date(0) : rightTrip.getUpdatedAt();
-      int byFavorite = Boolean.compare(
-          rightTrip != null && Boolean.TRUE.equals(rightTrip.getIsFavorite()),
-          leftTrip != null && Boolean.TRUE.equals(leftTrip.getIsFavorite()));
-      return byFavorite != 0 ? byFavorite : rightKey.compareTo(leftKey);
+      // 1) 收藏优先（保持原语义）
+      boolean leftFavorite = leftTrip != null && Boolean.TRUE.equals(leftTrip.getIsFavorite());
+      boolean rightFavorite = rightTrip != null && Boolean.TRUE.equals(rightTrip.getIsFavorite());
+      int byFavorite = Boolean.compare(rightFavorite, leftFavorite);
+      if (byFavorite != 0) {
+        return byFavorite;
+      }
+      // 2) 更新时间降序；为空视为最早（保持原语义，并修复原实现在 updatedAt 为 null 时的 NPE）
+      Date leftKey = leftTrip == null || leftTrip.getUpdatedAt() == null
+          ? new Date(0) : leftTrip.getUpdatedAt();
+      Date rightKey = rightTrip == null || rightTrip.getUpdatedAt() == null
+          ? new Date(0) : rightTrip.getUpdatedAt();
+      int byUpdated = rightKey.compareTo(leftKey);
+      if (byUpdated != 0) {
+        return byUpdated;
+      }
+      // 3) 稳定兜底：更新时间相同（或都为空）→ 行程 id 降序（雪花 id 时间有序 ≈ 更晚创建在前），
+      //    保证刷新后顺序不随机变化
+      String leftId = left.getTripId() == null ? "" : left.getTripId();
+      String rightId = right.getTripId() == null ? "" : right.getTripId();
+      return rightId.compareTo(leftId);
     });
-    List<Map<String, Object>> recentTrips = recent.stream().limit(3)
-        .map(member -> tripResponse(tripMap.get(member.getTripId())))
+    List<Map<String, Object>> recentTrips = ranked.stream()
+        .map(member -> tripMap.get(member.getTripId()))
+        .filter(trip -> trip != null) // 批量载入缺失（如查询间隙被删）的行程不进结果、不输出空对象
+        .limit(3)
+        .map(this::tripResponse)
         .toList();
 
     List<TripMember> upcoming = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
@@ -134,7 +155,13 @@ public class DashboardService {
       }
       for (TripExpense expense : expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
           .in(TripExpense::getTripId, tripIds))) {
-        totalExpenseCents += Math.round(expense.getAmount().doubleValue() * 100);
+        if (!PRIMARY_CURRENCY.equals(expense.getCurrency())) {
+          // 口径与 TravelStatsService 一致（PRIMARY_CURRENCY.equals）：首页「仅统计 CNY 花费」——
+          // 只有精确等于 "CNY" 才计入人民币累计；NULL/空串/外币不折算、不混入
+          // （最近费用明细仍按原币透出真实金额与币种）。
+          continue;
+        }
+        totalExpenseCents += toCents(expense.getAmount());
       }
       List<TripExpense> recentExpenseRows = expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
           .in(TripExpense::getTripId, tripIds)
@@ -221,8 +248,10 @@ public class DashboardService {
 
     Map<String, Object> stats = new LinkedHashMap<>();
     stats.put("tripCount", memberships.size());
-    stats.put("totalExpenseAmount", String.format(java.util.Locale.ROOT, "%.2f",
-        totalExpenseCents / 100.0));
+    // 分 → 展示金额：BigDecimal.valueOf(cents, 2) 精确构造，Fmt.money 统一 HALF_UP 两位小数
+    //（与费用明细同一金额约定；不再经过 double 除法）
+    stats.put("totalExpenseAmount",
+        Fmt.money(java.math.BigDecimal.valueOf(totalExpenseCents, 2)));
     stats.put("totalDays", sumTripDays(tripMap));
     stats.put("pendingPackingItemCount", pendingPackingItemCount);
     stats.put("unreadNotificationCount", unreadCount);
@@ -271,6 +300,18 @@ public class DashboardService {
     map.put("createdAt", expense.getCreatedAt());
     map.put("payerDisplayName", payer == null ? null : payer.getDisplayName());
     return map;
+  }
+
+  /**
+   * BigDecimal → 分（long）：先按项目金额约定 HALF_UP 保留 2 位（同 {@link Fmt#money}），
+   * 再取 unscaledValue 得到精确的最小货币单位——不使用 {@code doubleValue() * 100}，
+   * 避免二进制浮点误差（0.1+0.2 类金额在分账累加中必须精确）。
+   */
+  private static long toCents(java.math.BigDecimal amount) {
+    if (amount == null) {
+      return 0;
+    }
+    return amount.setScale(2, java.math.RoundingMode.HALF_UP).unscaledValue().longValue();
   }
 
   private long sumTripDays(Map<String, Trip> tripMap) {

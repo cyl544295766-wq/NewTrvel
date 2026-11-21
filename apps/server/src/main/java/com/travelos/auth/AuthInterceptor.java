@@ -11,6 +11,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -25,6 +26,8 @@ import java.util.Map;
 public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumentResolver {
 
   public static final String USER_ATTRIBUTE = "travelos.currentUser";
+  /** 已通过校验的当前请求令牌（Bearer 或 Cookie），供 /api/auth/session 重设 Cookie 复用。 */
+  public static final String TOKEN_ATTRIBUTE = "travelos.currentToken";
 
   private final String jwtSecret;
   private final String cookieName;
@@ -41,6 +44,22 @@ public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumen
   @Override
   public boolean preHandle(@NonNull HttpServletRequest request,
       @NonNull HttpServletResponse response, @NonNull Object handler) {
+    try {
+      return authorize(request);
+    } catch (ApiException ex) {
+      if (handler instanceof HandlerMethod) {
+        // Controller 链路：交给 GlobalExceptionHandler 统一渲染 JSON 401
+        throw ex;
+      }
+      // 静态资源（/files/** 图片、文档 iframe 等）没有 advice 通道——
+      // 抛出的未处理异常会被 Tomcat 变成 500；这里直接以 401 结束响应。
+      response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+      return false;
+    }
+  }
+
+  /** 校验 Bearer/Cookie 令牌；失败抛 {@link ApiException}，成功返回 true 并挂载 UserContext。 */
+  private boolean authorize(@NonNull HttpServletRequest request) {
     String token = readToken(request);
     if (token == null) {
       throw ApiException.unauthorized("Unauthorized");
@@ -71,6 +90,7 @@ public class AuthInterceptor implements HandlerInterceptor, HandlerMethodArgumen
     // 桥接 MyBatis-Plus 数据权限拦截器（afterCompletion 清理，防线程复用串号）
     com.travelos.common.TripScopeContext.setUserId(user.getId());
     request.setAttribute(USER_ATTRIBUTE, new UserContext(sub.toString(), username.toString(), user.getRole()));
+    request.setAttribute(TOKEN_ATTRIBUTE, token);
     return true;
   }
 

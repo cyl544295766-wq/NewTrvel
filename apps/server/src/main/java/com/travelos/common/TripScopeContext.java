@@ -1,5 +1,7 @@
 package com.travelos.common;
 
+import java.util.function.Supplier;
+
 /**
  * 请求级行程数据范围上下文（ThreadLocal 桥接）。
  *
@@ -40,6 +42,17 @@ public final class TripScopeContext {
     setBypassed(true);
     try {
       action.run();
+    } finally {
+      setBypassed(previous);
+    }
+  }
+
+  /** 与 {@link #runBypassed(Runnable)} 相同，但支持返回值（文件授权需要跨行程查询）。 */
+  public static <T> T callBypassed(Supplier<T> action) {
+    boolean previous = isBypassed();
+    setBypassed(true);
+    try {
+      return action.get();
     } finally {
       setBypassed(previous);
     }

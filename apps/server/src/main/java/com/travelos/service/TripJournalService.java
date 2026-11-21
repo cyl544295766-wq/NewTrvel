@@ -227,6 +227,48 @@ public class TripJournalService {
     });
   }
 
+  /**
+   * 照片是否被一篇「对查看者可见」的游记引用（/files/** 对象级授权用）。
+   * 链接表与判定均有界（单图最多扫 20 条链接）；草稿与私有游记仅作者可见。
+   */
+  public boolean canViewPhoto(String photoId, String viewerId) {
+    if (photoId == null || viewerId == null) {
+      return false;
+    }
+    return bypassed(() -> {
+      List<TripJournalPhoto> links = journalPhotoMapper.selectList(
+          new LambdaQueryWrapper<TripJournalPhoto>()
+              .eq(TripJournalPhoto::getPhotoId, photoId)
+              .last("LIMIT 20"));
+      for (TripJournalPhoto link : links) {
+        TripJournal journal = journalMapper.selectById(link.getJournalId());
+        if (journal != null && canView(journal, viewerId)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  /** 作者是否有任一攻略对查看者可见（公开攻略作者头像授权用，最多扫 50 篇）。 */
+  public boolean canViewAnyJournalByAuthor(String authorId, String viewerId) {
+    if (authorId == null || viewerId == null) {
+      return false;
+    }
+    return bypassed(() -> {
+      List<TripJournal> journals = journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
+          .eq(TripJournal::getAuthorId, authorId)
+          .orderByDesc(TripJournal::getUpdatedAt)
+          .last("LIMIT 50"));
+      for (TripJournal journal : journals) {
+        if (canView(journal, viewerId)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
   private String normalizeVisibility(Object raw) {
     String value = raw == null ? "private" : raw.toString().trim();
     if (!VISIBILITIES.contains(value)) {

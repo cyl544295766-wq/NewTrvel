@@ -7,6 +7,7 @@
 const TOKEN_KEY  = 'travelos.token';
 const USER_KEY   = 'travelos.user';
 const API_BASE   = '/api';        // 由静态服务器或 nginx 反代到 Spring 3001
+const SESSION_KEY = 'travelos.cookieSession'; // 本标签页内已确认 Cookie 会话就绪（防重复调用）
 
 /** 读取当前 token（无则 null） */
 function getToken() {
@@ -17,12 +18,17 @@ function getToken() {
 function setAuth(token, user) {
   if (token) localStorage.setItem(TOKEN_KEY, token);
   if (user)  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  // 登录/注册响应同时下发了 HttpOnly Cookie（后端 AuthController），本轮会话无需再补建
+  if (token && token !== 'cookie') {
+    try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (_) { /* 忽略隐私模式 */ }
+  }
 }
 
 /** 清除登录态（登出/注销） */
 function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* 忽略隐私模式 */ }
 }
 
 /** 当前登录用户（无则 null） */
@@ -42,7 +48,9 @@ async function apiFetch(path, { method = 'GET', body, headers = {} } = {}) {
   const token = getToken();
   const opts = {
     method,
-    credentials: 'omit',          // 不再依赖 cookie，跨域更可控
+    // 同源请求携带 Cookie：登录/注册的 Set-Cookie 需要浏览器保存，图片/文档/通知
+    // SSE 也依赖同源 Cookie 通道（img/iframe/EventSource 无法设置 Authorization 头）
+    credentials: 'same-origin',
     headers: {
       'Accept': 'application/json',
       ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
@@ -98,6 +106,52 @@ function humanError(err) {
   return String(err.message || err);
 }
 
+/**
+ * 确保 Web 端存在可用的同源 Cookie 会话（img/iframe/EventSource 的鉴权通道）。
+ *
+ * 背景：修复发布前登录的用户只有 localStorage 里的 Bearer Token，浏览器里没有
+ * HttpOnly Cookie——普通 API 正常，但 /files/** 与通知 SSE 持续 401。
+ * 这里在受保护页面初始化时调用 POST /api/auth/session（带 Bearer），后端校验通过后
+ * 用同一令牌重设 HttpOnly Cookie，不签发新 Token。
+ *
+ * 返回 true = Cookie 会话已就绪（或无需处理，如 'cookie' 占位登录态）；
+ * 返回 false = 建立 failed（令牌无效被 401 → 已清理本地登录态；或网络故障）。
+ * 幂等：本轮标签页内成功过一次即短路（sessionStorage 标记）；并发调用共享同一请求。
+ */
+let ensureSessionInFlight = null;
+async function ensureSession() {
+  const token = getToken();
+  if (!token) return false;
+  if (token === 'cookie') return true; // 占位登录态：Cookie 由后端校验，失败走统一 401 流程
+  try {
+    if (sessionStorage.getItem(SESSION_KEY) === '1') return true;
+  } catch (_) { /* 隐私模式下 sessionStorage 可能不可用，继续请求 */ }
+  if (ensureSessionInFlight) return ensureSessionInFlight;
+  ensureSessionInFlight = (async function () {
+    try {
+      const res = await fetch(API_BASE + '/auth/session', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (res.ok) {
+        try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (_) { /* 忽略 */ }
+        return true;
+      }
+      if (res.status === 401) {
+        // 令牌已失效（改密/注销/禁用/过期）：与服务端同规则，清理本地登录态
+        clearAuth();
+      }
+      return false;
+    } catch (_) {
+      return false; // 网络故障：不误清登录态，Cookie 未就绪由各链路自行降级
+    } finally {
+      ensureSessionInFlight = null;
+    }
+  })();
+  return ensureSessionInFlight;
+}
+
 /** 需要登录态的页面：顶部调用一次，未登录跳登录页 */
 function requireLogin(loginUrl = '/login/') {
   if (!isLoggedIn()) {
@@ -106,6 +160,8 @@ function requireLogin(loginUrl = '/login/') {
     location.replace(loginUrl);
     return false;
   }
+  // 已登录：异步补建 Cookie 会话（不阻塞页面渲染）；文件/SSE 页面需在其后 await 确认
+  ensureSession();
   return true;
 }
 

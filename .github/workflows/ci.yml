@@ -1,7 +1,11 @@
 name: CI
 
-# 只做构建验证：编译 + 测试 + 打包。
+# 构建验证 + 测试（干净环境全量复现本地验收）：
+#   后端 job：JDK 17 + Maven 3.9.11 + 一次性 PostgreSQL 16 service → 全量迁移 → mvn -B verify
+#   前端 job：Node 22 → 通知流/AI 发送策略/文档预览测试 + E2E 错误分类回归（--classify-only 纯分类）
 # 部署不在 CI 内——用本地一键发布 deploy/publish.sh（同国链路快、零外购成本）。
+# 数据库仅本次 CI 使用（service 容器随 job 销毁）；账号/密码/库名为 CI 专用一次性值，
+# 不连接本地或生产数据库。PR（含 fork）拿不到 repo secrets，故密码用工作流内的一次性明文值。
 on:
   push:
     branches: [main]
@@ -13,9 +17,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-backend:
-    name: 构建后端 (apps/server)
+  backend:
+    name: 后端验证（临时库迁移 + mvn verify）
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: travel_os_ci
+          POSTGRES_PASSWORD: ci-only-ephemeral-9f31e2
+          POSTGRES_DB: travel_os_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U travel_os_ci -d travel_os_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +46,91 @@ jobs:
           java-version: 17
           cache: maven
 
+      - name: 安装 Maven 3.9.11（项目铁律：3.6.3 有 -source 8 内插 bug，勿用）
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz \
+            -o /tmp/maven.tgz
+          mkdir -p "$HOME/opt"
+          tar xzf /tmp/maven.tgz -C "$HOME/opt"
+          echo "$HOME/opt/apache-maven-3.9.11/bin" >> "$GITHUB_PATH"
+          mvn -v
+
+      - name: 等待 PostgreSQL 就绪（有界等待，超时即失败）
+        timeout-minutes: 3
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec "${{ job.services.postgres.id }}" pg_isready -U travel_os_ci -d travel_os_ci >/dev/null 2>&1; then
+              echo "postgres ready（第 $i 次探测）"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::PostgreSQL 60 秒内未就绪"
+          exit 1
+
+      - name: 应用全量数据库迁移（按文件名顺序，任一 SQL 失败即失败）
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          total=0
+          for f in $(find apps/server/db/migration -name '*.sql' | sort); do
+            echo "applying: $f"
+            # 与本地/生产同一约定：逐文件执行（不包全局事务，兼容 ALTER TYPE ... ADD VALUE）、
+            # ON_ERROR_STOP=1 使任何 SQL 错误令本步失败。迁移均为幂等写法，全量重放安全。
+            docker exec -i "${{ job.services.postgres.id }}" psql -U travel_os_ci -d travel_os_ci \
+              -v ON_ERROR_STOP=1 -q -f - < "$f"
+            total=$((total + 1))
+          done
+          echo "迁移完成：$total 个脚本"
+
       - name: Maven verify（编译 + 测试 + 打包）
         working-directory: apps/server
+        env:
+          # 数据源：指向本 job 的 service 容器。CI checkout 无 .env（已 gitignore），
+          # EnvLoader 找不到 .env 即空转——数据源完全由 SPRING_DATASOURCE_* 环境变量
+          # （Spring relaxed binding）提供，与 EnvLoader.applyDatabaseUrl 的行为一致
+          # （含 stringtype=unspecified，勿省略）。勿仅设置 DATABASE_URL：它只在
+          # .env 文件存在时才会被 EnvLoader 解析。
+          SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/travel_os_ci?stringtype=unspecified
+          SPRING_DATASOURCE_USERNAME: travel_os_ci
+          SPRING_DATASOURCE_PASSWORD: ci-only-ephemeral-9f31e2
+          # CI 专用安全值：非默认种子口令 + 拒绝默认弱口令/默认 JWT 密钥启动。
+          # 需要探测这些行为的测试类用 addFirst 内联属性（优先级高于环境变量）自行覆盖，不受影响。
+          SEED_ADMIN_PASSWORD: Ci-Seed-2026-x7Kq
+          SEED_ALLOW_DEFAULT_ADMIN_PASSWORD: 'false'
+          JWT_SECRET: ci-jwt-secret-8f31c2a9d74b5e60123456789abcdef0-0123456789ab
+          JWT_ALLOW_DEFAULT: 'false'
+          # 上传/落盘目录显式收敛到 CI 工作区（默认本也会落在 apps/server/data/files，这里显式化）
+          FILES_DIR: ${{ github.workspace }}/data/files-ci
         run: mvn -B verify
+
+      - name: 上传 Surefire 报告（失败时诊断，保留 7 天；不含 .env/数据目录/凭据）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: apps/server/target/surefire-reports/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  frontend:
+    name: 前端测试 + E2E 分类回归（无浏览器）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 前端行为测试（通知流 + AI 发送策略，node:test）
+        run: node --test apps/web/tests/notifications-stream.test.cjs apps/web/tests/ai-send-policy.test.cjs
+
+      - name: 文档预览类型判定测试
+        run: node apps/web/tests/doc-preview.test.cjs
+
+      - name: E2E 错误分类回归（--classify-only：纯分类，不启浏览器/不建账号/不连库/不访问地图）
+        run: node tools/e2e/selftest-map-classify.cjs --classify-only

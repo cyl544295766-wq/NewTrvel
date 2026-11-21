@@ -2,22 +2,28 @@
 const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+assertLocalOrigin(ORIGIN);
+const cleaner = new Cleaner();
+let browser = null;
 const SHOTS = 'D:/tmp/trip-form-shots';
 
 function bail(msg) { console.error('FAIL: ' + msg); process.exit(1); }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
+  const user = await registerUser(ORIGIN, 'tf');
+  cleaner.addUser(user.id);
+  const token = user.token;
   fs.mkdirSync(SHOTS, { recursive: true });
 
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
   await ctx.addInitScript(({ token, user }) => {
     localStorage.setItem('travelos.token', token);
     localStorage.setItem('travelos.user', JSON.stringify(user));
-  }, { token, user });
+  }, { token, u: { id: user.id, username: user.username, displayName: '' } });
   const page = await ctx.newPage();
   page.on('pageerror', e => console.log('[pageerror]', e.message));
 

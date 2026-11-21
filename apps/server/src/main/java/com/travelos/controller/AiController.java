@@ -55,40 +55,16 @@ public class AiController {
   }
 
   /**
-   * 流式发送（P0-4）：SSE 推送 delta 增量，结束时以 done 事件下发
-   * 完整装配结果（与非流式接口同形状），异常以 error 事件告知。
+   * 流式发送（SSE）：delta 增量、结束时 done 事件（与非流式同形状）、异常 error 事件。
+   *
+   * <p>限流/幂等准入在<b>返回响应之前</b>由 {@link AiChatService#startStream} 同步完成：
+   * 被拒绝时抛 429（统一 JSON + Retry-After），不会先 200 再用 error 事件表达。
+   * 执行交给有界线程池（AiTaskManager），不再创建裸线程；客户端断开经 SSE 回调传播取消。</p>
    */
   @PostMapping("/{conversationId}/messages/stream")
   public SseEmitter sendMessageStream(@PathVariable String conversationId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
-    SseEmitter emitter = new SseEmitter(180_000L);
-    Thread worker = new Thread(() -> {
-      try {
-        Map<String, Object> result = aiChatService.sendMessageStream(
-            conversationId, user.id(), dto,
-            delta -> {
-              try {
-                emitter.send(SseEmitter.event().name("delta").data(Map.of("text", delta)));
-              } catch (Exception ignored) {
-                /* 客户端断开：无需中断生成 */
-              }
-            });
-        emitter.send(SseEmitter.event().name("done").data(result));
-        emitter.complete();
-      } catch (Exception ex) {
-        String message = ex instanceof com.travelos.common.ApiException
-            ? String.valueOf(ex.getMessage()) : "AI 服务异常，请稍后再试";
-        try {
-          emitter.send(SseEmitter.event().name("error").data(Map.of("message", message)));
-          emitter.complete();
-        } catch (Exception ignored) {
-          /* emitter 已关闭 */
-        }
-      }
-    }, "ai-stream-" + conversationId);
-    worker.setDaemon(true);
-    worker.start();
-    return emitter;
+    return aiChatService.startStream(conversationId, user.id(), dto);
   }
 
   @DeleteMapping("/{conversationId}")

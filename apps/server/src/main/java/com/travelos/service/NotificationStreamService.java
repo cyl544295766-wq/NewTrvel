@@ -48,6 +48,39 @@ public class NotificationStreamService {
     push(userId, "unread", Map.of("reason", reason == null ? "changed" : reason));
   }
 
+  /**
+   * 会话失效（改密/注销/禁用账户）时主动结束该用户的全部通知 SSE，并整体移出注册表。
+   *
+   * <p>连接完成后浏览器 EventSource 触发 onerror，前端既有失效检测会探测普通 API：
+   * 401 = 会话已撤销 → 清登录态跳登录页（不会无限重连）；网络问题则按有限退避重连。
+   * 只摘除目标用户，不影响其他用户；同一用户的多标签页连接全部处理；
+   * 先 remove 再 complete，emitter 的 onCompletion 回调对已移除的注册表是无操作，无泄漏。</p>
+   *
+   * @return 本次结束的连接数
+   */
+  public int closeAll(String userId) {
+    List<SseEmitter> list = emittersByUser.remove(userId);
+    if (list == null || list.isEmpty()) {
+      return 0;
+    }
+    int closed = 0;
+    for (SseEmitter emitter : list) {
+      try {
+        emitter.complete();
+        closed++;
+      } catch (Exception ignored) {
+        /* 已完成/已断开的连接：注册表已整体移除，无需处理 */
+      }
+    }
+    return closed;
+  }
+
+  /** 当前用户的在线连接数（诊断与测试用；不暴露连接本身）。 */
+  public int connectionCount(String userId) {
+    List<SseEmitter> list = emittersByUser.get(userId);
+    return list == null ? 0 : list.size();
+  }
+
   private void remove(String userId, SseEmitter emitter) {
     List<SseEmitter> list = emittersByUser.get(userId);
     if (list != null) {

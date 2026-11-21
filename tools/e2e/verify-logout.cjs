@@ -1,8 +1,12 @@
 // Verify logout: sidebar entry on all pages / confirm → server logout → local cleanup → redirect / login edge / network-failure retry path
 const { chromium } = require('playwright-core');
 const fs = require('fs');
+const { assertLocalOrigin, registerUser, api, waitFor, Cleaner } = require('./lib/fixture.cjs');
 
-const ORIGIN = 'http://127.0.0.1:3001';
+const ORIGIN = (process.env.E2E_ORIGIN || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+assertLocalOrigin(ORIGIN);
+const cleaner = new Cleaner();
+let browser = null;
 let failures = 0;
 function check(cond, label) {
   console.log((cond ? '  ok  ' : '  !!  ') + label);
@@ -10,8 +14,10 @@ function check(cond, label) {
 }
 
 async function main() {
-  const { token, user } = JSON.parse(fs.readFileSync('D:/tmp/login.json', 'utf8'));
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
+  const user = await registerUser(ORIGIN, 'lg');
+  cleaner.addUser(user.id);
+  const token = user.token;
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox', '--no-proxy-server'] });
 
   /* ---- 1. 侧栏退出按钮全站存在 ---- */
   console.log('--- 1. 侧栏退出入口（抽样 5 页）');
@@ -21,7 +27,7 @@ async function main() {
     await page.evaluate(([t, u]) => {
       localStorage.setItem('travelos.token', t);
       localStorage.setItem('travelos.user', JSON.stringify(u));
-    }, [token, user]);
+    }, [token, { id: user.id, username: user.username, displayName: '' }]);
     await page.goto(ORIGIN + p, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(400);
     const ok1 = await page.evaluate(() => {
@@ -43,7 +49,7 @@ async function main() {
     await page.evaluate(([t, u]) => {
       localStorage.setItem('travelos.token', t);
       localStorage.setItem('travelos.user', JSON.stringify(u));
-    }, [token, user]);
+    }, [token, { id: user.id, username: user.username, displayName: '' }]);
     await page.goto(ORIGIN + '/home/', { waitUntil: 'domcontentloaded' });
     await page.click('#sideLogout');
     await page.waitForURL('**/login/', { timeout: 15000 });
@@ -66,7 +72,7 @@ async function main() {
     await page.evaluate(([t, u]) => {
       localStorage.setItem('travelos.token', t);
       localStorage.setItem('travelos.user', JSON.stringify(u));
-    }, [token, user]);
+    }, [token, { id: user.id, username: user.username, displayName: '' }]);
     await page.goto(ORIGIN + '/home/', { waitUntil: 'domcontentloaded' });
     await page.click('#sideLogout');
     await page.waitForURL('**/login/', { timeout: 15000 });
@@ -100,4 +106,11 @@ async function main() {
   console.log(failures ? `\n${failures} FAILED` : '\n=== ALL PASS ===');
   process.exit(failures ? 1 : 0);
 }
-main().catch(e => { console.error('\n' + (e && e.message)); process.exit(1); });
+(async () => {
+  let failed = null;
+  try { await main(); } catch (e) { failed = e; console.error(e.stack || String(e)); }
+  if (browser) { try { await browser.close(); } catch (e) { /* 忽略 */ } }
+  try { cleaner.run(); console.log('cleanup OK（残留核验 0）'); }
+  catch (e) { if (!failed) failed = e; console.error('清理失败: ' + (e && e.message)); }
+  process.exit(failed ? 1 : 0);
+})();

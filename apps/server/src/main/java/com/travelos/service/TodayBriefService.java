@@ -162,6 +162,9 @@ public class TodayBriefService {
       if (trip == null) {
         throw ApiException.notFound("旅行不存在");
       }
+      // 显式指定永远返回该行程本身，不静默切换到其他行程；无日期草稿由 modeOf 判为
+      // pre-trip（其对 startDate==null 有守卫），buildBrief 对 tripStartKey/无天数均空安全
+      // （trip_days.date 为 NOT NULL，日程与摘要路径不会收到空日期）→ 返回该行程的行前简报。
       return new Selection(trip, modeOf(trip, dateKey), null);
     }
 
@@ -192,7 +195,11 @@ public class TodayBriefService {
       String mode = modeOf(trip, dateKey);
       if ("today".equals(mode)) {
         inProgress.add(trip);
-      } else if ("pre-trip".equals(mode)) {
+      } else if ("pre-trip".equals(mode) && trip.getStartDate() != null) {
+        // start_date 为 NULL 的草稿是合法业务数据，但没有出发日可参与 upcoming 排序
+        // （否则下方 Fmt.dateKey(null) 抛 NPE → 首页简报 500），也绝不能阻断其他有效
+        // 行程的简报：不进入任何候选池 → 仅剩此类草稿时本方法返回 null → 既有
+        // emptyBrief 空态契约（mode=none + “还没有可以生成简报的旅行”）。
         upcoming.add(trip);
       }
     }

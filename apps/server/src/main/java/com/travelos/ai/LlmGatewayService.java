@@ -23,22 +23,29 @@ import java.util.Map;
 @Service
 public class LlmGatewayService {
 
-  private static final int TIMEOUT_MS = 30_000;
+  private static final int DEFAULT_TIMEOUT_MS = 30_000;
 
   private final String baseUrl;
   private final String apiKey;
   private final String model;
   private final RestTemplate restTemplate;
+  private final int connectTimeoutMs;
+  private final int readTimeoutMs;
 
   public LlmGatewayService(@Value("${llm.base-url:}") String baseUrl,
       @Value("${llm.api-key:}") String apiKey,
-      @Value("${llm.model:}") String model) {
+      @Value("${llm.model:}") String model,
+      @Value("${llm.connect-timeout-ms:30000}") int connectTimeoutMs,
+      @Value("${llm.read-timeout-ms:30000}") int readTimeoutMs) {
     this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
     this.apiKey = apiKey == null ? "" : apiKey.trim();
     this.model = model == null ? "" : model.trim();
+    this.connectTimeoutMs = connectTimeoutMs > 0 ? connectTimeoutMs : DEFAULT_TIMEOUT_MS;
+    this.readTimeoutMs = readTimeoutMs > 0 ? readTimeoutMs : DEFAULT_TIMEOUT_MS;
     SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-    factory.setConnectTimeout(TIMEOUT_MS);
-    factory.setReadTimeout(TIMEOUT_MS);
+    factory.setConnectTimeout(this.connectTimeoutMs);
+    // 单次读取超时：也是“取消后仍被阻塞读卡住”的最后兜底（最迟 readTimeout 内结束等待）
+    factory.setReadTimeout(this.readTimeoutMs);
     this.restTemplate = new RestTemplate(factory);
   }
 
@@ -104,10 +111,22 @@ public class LlmGatewayService {
    * 流式对话补全（SSE）。逐行解析上游 `data:` 增量：正文片段实时回调
    * onDelta，tool_calls 片段按 index 拼装。返回与 {@link #chat} 相同形状的
    * message（含完整 content / tool_calls），上层工具循环可无差别复用。
+   *
+   * <p><b>取消传播</b>：每读到一行前检查 {@code cancelled}；命中即抛
+   * {@link AiCancelledException} 结束解析——退出 ResponseExtractor 时 RestTemplate
+   * 会在 try-with-resources 中关闭响应连接（上游流被切断），不再读取剩余增量。
+   * 若上游正静默阻塞，则由 read-timeout 兜底在配置时限内结束等待
+   * （SimpleClientHttpRequestFactory 不保证响应线程中断，故不依赖 interrupt）。</p>
    */
-  @SuppressWarnings("unchecked")
   public Map<String, Object> chatStream(List<Map<String, Object>> messages,
       List<Map<String, Object>> tools, java.util.function.Consumer<String> onDelta) {
+    return chatStream(messages, tools, onDelta, () -> false);
+  }
+
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> chatStream(List<Map<String, Object>> messages,
+      List<Map<String, Object>> tools, java.util.function.Consumer<String> onDelta,
+      java.util.function.BooleanSupplier cancelled) {
     if (!isEnabled()) {
       throw ApiException.serviceUnavailable(disabledMessage());
     }
@@ -139,6 +158,10 @@ public class LlmGatewayService {
                     java.nio.charset.StandardCharsets.UTF_8))) {
               String line;
               while ((line = reader.readLine()) != null) {
+                if (cancelled != null && cancelled.getAsBoolean()) {
+                  // 取消：立即结束解析（退出后关闭响应连接），不再读取剩余增量
+                  throw new AiCancelledException("client-disconnected");
+                }
                 line = line.trim();
                 if (line.isEmpty() || !line.startsWith("data:")) continue;
                 String payload = line.substring(5).trim();
@@ -241,6 +264,11 @@ public class LlmGatewayService {
     return model;
   }
 
+  /** 单次读取超时（毫秒）：也是取消后被阻塞读卡住时的兜底边界。 */
+  public int readTimeoutMs() {
+    return readTimeoutMs;
+  }
+
   /** 静态工具：解析模型返回的 arguments JSON。 */
   public static Map<String, Object> parseArguments(String arguments) {
     if (arguments == null || arguments.isBlank()) {
@@ -253,8 +281,8 @@ public class LlmGatewayService {
     }
   }
 
-  /** 会话超时时长（秒），供限流与提示使用。 */
+  /** 默认单次调用超时（秒），供提示与诊断使用；实际超时由 llm.*-timeout-ms 配置。 */
   public static Duration timeout() {
-    return Duration.ofMillis(TIMEOUT_MS);
+    return Duration.ofMillis(DEFAULT_TIMEOUT_MS);
   }
 }

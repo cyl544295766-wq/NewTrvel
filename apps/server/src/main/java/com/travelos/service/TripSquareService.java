@@ -383,7 +383,10 @@ public class TripSquareService {
     trip.setStartDate(source.getStartDate());
     trip.setEndDate(source.getEndDate());
     trip.setStatus("draft");
-    trip.setCoverImageUrl(source.getCoverImageUrl());
+    // 与 TripService.duplicatedCover 同规则：受管封面仅源行程 public 时传播，
+    // 避免借「复制攻略」把非公开行程的受管文件带到新行程
+    trip.setCoverImageUrl(com.travelos.common.ManagedFileNames.isManagedUrl(source.getCoverImageUrl())
+        && !"public".equals(source.getVisibility()) ? null : source.getCoverImageUrl());
     trip.setOwnerId(userId);
     trip.setIsFavorite(false);
     trip.setVisibility("private");

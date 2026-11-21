@@ -38,6 +38,22 @@ cors:
   # P2-2：跨域白名单（逗号分隔）；留空 = 仅同源可用（默认安全态）
   allowed-origins: ${CORS_ALLOWED_ORIGINS:}
 
+security:
+  # 可信反向代理（逗号分隔的 IP 或 CIDR，如 10.0.0.0/8,127.0.0.1）。
+  # 留空（默认）= 不信任任何代理头：X-Forwarded-For / X-Real-IP 一律忽略（防伪造）。
+  trusted-proxies: ${TRUSTED_PROXIES:}
+  rate-limit:
+    # 登录组合限流（仅失败计入；窗口过期自然恢复；单实例内存计数）
+    login-window-seconds: ${AUTH_LOGIN_WINDOW_SECONDS:300}
+    login-ip-max-attempts: ${AUTH_LOGIN_IP_MAX:30}
+    login-account-ip-max-attempts: ${AUTH_LOGIN_ACCOUNT_IP_MAX:10}
+    login-global-max-attempts: ${AUTH_LOGIN_GLOBAL_MAX:600}
+    # 注册限流（按来源 IP，每次尝试计入）
+    register-window-seconds: ${AUTH_REGISTER_WINDOW_SECONDS:600}
+    register-ip-max-attempts: ${AUTH_REGISTER_IP_MAX:10}
+    # 内存键上限（超出淘汰最旧；过期键周期回收，杜绝无限增长）
+    max-tracked-keys: ${AUTH_RATE_LIMIT_MAX_KEYS:20000}
+
 travelos:
   files:
     # P3-1：上传文件落盘目录（相对路径基于工作目录；生产建议绝对路径并纳入备份）
@@ -51,11 +67,47 @@ llm:
   base-url: ${LLM_BASE_URL:}
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:}
+  # 单次模型调用的连接/读取超时（读取超时同时是“取消后阻塞读”的兜底边界）
+  connect-timeout-ms: ${LLM_CONNECT_TIMEOUT_MS:30000}
+  read-timeout-ms: ${LLM_READ_TIMEOUT_MS:30000}
+
+ai:
+  task:
+    # 整次生成的总时限（覆盖全部模型轮次、工具调用、纠正重试与写库）
+    timeout-ms: ${AI_TASK_TIMEOUT_MS:120000}
+  concurrency:
+    # 单用户同时生成数 / 全局并发上限 / 等待队列上限（超出即 429，不无限排队）
+    user-max: ${AI_USER_CONCURRENCY:1}
+    global-max: ${AI_GLOBAL_CONCURRENCY:4}
+    queue-max: ${AI_QUEUE_MAX:8}
+    reject-retry-after-seconds: ${AI_CONCURRENCY_RETRY_AFTER:5}
+  rate-limit:
+    # 单用户频率窗口（尝试次数）
+    user-window-seconds: ${AI_USER_RATE_WINDOW:60}
+    user-max-per-window: ${AI_USER_RATE_MAX:10}
+  budget:
+    # 单用户每日调用预算（累计保护；UTC 自然日窗口，进程内计数，重启清零）
+    daily-calls-per-user: ${AI_DAILY_CALLS_PER_USER:100}
+    max-tracked-keys: ${AI_BUDGET_MAX_KEYS:20000}
+    # 验收测试专用：准入时钟偏移（毫秒，生产保持 0）——用于在验收中触发 UTC 跨日预算恢复
+    test-clock-offset-ms: ${AI_BUDGET_TEST_CLOCK_OFFSET_MS:0}
+  idempotency:
+    # 幂等键保留期（超期批量清理）与 running 接管阈值（崩溃/重启遗留）
+    retention-days: ${AI_IDEMPOTENCY_RETENTION_DAYS:7}
+    stale-running-ms: ${AI_IDEMPOTENCY_STALE_MS:300000}
+  draft:
+    # 草稿应用（pending→applying→applied）的租约过期阈值：applying 超过该时长才允许条件接管。
+    # 依据：应用为本地多步数据库写入（行程多步骤/费用/预订，通常 <2s），默认 60s ≈ 30 倍余量；
+    # 崩溃遗留的 applying 由该租约恢复，不会永久卡死，也绝不“超时改回 pending 双写”。
+    apply-stale-ms: ${AI_DRAFT_APPLY_STALE_MS:60000}
 
 seed:
   admin-username: ${SEED_ADMIN_USERNAME:admin}
   admin-display-name: ${SEED_ADMIN_DISPLAY_NAME:Admin}
   admin-password: ${SEED_ADMIN_PASSWORD:admin123}
+  # 生产置 false（SEED_ALLOW_DEFAULT_ADMIN_PASSWORD=false）：管理员仍使用默认/弱口令
+  # 时拒绝启动或拒绝初始化（本地开发保持 true，仅警告）
+  allow-default-admin-password: ${SEED_ALLOW_DEFAULT_ADMIN_PASSWORD:true}
 
 app:
   user-cleanup:

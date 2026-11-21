@@ -58,10 +58,6 @@
       <artifactId>spring-security-crypto</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.github.ben-manes.caffeine</groupId>
-      <artifactId>caffeine</artifactId>
-    </dependency>
-    <dependency>
       <groupId>net.coobird</groupId>
       <artifactId>thumbnailator</artifactId>
       <version>0.4.20</version>
@@ -88,6 +84,22 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- 仅测试生效：收敛各 Spring 测试上下文的数据源占用。
+               每个 @SpringBootTest 配置组一个 Hikari 池，累积连接会打满本地 PG
+               max_connections=100（表现为尾部类 "too many clients already"）。
+               单池上限3 + 空闲30s 收缩到1，既保证并发测试吞吐又让总量有界。 -->
+          <systemPropertyVariables>
+            <spring.datasource.hikari.maximum-pool-size>3</spring.datasource.hikari.maximum-pool-size>
+            <spring.datasource.hikari.minimum-idle>1</spring.datasource.hikari.minimum-idle>
+            <spring.datasource.hikari.idle-timeout>30000</spring.datasource.hikari.idle-timeout>
+            <spring.datasource.hikari.connection-timeout>15000</spring.datasource.hikari.connection-timeout>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
     </plugins>
   </build>

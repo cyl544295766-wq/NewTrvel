@@ -1,6 +1,9 @@
 package com.travelos.controller;
 
+import com.travelos.auth.AuthInterceptor;
+import com.travelos.auth.AuthRateLimiter;
 import com.travelos.auth.AuthService;
+import com.travelos.auth.ClientIpResolver;
 import com.travelos.auth.LoginRequest;
 import com.travelos.auth.UserContext;
 import com.travelos.auth.CurrentUser;
@@ -26,10 +29,15 @@ public class AuthController {
 
   private final AuthService authService;
   private final UserPreferenceService userPreferenceService;
+  private final ClientIpResolver clientIpResolver;
+  private final AuthRateLimiter rateLimiter;
 
-  public AuthController(AuthService authService, UserPreferenceService userPreferenceService) {
+  public AuthController(AuthService authService, UserPreferenceService userPreferenceService,
+      ClientIpResolver clientIpResolver, AuthRateLimiter rateLimiter) {
     this.authService = authService;
     this.userPreferenceService = userPreferenceService;
+    this.clientIpResolver = clientIpResolver;
+    this.rateLimiter = rateLimiter;
   }
 
   /** 注册请求体：确认密码在前端完成，不传后端。 */
@@ -52,7 +60,10 @@ public class AuthController {
 
   @PostMapping("/register")
   public Map<String, Object> register(@Valid @RequestBody RegisterRequest request,
-      HttpServletResponse response) {
+      javax.servlet.http.HttpServletRequest httpRequest, HttpServletResponse response) {
+    // 注册限流：仅来源 IP 维度，计数与阈值判定原子完成（超限 429 + Retry-After）；
+    // 阈值内的业务响应（含用户名重复 409）保持原状
+    rateLimiter.attemptRegister(clientIpResolver.resolve(httpRequest));
     Map<String, Object> result = authService.register(request.username(), request.password());
     ResponseCookie cookie = authService.buildAuthCookie((String) result.get("token"));
     response.addHeader("Set-Cookie", cookie.toString());
@@ -64,8 +75,10 @@ public class AuthController {
 
   @PostMapping("/login")
   public Map<String, Object> login(@Valid @RequestBody LoginRequest request,
-      HttpServletResponse response) {
-    Map<String, Object> result = authService.login(request.username(), request.password());
+      javax.servlet.http.HttpServletRequest httpRequest, HttpServletResponse response) {
+    // 登录限流与防枚举统一在 AuthService.login 内完成（需要用户名维度与失败计数）
+    Map<String, Object> result = authService.login(request.username(), request.password(),
+        clientIpResolver.resolve(httpRequest));
     ResponseCookie cookie = authService.buildAuthCookie((String) result.get("token"));
     response.addHeader("Set-Cookie", cookie.toString());
     Map<String, Object> body = new LinkedHashMap<>();
@@ -89,6 +102,24 @@ public class AuthController {
   @PostMapping("/logout")
   public Map<String, Object> logout(HttpServletResponse response) {
     response.addHeader("Set-Cookie", authService.buildClearCookie().toString());
+    return Map.of("success", true);
+  }
+
+  /**
+   * Web Token-only 会话兼容（POST /api/auth/session）：
+   * Web 端历史会话只有 localStorage 中的 Bearer Token、没有 Cookie（修复发布前登录的用户），
+   * 导致依赖 Cookie 的图片/文档/通知 SSE 持续 401。本接口在拦截器校验通过后，
+   * 用**当前请求的同一令牌**重设 HttpOnly Cookie——不签发新 Token、不在响应体返回 Token。
+   * 无效/过期令牌由拦截器统一 401（遵循与 Bearer 相同的会话失效规则）。
+   */
+  @PostMapping("/session")
+  public Map<String, Object> establishSession(@CurrentUser UserContext currentUser,
+      javax.servlet.http.HttpServletRequest request, HttpServletResponse response) {
+    String token = (String) request.getAttribute(AuthInterceptor.TOKEN_ATTRIBUTE);
+    if (token == null || token.isBlank()) {
+      throw com.travelos.common.ApiException.unauthorized("Unauthorized");
+    }
+    response.addHeader("Set-Cookie", authService.buildAuthCookie(token).toString());
     return Map.of("success", true);
   }
 

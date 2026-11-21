@@ -15,6 +15,7 @@ import java.util.List;
 public class WebConfig implements WebMvcConfigurer {
 
   private final AuthInterceptor authInterceptor;
+  private final FileErrorDispatchInterceptor fileErrorDispatchInterceptor;
 
   @Value("${server.servlet.context-path:}")
   private String contextPath;
@@ -27,8 +28,10 @@ public class WebConfig implements WebMvcConfigurer {
   @Value("${cors.allowed-origins:}")
   private String corsAllowedOrigins;
 
-  public WebConfig(AuthInterceptor authInterceptor) {
+  public WebConfig(AuthInterceptor authInterceptor,
+      FileErrorDispatchInterceptor fileErrorDispatchInterceptor) {
     this.authInterceptor = authInterceptor;
+    this.fileErrorDispatchInterceptor = fileErrorDispatchInterceptor;
   }
 
   @Override
@@ -54,9 +57,13 @@ public class WebConfig implements WebMvcConfigurer {
         .excludePathPatterns(
             "/api/health",
             "/api/health/database",
+            "/api/health/ready",
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/logout");
+    // /files/** 的错误分派规范化：仅改文件路径的 404/400 输出结构（其余请求原样放行）
+    registry.addInterceptor(fileErrorDispatchInterceptor)
+        .addPathPatterns("/error");
   }
 
   @Override

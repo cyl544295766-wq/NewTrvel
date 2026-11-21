@@ -26,6 +26,9 @@ public class TripMemberService {
   private final AuditService auditService;
   private final FriendService friendService;
 
+  /** 共同行程扫描上限（sharesTrip 防御性有界查询）。 */
+  private static final int MAX_SHARED_TRIP_SCAN = 200;
+
   public TripMemberService(TripMemberMapper tripMemberMapper, TripMapper tripMapper,
       UserMapper userMapper, NotificationService notificationService, AuditService auditService,
       FriendService friendService) {
@@ -58,6 +61,52 @@ public class TripMemberService {
     return membership;
   }
 
+  /**
+   * 是否为行程成员（owner/admin/member/viewer 一律 true），不抛异常。
+   * 供文件对象级授权等跨入口判定复用；移出行成员后立即返回 false（即时失效）。
+   */
+  public boolean isTripMember(String tripId, String userId) {
+    if (tripId == null || userId == null) {
+      return false;
+    }
+    Long count = tripMemberMapper.selectCount(new LambdaQueryWrapper<TripMember>()
+        .eq(TripMember::getTripId, tripId)
+        .eq(TripMember::getUserId, userId));
+    return count != null && count > 0;
+  }
+
+  /**
+   * 两人是否共同持有未删除行程（头像等非行程文件的授权矩阵用）。
+   * 查询有界：单人最多扫描 200 个成员关系、200 个存活行程，超出按「无法确认 → 不放行」处理。
+   */
+  public boolean sharesTrip(String userA, String userB) {
+    if (userA == null || userB == null) {
+      return false;
+    }
+    if (userA.equals(userB)) {
+      return true;
+    }
+    List<String> tripIds = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
+            .eq(TripMember::getUserId, userA)
+            .last("LIMIT " + MAX_SHARED_TRIP_SCAN))
+        .stream().map(TripMember::getTripId).distinct().toList();
+    if (tripIds.isEmpty()) {
+      return false;
+    }
+    List<String> liveTrips = tripMapper.selectList(new LambdaQueryWrapper<Trip>()
+            .in(Trip::getId, tripIds)
+            .isNull(Trip::getDeletedAt)
+            .last("LIMIT " + MAX_SHARED_TRIP_SCAN))
+        .stream().map(Trip::getId).distinct().toList();
+    if (liveTrips.isEmpty()) {
+      return false;
+    }
+    Long shared = tripMemberMapper.selectCount(new LambdaQueryWrapper<TripMember>()
+        .eq(TripMember::getUserId, userB)
+        .in(TripMember::getTripId, liveTrips));
+    return shared != null && shared > 0;
+  }
+
   public TripMember requireTripRole(String tripId, String userId, List<String> roles) {
     TripMember membership = requireTripMember(tripId, userId);
     if (!roles.contains(membership.getRole())) {
@@ -73,9 +122,14 @@ public class TripMemberService {
 
   public Map<String, Object> invite(String tripId, String inviterUserId,
       String username, String role) {
-    String normalizedRole = role == null ? TripPermission.MEMBER : role;
+    // 第二道防线：操作者必须是 owner/admin；身份来自登录上下文，不信任请求体
+    requireTripRole(tripId, inviterUserId, TripPermission.MANAGER_ROLES);
+    String normalizedRole = role == null ? TripPermission.MEMBER : role.trim();
     if (TripPermission.OWNER.equals(normalizedRole)) {
       throw ApiException.badRequest("不能邀请所有者");
+    }
+    if (!TripPermission.ASSIGNABLE_ROLES.contains(normalizedRole)) {
+      throw ApiException.badRequest("角色不合法：仅支持 admin / member / viewer");
     }
     User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
         .eq(User::getUsername, username.trim()));
@@ -111,31 +165,42 @@ public class TripMemberService {
 
   public Map<String, Object> updateRole(String tripId, String memberId, String role,
       String operatorUserId) {
+    // 第二道防线：操作者必须是 owner/admin；身份来自登录上下文，不信任请求体
+    TripMember operator = requireTripRole(tripId, operatorUserId, TripPermission.MANAGER_ROLES);
     TripMember target = requireTargetMember(tripId, memberId);
     if (TripPermission.OWNER.equals(target.getRole())) {
       throw ApiException.badRequest("不能修改所有者角色");
     }
-    if (TripPermission.OWNER.equals(role)) {
+    requireNotPeerAdmin(operator, target);
+    String normalizedRole = role == null ? "" : role.trim();
+    if (TripPermission.OWNER.equals(normalizedRole)) {
       throw ApiException.badRequest("不能将成员改为所有者");
     }
-    target.setRole(role);
+    if (!TripPermission.ASSIGNABLE_ROLES.contains(normalizedRole)) {
+      throw ApiException.badRequest("角色不合法：仅支持 admin / member / viewer");
+    }
+    target.setRole(normalizedRole);
     target.setUpdatedAt(new Date());
     tripMemberMapper.updateById(target);
 
     Trip trip = tripMapper.selectById(tripId);
     if (trip != null) {
-      notificationService.createRoleChanged(target.getUserId(), tripId, trip.getTitle(), role);
+      notificationService.createRoleChanged(target.getUserId(), tripId, trip.getTitle(),
+          normalizedRole);
     }
     auditService.record(operatorUserId, tripId, "role_changed", "trip_member", memberId,
-        Map.of("username", usernameOf(target.getUserId()), "role", role));
+        Map.of("username", usernameOf(target.getUserId()), "role", normalizedRole));
     return toMembersResponse(tripId);
   }
 
   public Map<String, Object> remove(String tripId, String memberId, String operatorUserId) {
+    // 第二道防线：操作者必须是 owner/admin；身份来自登录上下文，不信任请求体
+    TripMember operator = requireTripRole(tripId, operatorUserId, TripPermission.MANAGER_ROLES);
     TripMember target = requireTargetMember(tripId, memberId);
     if (TripPermission.OWNER.equals(target.getRole())) {
       throw ApiException.badRequest("不能移除所有者");
     }
+    requireNotPeerAdmin(operator, target);
     tripMemberMapper.deleteById(memberId);
     auditService.record(operatorUserId, tripId, "member_removed", "trip_member", memberId,
         Map.of("username", usernameOf(target.getUserId()), "role", target.getRole()));
@@ -225,6 +290,14 @@ public class TripMemberService {
       throw ApiException.notFound("成员不存在");
     }
     return member;
+  }
+
+  /** admin 不能修改或移除同级 admin（包括自己）；owner 不受此限制。 */
+  private void requireNotPeerAdmin(TripMember operator, TripMember target) {
+    if (TripPermission.ADMIN.equals(operator.getRole())
+        && TripPermission.ADMIN.equals(target.getRole())) {
+      throw ApiException.forbidden("管理员不能管理同级成员");
+    }
   }
 
   private Map<String, Object> toMembersResponse(String tripId) {

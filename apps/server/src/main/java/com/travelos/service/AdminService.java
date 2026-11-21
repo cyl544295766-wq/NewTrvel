@@ -42,6 +42,7 @@ public class AdminService {
   private final TripExpenseMapper expenseMapper;
   private final AiMessageMapper aiMessageMapper;
   private final UserService userService;
+  private final NotificationStreamService streamService;
 
   /** 服务器本地 CI 记录文件（与静态站 /ci/ 同源；本机为部署机时可直接读盘） */
   @Value("${travelos.ci.runs-path:}")
@@ -53,13 +54,15 @@ public class AdminService {
 
   public AdminService(UserMapper userMapper, TripMapper tripMapper,
       TripJournalMapper journalMapper, TripExpenseMapper expenseMapper,
-      AiMessageMapper aiMessageMapper, UserService userService) {
+      AiMessageMapper aiMessageMapper, UserService userService,
+      NotificationStreamService streamService) {
     this.userMapper = userMapper;
     this.tripMapper = tripMapper;
     this.journalMapper = journalMapper;
     this.expenseMapper = expenseMapper;
     this.aiMessageMapper = aiMessageMapper;
     this.userService = userService;
+    this.streamService = streamService;
   }
 
   /** 超级管理员守卫：非 super_admin 一律 403。 */
@@ -146,6 +149,10 @@ public class AdminService {
     }
     target.setUpdatedAt(new Date());
     userMapper.updateById(target);
+    if ("disabled".equals(status)) {
+      // 会话撤销同步：主动结束该用户既有通知 SSE（只影响目标用户）
+      streamService.closeAll(target.getId());
+    }
     return Map.of("success", true, "message",
         "disabled".equals(status) ? "已禁用账户「" + target.getUsername() + "」" : "已启用账户「" + target.getUsername() + "」");
   }
