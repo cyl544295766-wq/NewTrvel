@@ -369,9 +369,12 @@ public class TravelStatsService {
       if (a != b) {
         return Integer.compare(a, b);
       }
-      return Double.compare(
+      int cmp = Double.compare(
           ((Number) right.get("percentage")).doubleValue(),
           ((Number) left.get("percentage")).doubleValue());
+      if (cmp != 0) return cmp;
+      // 稳定 tie-breaker：tripId 升序（雪花 id 时间有序，创建早的在前）
+      return String.valueOf(left.get("tripId")).compareTo(String.valueOf(right.get("tripId")));
     });
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("primaryCurrency", PRIMARY_CURRENCY);
