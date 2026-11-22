@@ -16,15 +16,15 @@ NewTrevl/
 ├── apps/
 │   ├── server/                      ← 服务端（Java 17 / Spring Boot + MyBatis-Plus）
 │   │   ├── src/main/java/com/travelos/
-│   │   │   ├── controller/          REST 接口层（28 个 Controller）
-│   │   │   ├── service/             业务逻辑层（30 个 Service）
+│   │   │   ├── controller/          REST 接口层（31 个 Controller）
+│   │   │   ├── service/             业务逻辑层（32 个 Service）
 │   │   │   ├── mapper/              数据访问层（MyBatis-Plus Mapper）
-│   │   │   ├── entity/              数据实体（30 张表）
-│   │   │   ├── auth/                登录态与身份（AuthInterceptor / UserContext / 限流 AuthRateLimiter）
+│   │   │   ├── entity/              数据实体（31 张表）
+│   │   │   ├── auth/                登录态与身份（AuthInterceptor / UserContext / 限流 AuthRateLimiter / huawei 华为账号登录）
 │   │   │   ├── trip/                行程级权限（成员制校验 + @RequireTripRole 切面）
 │   │   │   ├── ai/                  AI 旅行助手（会话编排 / 有界执行 AiTaskManager / 发送幂等 / 草稿应用）
 │   │   │   ├── config/              Spring 配置（静态资源 / CORS / 拦截器 / 文件404 / 种子守卫）
-│   │   │   └── common/              通用设施（异常、JSON、统一响应、文件统一错误、.env 加载）
+│   │   │   └── common/              通用设施（异常、JSON、统一响应、文件统一错误、.env 加载、载荷取值 Payloads、分页 Pagination）
 │   │   ├── src/main/resources/      application.yml、内嵌中文字体（PDF 导出用）
 │   │   ├── db/migration/            数据库迁移脚本（按文件名顺序执行，只增不改）
 │   │   ├── start-api.cmd            单独启动服务端（Maven）

@@ -86,6 +86,7 @@ GET /api/notifications?page=1&pageSize=20
 | `/api/stats` | 全站统计：`overview` / `yearly` / `monthly` / `expense-categories` |
 | `/api/notifications` | 通知列表、未读数、标记已读、全部已读、清除已读 |
 | `/api/places` | 地点搜索联想（依赖高德 Web 服务 Key，未配置返回 503） |
+| `/api/itinerary` | 整份行程快照同步（鸿蒙原生端专用）：`GET` 拉取、`PUT` 全量覆盖，按当前用户隔离 |
 | `/api/ai/conversations` | AI 助手会话与消息 |
 
 ### 行程主资源
