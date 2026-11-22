@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
@@ -76,10 +77,10 @@ public class TripDayService {
       throw ApiException.notFound("行程天数不存在");
     }
     if (dto.containsKey("title")) {
-      day.setTitle(toNullable(dto.get("title")));
+      day.setTitle(Payloads.trimmedOrNull(dto.get("title")));
     }
     if (dto.containsKey("summary")) {
-      day.setSummary(toNullable(dto.get("summary")));
+      day.setSummary(Payloads.trimmedOrNull(dto.get("summary")));
     }
     day.setUpdatedAt(new Date());
     tripDayMapper.updateById(day);
@@ -128,11 +129,4 @@ public class TripDayService {
     return map;
   }
 
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
-  }
 }

@@ -39,9 +39,7 @@ public class AdminService {
   private final UserMapper userMapper;
   private final TripMapper tripMapper;
   private final TripJournalMapper journalMapper;
-  private final TripExpenseMapper expenseMapper;
   private final AiMessageMapper aiMessageMapper;
-  private final UserService userService;
   private final NotificationStreamService streamService;
 
   /** 服务器本地 CI 记录文件（与静态站 /ci/ 同源；本机为部署机时可直接读盘） */
@@ -53,15 +51,12 @@ public class AdminService {
   private String ciBaseUrl;
 
   public AdminService(UserMapper userMapper, TripMapper tripMapper,
-      TripJournalMapper journalMapper, TripExpenseMapper expenseMapper,
-      AiMessageMapper aiMessageMapper, UserService userService,
+      TripJournalMapper journalMapper, AiMessageMapper aiMessageMapper,
       NotificationStreamService streamService) {
     this.userMapper = userMapper;
     this.tripMapper = tripMapper;
     this.journalMapper = journalMapper;
-    this.expenseMapper = expenseMapper;
     this.aiMessageMapper = aiMessageMapper;
-    this.userService = userService;
     this.streamService = streamService;
   }
 

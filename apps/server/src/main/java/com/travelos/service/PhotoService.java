@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.PhotoUtil;
@@ -57,7 +58,7 @@ public class PhotoService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    String url = string(dto.get("url"));
+    String url = Payloads.text(dto.get("url"));
     validatePhotoUrl(url);
     // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
     if (fileStorageService.isDataUrl(url)) {
@@ -68,8 +69,8 @@ public class PhotoService {
     if (count >= MAX_PHOTOS_PER_TRIP) {
       throw ApiException.badRequest("每个旅行最多上传 500 张照片");
     }
-    String tripDayId = optionalString(dto.get("tripDayId"));
-    String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+    String tripDayId = Payloads.text(dto.get("tripDayId"));
+    String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
     validateRelations(tripId, tripDayId, tripPlaceId);
     boolean isCover = dto.get("isCover") != null && Boolean.parseBoolean(dto.get("isCover").toString());
 
@@ -78,7 +79,7 @@ public class PhotoService {
     photo.setTripDayId(tripDayId);
     photo.setTripPlaceId(tripPlaceId);
     photo.setUrl(url);
-    photo.setCaption(toNullable(dto.get("caption")));
+    photo.setCaption(Payloads.trimmedOrNull(dto.get("caption")));
     photo.setShotAt(dto.get("shotAt") == null ? null : DateUtil.parse(dto.get("shotAt").toString()));
     photo.setIsCover(isCover);
     // 属主以当前登录用户为准，禁止信任前端传入的 uploaderId 等字段
@@ -99,21 +100,21 @@ public class PhotoService {
     // 数据隔离：仅上传者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, photo.getUploaderId(), userId, "上传者");
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         validateRelations(tripId, tripDayId, null);
       }
       photo.setTripDayId(tripDayId);
     }
     if (dto.containsKey("tripPlaceId")) {
-      String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+      String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
       if (tripPlaceId != null) {
         validateRelations(tripId, null, tripPlaceId);
       }
       photo.setTripPlaceId(tripPlaceId);
     }
     if (dto.containsKey("caption")) {
-      photo.setCaption(toNullable(dto.get("caption")));
+      photo.setCaption(Payloads.trimmedOrNull(dto.get("caption")));
     }
     if (dto.containsKey("shotAt")) {
       photo.setShotAt(dto.get("shotAt") == null ? null : DateUtil.parse(dto.get("shotAt").toString()));
@@ -162,7 +163,6 @@ public class PhotoService {
       throw ex;
     }
   }
-
 
   private Photo requirePhoto(String tripId, String photoId) {
     Photo photo = photoMapper.selectById(photoId);
@@ -241,19 +241,4 @@ public class PhotoService {
     return map;
   }
 
-  private String string(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
-  }
 }

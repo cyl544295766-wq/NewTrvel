@@ -102,6 +102,9 @@ public class AuthController {
   @PostMapping("/logout")
   public Map<String, Object> logout(HttpServletResponse response) {
     response.addHeader("Set-Cookie", authService.buildClearCookie().toString());
+    // 同步清掉前端可读的登录标记（华为网页登录下发）
+    response.addHeader("Set-Cookie", org.springframework.http.ResponseCookie
+        .from("travelos_sso", "").path("/").maxAge(0).build().toString());
     return Map.of("success", true);
   }
 

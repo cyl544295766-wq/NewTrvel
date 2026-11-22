@@ -80,6 +80,7 @@ GET /api/notifications?page=1&pageSize=20
 | 路径 | 说明 |
 | --- | --- |
 | `/api/auth` | 注册、登录、登出、`me`、注销账户 |
+| `/api/auth/huawei` | 华为账号登录：`POST /login` 用客户端授权码换取本应用 JWT（公开路由，无需已有会话） |
 | `/api/health` | 服务与数据库健康检查 |
 | `/api/dashboard` | 首页聚合（行程摘要、待办提醒） |
 | `/api/stats` | 全站统计：`overview` / `yearly` / `monthly` / `expense-categories` |

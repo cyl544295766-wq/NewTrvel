@@ -2,6 +2,7 @@ package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.TripScopeContext;
 import com.travelos.entity.Photo;
@@ -160,13 +161,13 @@ public class TripJournalService {
     boolean isAuthor = journal.getAuthorId() != null && journal.getAuthorId().equals(userId);
     requireEditor(journal, userId);
     if (dto.containsKey("title") && dto.get("title") != null) {
-      journal.setTitle(normalizeTitle(string(dto.get("title"))));
+      journal.setTitle(normalizeTitle(Payloads.text(dto.get("title"))));
     }
     if (dto.containsKey("content") && dto.get("content") != null) {
-      journal.setContent(validateContent(string(dto.get("content"))));
+      journal.setContent(validateContent(Payloads.text(dto.get("content"))));
     }
     if (dto.containsKey("mood")) {
-      journal.setMood(validateMood(optionalString(dto.get("mood"))));
+      journal.setMood(validateMood(Payloads.text(dto.get("mood"))));
     }
     if (isAuthor) {
       if (dto.containsKey("isDraft") && dto.get("isDraft") != null) {
@@ -399,8 +400,8 @@ public class TripJournalService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    String tripDayId = optionalString(dto.get("tripDayId"));
-    String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+    String tripDayId = Payloads.text(dto.get("tripDayId"));
+    String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
     validateRelations(tripId, tripDayId, tripPlaceId);
     List<String> photoIds = validatePhotos(tripId, stringList(dto.get("photoIds")));
 
@@ -408,9 +409,9 @@ public class TripJournalService {
     journal.setTripId(tripId);
     journal.setTripDayId(tripDayId);
     journal.setTripPlaceId(tripPlaceId);
-    journal.setTitle(normalizeTitle(string(dto.get("title"))));
-    journal.setContent(validateContent(string(dto.get("content"))));
-    journal.setMood(validateMood(optionalString(dto.get("mood"))));
+    journal.setTitle(normalizeTitle(Payloads.text(dto.get("title"))));
+    journal.setContent(validateContent(Payloads.text(dto.get("content"))));
+    journal.setMood(validateMood(Payloads.text(dto.get("mood"))));
     journal.setIsDraft(dto.get("isDraft") == null || Boolean.parseBoolean(dto.get("isDraft").toString()));
     // 作者以当前登录用户为准，禁止信任前端传入的 authorId 等字段
     journal.setAuthorId(userId);
@@ -433,27 +434,27 @@ public class TripJournalService {
     // 数据隔离：仅作者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, journal.getAuthorId(), userId, "作者");
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         validateRelations(tripId, tripDayId, null);
       }
       journal.setTripDayId(tripDayId);
     }
     if (dto.containsKey("tripPlaceId")) {
-      String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+      String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
       if (tripPlaceId != null) {
         validateRelations(tripId, null, tripPlaceId);
       }
       journal.setTripPlaceId(tripPlaceId);
     }
     if (dto.containsKey("title") && dto.get("title") != null) {
-      journal.setTitle(normalizeTitle(string(dto.get("title"))));
+      journal.setTitle(normalizeTitle(Payloads.text(dto.get("title"))));
     }
     if (dto.containsKey("content") && dto.get("content") != null) {
-      journal.setContent(validateContent(string(dto.get("content"))));
+      journal.setContent(validateContent(Payloads.text(dto.get("content"))));
     }
     if (dto.containsKey("mood")) {
-      journal.setMood(validateMood(optionalString(dto.get("mood"))));
+      journal.setMood(validateMood(Payloads.text(dto.get("mood"))));
     }
     if (dto.containsKey("isDraft") && dto.get("isDraft") != null) {
       journal.setIsDraft(Boolean.parseBoolean(dto.get("isDraft").toString()));
@@ -550,7 +551,6 @@ public class TripJournalService {
       throw ex;
     }
   }
-
 
   private TripJournal requireJournal(String tripId, String journalId) {
     TripJournal journal = journalMapper.selectById(journalId);
@@ -681,14 +681,6 @@ public class TripJournalService {
     }
     map.put("photos", photos);
     return map;
-  }
-
-  private String string(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
   }
 
   private List<String> stringList(Object value) {

@@ -37,7 +37,7 @@ public class AiPromptBuilder {
 
   private String buildSystemPrompt(AiConversation conversation) {
     StringBuilder prompt = new StringBuilder();
-    prompt.append("你是 Travel OS 的 AI 旅行助手，帮助用户规划行程、查询信息、记录开销。");
+    prompt.append("你是织途的 AI 旅行助手，帮助用户规划行程、查询信息、记录开销。");
     prompt.append("规则：\n");
     prompt.append("1. 行程变更必须通过 propose_itinerary_change 工具生成草稿，绝不直接写行程；用户确认后才生效。")
         .append("新增或修改地点时，先用 search_places 查询该地点，把返回的 latitude/longitude 写入草稿的 change 项（名称也不要改动为其他城市同名地点），确保应用后地图能定位。")

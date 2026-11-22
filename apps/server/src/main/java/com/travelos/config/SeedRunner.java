@@ -78,10 +78,10 @@ public class SeedRunner implements ApplicationRunner {
       if (existing == null) {
         SystemSetting setting = new SystemSetting();
         setting.setKey("app.name");
-        setting.setValue("Travel OS");
+        setting.setValue("织途");
         systemSettingMapper.insert(setting);
       } else {
-        existing.setValue("Travel OS");
+        existing.setValue("织途");
         systemSettingMapper.updateById(existing);
       }
 

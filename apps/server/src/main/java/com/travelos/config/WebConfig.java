@@ -60,7 +60,11 @@ public class WebConfig implements WebMvcConfigurer {
             "/api/health/ready",
             "/api/auth/login",
             "/api/auth/register",
-            "/api/auth/logout");
+            "/api/auth/logout",
+            // 华为账号登录：调用方还没有本应用会话，凭据由授权码在服务端换取
+            "/api/auth/huawei/login",
+            // 网页端 OAuth 跳转与回调：浏览器此时同样没有会话
+            "/api/auth/huawei/web/**");
     // /files/** 的错误分派规范化：仅改文件路径的 404/400 输出结构（其余请求原样放行）
     registry.addInterceptor(fileErrorDispatchInterceptor)
         .addPathPatterns("/error");

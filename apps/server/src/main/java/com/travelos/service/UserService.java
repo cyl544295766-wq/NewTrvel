@@ -23,6 +23,14 @@ public class UserService {
     return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
   }
 
+  /** 华为账号登录入口：按 openID 精确匹配（users_huawei_open_id_key 唯一索引保证至多一条）。 */
+  public User findByHuaweiOpenId(String openId) {
+    if (openId == null || openId.isBlank()) {
+      return null;
+    }
+    return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getHuaweiOpenId, openId));
+  }
+
   /** 用户名唯一性检查（不区分大小写）。 */
   public Long countByUsernameIgnoreCase(String lowerUsername) {
     return userMapper.selectCount(new LambdaQueryWrapper<User>()
@@ -56,6 +64,7 @@ public class UserService {
     map.put("username", user.getUsername());
     map.put("displayName", user.getDisplayName());
     map.put("avatarUrl", user.getAvatarUrl());
+    map.put("phoneNumber", user.getPhoneNumber());
     map.put("status", user.getStatus());
     map.put("role", user.getRole() == null ? "user" : user.getRole());
     map.put("createdAt", user.getCreatedAt());

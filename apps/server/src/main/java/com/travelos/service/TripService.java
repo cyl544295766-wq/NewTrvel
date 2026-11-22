@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
@@ -66,7 +67,7 @@ public class TripService {
 
   @Transactional
   public Map<String, Object> create(Map<String, Object> dto, String userId) {
-    String title = string(dto.get("title"));
+    String title = Payloads.text(dto.get("title"));
     if (title == null || title.isBlank()) {
       throw ApiException.badRequest("title should not be empty");
     }
@@ -74,8 +75,8 @@ public class TripService {
 
     Trip trip = new Trip();
     trip.setTitle(title.trim());
-    trip.setDescription(toNullable(dto.get("description")));
-    trip.setDestination(toNullable(dto.get("destination")));
+    trip.setDescription(Payloads.trimmedOrNull(dto.get("description")));
+    trip.setDestination(Payloads.trimmedOrNull(dto.get("destination")));
     trip.setStartDate(toDateOrNull(dto.get("startDate")));
     trip.setEndDate(toDateOrNull(dto.get("endDate")));
     trip.setStatus("draft");
@@ -194,14 +195,14 @@ public class TripService {
     validateDateRange(effStart, effEnd);
 
     if (dto.containsKey("title")) {
-      String title = string(dto.get("title"));
+      String title = Payloads.text(dto.get("title"));
       trip.setTitle(title == null ? null : title.trim());
     }
     if (dto.containsKey("description")) {
-      trip.setDescription(toNullable(dto.get("description")));
+      trip.setDescription(Payloads.trimmedOrNull(dto.get("description")));
     }
     if (dto.containsKey("destination")) {
-      trip.setDestination(toNullable(dto.get("destination")));
+      trip.setDestination(Payloads.trimmedOrNull(dto.get("destination")));
     }
     if (dto.containsKey("startDate")) {
       trip.setStartDate(toDateOrNull(dto.get("startDate")));
@@ -593,7 +594,7 @@ public class TripService {
    * </ul>
    */
   private String validateCoverImageUrl(Object raw, String tripId, String current) {
-    String value = toNullable(raw);
+    String value = Payloads.trimmedOrNull(raw);
     if (value == null) {
       return null;
     }
@@ -624,18 +625,6 @@ public class TripService {
       return cover;
     }
     return "public".equals(source.getVisibility()) ? cover : null;
-  }
-
-  private String string(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private Date toDateOrNull(Object value) {

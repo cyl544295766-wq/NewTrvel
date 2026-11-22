@@ -12,7 +12,6 @@ import com.travelos.entity.Trip;
 import com.travelos.entity.TripMember;
 import com.travelos.entity.TripWeather;
 import com.travelos.mapper.BookingMapper;
-import com.travelos.mapper.NotificationMapper;
 import com.travelos.mapper.PackingItemMapper;
 import com.travelos.mapper.PackingListMapper;
 import com.travelos.mapper.TripMapper;
@@ -48,20 +47,18 @@ public class BookingReminderScheduler {
   private final PackingListMapper packingListMapper;
   private final PackingItemMapper packingItemMapper;
   private final TripWeatherMapper tripWeatherMapper;
-  private final NotificationMapper notificationMapper;
   private final NotificationService notificationService;
 
   public BookingReminderScheduler(BookingMapper bookingMapper, TripMapper tripMapper,
       TripMemberMapper tripMemberMapper, PackingListMapper packingListMapper,
       PackingItemMapper packingItemMapper, TripWeatherMapper tripWeatherMapper,
-      NotificationMapper notificationMapper, NotificationService notificationService) {
+      NotificationService notificationService) {
     this.bookingMapper = bookingMapper;
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
     this.packingListMapper = packingListMapper;
     this.packingItemMapper = packingItemMapper;
     this.tripWeatherMapper = tripWeatherMapper;
-    this.notificationMapper = notificationMapper;
     this.notificationService = notificationService;
   }
 

@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
@@ -94,14 +95,14 @@ public class BookingService {
     tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
     fillFromDto(booking, dto, userId);
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         ensureDayBelongsToTrip(tripDayId, tripId);
       }
       booking.setTripDayId(tripDayId);
     }
     if (dto.containsKey("tripPlaceId")) {
-      String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+      String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
       if (tripPlaceId != null) {
         ensurePlaceBelongsToTrip(tripPlaceId, tripId);
       }
@@ -272,7 +273,7 @@ public class BookingService {
       booking.setType(dto.get("type").toString());
     }
     if (dto.containsKey("title")) {
-      String title = optionalString(dto.get("title"));
+      String title = Payloads.text(dto.get("title"));
       booking.setTitle(title == null ? null : title.trim());
     }
     if (dto.containsKey("startTime")) {
@@ -282,15 +283,15 @@ public class BookingService {
       booking.setEndTime(toDateOrNull(dto.get("endTime")));
     }
     if (dto.containsKey("orderNo")) {
-      booking.setOrderNo(toNullable(dto.get("orderNo")));
+      booking.setOrderNo(Payloads.trimmedOrNull(dto.get("orderNo")));
     }
     if (dto.containsKey("confirmCode")) {
-      booking.setConfirmCode(toNullable(dto.get("confirmCode")));
+      booking.setConfirmCode(Payloads.trimmedOrNull(dto.get("confirmCode")));
     }
     if (dto.containsKey("amount")) {
       booking.setAmount(toDecimal(dto.get("amount")));
     }
-    if (dto.containsKey("currency") && optionalString(dto.get("currency")) != null) {
+    if (dto.containsKey("currency") && Payloads.text(dto.get("currency")) != null) {
       booking.setCurrency(dto.get("currency").toString().trim());
     }
     if (dto.containsKey("attachmentUrl")) {
@@ -312,7 +313,7 @@ public class BookingService {
    * @param userId  文件创建者（file_metadata 归属）
    */
   private String validateAttachment(Object raw, String current, String userId) {
-    String url = toNullable(raw);
+    String url = Payloads.trimmedOrNull(raw);
     if (url == null) {
       return null;
     }
@@ -428,18 +429,6 @@ public class BookingService {
     } catch (Exception ex) {
       return Map.of();
     }
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private BigDecimal toDecimal(Object value) {

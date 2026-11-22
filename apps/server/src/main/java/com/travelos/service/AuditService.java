@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Pagination;
 import com.travelos.common.Ids;
 import com.travelos.common.JsonUtil;
 import com.travelos.entity.AuditLog;
@@ -47,8 +48,8 @@ public class AuditService {
 
   /** 行程审计列表：owner/admin 专用（调用方需已做角色校验），按时间倒序分页。 */
   public Map<String, Object> findByTrip(String tripId, String pageValue, String pageSizeValue) {
-    int page = toPositiveInteger(pageValue, 1);
-    int pageSize = Math.min(toPositiveInteger(pageSizeValue, 20), 100);
+    int page = Pagination.positive(pageValue, 1);
+    int pageSize = Math.min(Pagination.positive(pageSizeValue, 20), 100);
     LambdaQueryWrapper<AuditLog> query = new LambdaQueryWrapper<AuditLog>()
         .eq(AuditLog::getTripId, tripId);
     Long total = auditLogMapper.selectCount(query);
@@ -79,12 +80,4 @@ public class AuditService {
     return body;
   }
 
-  private int toPositiveInteger(String value, int fallback) {
-    try {
-      int parsed = Integer.parseInt(value);
-      return parsed > 0 ? parsed : fallback;
-    } catch (NumberFormatException ex) {
-      return fallback;
-    }
-  }
 }

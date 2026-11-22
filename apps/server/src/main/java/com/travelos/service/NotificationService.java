@@ -3,6 +3,7 @@ package com.travelos.service;
 import com.travelos.entity.Notification;
 import com.travelos.mapper.NotificationMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Pagination;
 import com.travelos.common.ApiException;
 import org.springframework.stereotype.Service;
 
@@ -25,8 +26,8 @@ public class NotificationService {
   }
 
   public Map<String, Object> findAll(String userId, String pageValue, String pageSizeValue) {
-    int page = toPositiveInteger(pageValue, 1);
-    int pageSize = Math.min(toPositiveInteger(pageSizeValue, 20), 100);
+    int page = Pagination.positive(pageValue, 1);
+    int pageSize = Math.min(Pagination.positive(pageSizeValue, 20), 100);
     Date now = new Date();
 
     LambdaQueryWrapper<Notification> visible = new LambdaQueryWrapper<Notification>()
@@ -256,12 +257,4 @@ public class NotificationService {
     };
   }
 
-  private int toPositiveInteger(String value, int fallback) {
-    try {
-      int parsed = Integer.parseInt(value);
-      return parsed > 0 ? parsed : fallback;
-    } catch (NumberFormatException ex) {
-      return fallback;
-    }
-  }
 }

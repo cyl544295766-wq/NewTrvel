@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.entity.TripDay;
@@ -33,11 +34,11 @@ public class TripPlaceService {
 
   @Transactional
   public Map<String, Object> create(String tripId, Map<String, Object> dto, String userId) {
-    String tripDayId = optionalString(dto.get("tripDayId"));
+    String tripDayId = Payloads.text(dto.get("tripDayId"));
     if (tripDayId != null) {
       ensureDayBelongsToTrip(tripDayId, tripId);
     }
-    String name = optionalString(dto.get("name"));
+    String name = Payloads.text(dto.get("name"));
     if (name == null || name.isBlank()) {
       throw ApiException.badRequest("name should not be empty");
     }
@@ -49,13 +50,13 @@ public class TripPlaceService {
     place.setTripId(tripId);
     place.setTripDayId(tripDayId);
     place.setName(name.trim());
-    place.setType(optionalString(dto.get("type")) == null ? "custom" : dto.get("type").toString());
-    place.setAddress(toNullable(dto.get("address")));
+    place.setType(Payloads.text(dto.get("type")) == null ? "custom" : dto.get("type").toString());
+    place.setAddress(Payloads.trimmedOrNull(dto.get("address")));
     place.setLatitude(toDecimal(dto.get("latitude"), "纬度"));
     place.setLongitude(toDecimal(dto.get("longitude"), "经度"));
     place.setStartTime(toDateOrNull(dto.get("startTime")));
     place.setEndTime(toDateOrNull(dto.get("endTime")));
-    place.setNotes(toNullable(dto.get("notes")));
+    place.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     place.setSortOrder(sortOrder);
     place.setIsCompleted(dto.get("isCompleted") != null && Boolean.parseBoolean(dto.get("isCompleted").toString()));
     place.setEstimatedCost(toDecimal(dto.get("estimatedCost"), "预估费用"));
@@ -73,21 +74,21 @@ public class TripPlaceService {
       throw ApiException.notFound("地点不存在");
     }
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         ensureDayBelongsToTrip(tripDayId, tripId);
       }
       place.setTripDayId(tripDayId);
     }
     if (dto.containsKey("name")) {
-      String name = optionalString(dto.get("name"));
+      String name = Payloads.text(dto.get("name"));
       place.setName(name == null ? null : name.trim());
     }
     if (dto.containsKey("type") && dto.get("type") != null) {
       place.setType(dto.get("type").toString());
     }
     if (dto.containsKey("address")) {
-      place.setAddress(toNullable(dto.get("address")));
+      place.setAddress(Payloads.trimmedOrNull(dto.get("address")));
     }
     if (dto.containsKey("latitude")) {
       place.setLatitude(toDecimal(dto.get("latitude"), "纬度"));
@@ -105,7 +106,7 @@ public class TripPlaceService {
       place.setEndTime(toDateOrNull(dto.get("endTime")));
     }
     if (dto.containsKey("notes")) {
-      place.setNotes(toNullable(dto.get("notes")));
+      place.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     }
     if (dto.containsKey("sortOrder") && dto.get("sortOrder") != null) {
       place.setSortOrder(Integer.parseInt(dto.get("sortOrder").toString()));
@@ -183,18 +184,6 @@ public class TripPlaceService {
 
   public TripPlace findPlace(String placeId) {
     return tripPlaceMapper.selectById(placeId);
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private java.math.BigDecimal toDecimal(Object value, String label) {

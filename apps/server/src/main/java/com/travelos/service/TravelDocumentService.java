@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.PhotoUtil;
@@ -55,7 +56,7 @@ public class TravelDocumentService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    String url = string(dto.get("url"));
+    String url = Payloads.text(dto.get("url"));
     validateDocumentUrl(url);
     // P3-1 文件出库：data URL 落盘，DB 只存 /files/{name} 访问路径（存量 data URL 兼容）
     if (fileStorageService.isDataUrl(url)) {
@@ -66,8 +67,8 @@ public class TravelDocumentService {
     if (count >= MAX_DOCUMENTS_PER_TRIP) {
       throw ApiException.badRequest("每个旅行最多上传 100 份文档");
     }
-    String tripDayId = optionalString(dto.get("tripDayId"));
-    String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+    String tripDayId = Payloads.text(dto.get("tripDayId"));
+    String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
     validateRelations(tripId, tripDayId, tripPlaceId);
 
     TravelDocument document = new TravelDocument();
@@ -75,9 +76,9 @@ public class TravelDocumentService {
     document.setTripDayId(tripDayId);
     document.setTripPlaceId(tripPlaceId);
     document.setType(requiredString(dto.get("type"), "type should not be empty"));
-    document.setTitle(normalizeTitle(string(dto.get("title"))));
+    document.setTitle(normalizeTitle(Payloads.text(dto.get("title"))));
     document.setUrl(url);
-    document.setNotes(toNullable(dto.get("notes")));
+    document.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     document.setExpiredAt(dto.get("expiredAt") == null ? null
         : DateUtil.parse(dto.get("expiredAt").toString()));
     document.setIsReminder(dto.get("isReminder") != null
@@ -109,14 +110,14 @@ public class TravelDocumentService {
       document.setUrl(newUrl);
     }
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         validateRelations(tripId, tripDayId, null);
       }
       document.setTripDayId(tripDayId);
     }
     if (dto.containsKey("tripPlaceId")) {
-      String tripPlaceId = optionalString(dto.get("tripPlaceId"));
+      String tripPlaceId = Payloads.text(dto.get("tripPlaceId"));
       if (tripPlaceId != null) {
         validateRelations(tripId, null, tripPlaceId);
       }
@@ -126,10 +127,10 @@ public class TravelDocumentService {
       document.setType(dto.get("type").toString());
     }
     if (dto.containsKey("title") && dto.get("title") != null) {
-      document.setTitle(normalizeTitle(string(dto.get("title"))));
+      document.setTitle(normalizeTitle(Payloads.text(dto.get("title"))));
     }
     if (dto.containsKey("notes")) {
-      document.setNotes(toNullable(dto.get("notes")));
+      document.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     }
     if (dto.containsKey("expiredAt")) {
       document.setExpiredAt(dto.get("expiredAt") == null ? null
@@ -171,7 +172,6 @@ public class TravelDocumentService {
       throw ex;
     }
   }
-
 
   private TravelDocument requireDocument(String tripId, String documentId) {
     TravelDocument document = documentMapper.selectById(documentId);
@@ -260,14 +260,6 @@ public class TravelDocumentService {
     return title;
   }
 
-  private String string(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
-  }
-
   private String requiredString(Object value, String message) {
     if (value == null || value.toString().isBlank()) {
       throw ApiException.badRequest(message);
@@ -275,11 +267,4 @@ public class TravelDocumentService {
     return value.toString();
   }
 
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
-  }
 }

@@ -41,6 +41,18 @@ public class User {
   @TableField("token_valid_after")
   private Date tokenValidAfter;
 
+  /** 华为账号 openID：非空表示该账号由华为账号登录创建/绑定，登录时按此字段匹配 */
+  @TableField("huawei_open_id")
+  private String huaweiOpenId;
+
+  /** 华为账号 unionID：同开发者多应用统一身份，仅作记录，不参与登录匹配 */
+  @TableField("huawei_union_id")
+  private String huaweiUnionId;
+
+  /** 手机号：华为账号 phone scope 授权后写入；不参与登录匹配，仅作资料展示 */
+  @TableField("phone_number")
+  private String phoneNumber;
+
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
 
@@ -68,6 +80,12 @@ public class User {
   public void setDeletedAt(Date deletedAt) { this.deletedAt = deletedAt; }
   public Date getTokenValidAfter() { return tokenValidAfter; }
   public void setTokenValidAfter(Date tokenValidAfter) { this.tokenValidAfter = tokenValidAfter; }
+  public String getHuaweiOpenId() { return huaweiOpenId; }
+  public void setHuaweiOpenId(String huaweiOpenId) { this.huaweiOpenId = huaweiOpenId; }
+  public String getHuaweiUnionId() { return huaweiUnionId; }
+  public void setHuaweiUnionId(String huaweiUnionId) { this.huaweiUnionId = huaweiUnionId; }
+  public String getPhoneNumber() { return phoneNumber; }
+  public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
   public Date getUpdatedAt() { return updatedAt; }

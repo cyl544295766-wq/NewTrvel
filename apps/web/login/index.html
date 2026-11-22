@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Travel OS · 登录</title>
+<title>织途 · 登录</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -212,6 +212,25 @@
 
   .alt-note { margin-top: 18px; text-align: center; font-size: 13.5px; color: rgba(255,255,255,.55); }
 
+  /* 华为账号登录（与 App 共用同一账号体系） */
+  .hw-login { margin-top: 16px; }
+  .hw-divider { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .hw-divider::before, .hw-divider::after {
+    content: ""; flex: 1; height: 1px; background: rgba(255,255,255,.14);
+  }
+  .hw-divider em { font-style: normal; font-size: 12px; color: rgba(255,255,255,.45); }
+  .hw-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    height: 46px; border-radius: 12px; text-decoration: none;
+    background: #fff; color: #1b1b1f; font-size: 14.5px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,.5); transition: transform .16s, box-shadow .16s;
+  }
+  .hw-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0,0,0,.18); }
+  .hw-btn:active { transform: translateY(0); }
+  /* 华为官方花瓣标识，尺寸与文字基线对齐 */
+  .hw-logo { display: block; width: 18px; height: 18px; flex: none; }
+  .hw-note { margin: 8px 0 0; text-align: center; font-size: 12px; color: rgba(255,255,255,.45); }
+
   /* 错误提示 */
   .alert {
     display: flex; align-items: flex-start; gap: 8px;
@@ -300,7 +319,7 @@
   <!-- 顶部品牌区：Logo + Slogan -->
   <header class="brand">
     <span class="mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" role="img" aria-label="Travel OS 山形标志">
+      <svg viewBox="0 0 24 24" role="img" aria-label="织途 山形标志">
         <defs>
           <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stop-color="#1BA49A"/><stop offset="1" stop-color="#54C9BE"/>
@@ -310,7 +329,7 @@
         <circle cx="17.6" cy="5.6" r="2.1" fill="#FFC77E"/>
       </svg>
     </span>
-    <div class="b-name">Travel OS<small>行程驾驶舱</small></div>
+    <div class="b-name">织途<small>行程驾驶舱</small></div>
     <p class="slogan">把每一次出发，都收进<em>同一本行程簿</em></p>
     <div class="feat"><span>行程规划</span><span>多人协作</span><span>费用结算</span><span>AI 助手</span></div>
   </header>
@@ -318,7 +337,7 @@
   <!-- 玻璃拟态登录卡 -->
   <section class="card" id="card">
     <h1 id="authTitle">欢迎回来</h1>
-    <p class="subtitle" id="authSubtitle">登录你的 Travel OS 账户</p>
+    <p class="subtitle" id="authSubtitle">登录你的织途账户</p>
 
     <div class="mode-tabs" role="tablist" aria-label="登录或注册">
       <span class="tab-pill" id="tabPill" aria-hidden="true"></span>
@@ -372,6 +391,15 @@
         <span id="submitText">进入我的行程</span>
         <span class="arr" aria-hidden="true">→</span>
       </button>
+
+      <div class="hw-login">
+        <span class="hw-divider"><em>或</em></span>
+        <a class="hw-btn" href="/api/auth/huawei/web/authorize" id="huaweiLogin">
+          <img class="hw-logo" src="../assets/img/huawei-logo.svg" alt="" width="18" height="18">
+          <span>华为账号登录</span>
+        </a>
+        <p class="hw-note">与 App 同一账号，行程双端同步</p>
+      </div>
 
       <p class="alt-note">
         <span id="altText">还没有账户？</span>
@@ -479,7 +507,7 @@
       tabLogin.setAttribute('aria-selected', isLogin ? 'true' : 'false');
       tabRegister.setAttribute('aria-selected', isLogin ? 'false' : 'true');
       title.textContent = isLogin ? '欢迎回来' : '开启你的旅程';
-      subtitle.textContent = isLogin ? '登录你的 Travel OS 账户' : '只需用户名和密码，立即出发';
+      subtitle.textContent = isLogin ? '登录你的织途账户' : '只需用户名和密码，立即出发';
       submitText.textContent = isLogin ? '进入我的行程' : '创建账户并出发';
       altText.textContent = isLogin ? '还没有账户？' : '已经有账户了？';
       altLink.textContent = isLogin ? '立即注册' : '直接登录';

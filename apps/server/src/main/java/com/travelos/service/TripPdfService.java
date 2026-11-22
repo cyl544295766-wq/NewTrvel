@@ -220,7 +220,7 @@ public class TripPdfService {
     }
 
     private void writeFooter() throws java.io.IOException {
-      text("Travel OS", 8, MUTED, false, MARGIN, 22);
+      text("织途", 8, MUTED, false, MARGIN, 22);
       String pageText = pageNumber + " / " + pageNumber;
       float width = font.getStringWidth(pageText) / 1000 * 8;
       text(pageText, 8, MUTED, false, PAGE_WIDTH - MARGIN - width, 22);
@@ -228,7 +228,7 @@ public class TripPdfService {
 
     void writeCoverPage(Trip trip, String coverUrl) throws java.io.IOException {
       y -= 36;
-      text("TRAVEL OS · 行程手册", 9, GREEN, true, MARGIN, y);
+      text("织途 · 行程手册", 9, GREEN, true, MARGIN, y);
       y -= 12;
       text(trip.getTitle(), 34, INK, true, MARGIN, y);
       y -= 16;
@@ -248,7 +248,7 @@ public class TripPdfService {
       } else if (trip.getDescription() != null && !trip.getDescription().isBlank()) {
         text(trip.getDescription(), 12, new Color(0x4F, 0x5B, 0x52), false, MARGIN, y);
       }
-      text("由 Travel OS 生成", 9, MUTED, false, MARGIN, 70);
+      text("由织途生成", 9, MUTED, false, MARGIN, 70);
       pageBreak();
     }
 

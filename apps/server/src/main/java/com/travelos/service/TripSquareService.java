@@ -2,6 +2,7 @@ package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
@@ -95,10 +96,10 @@ public class TripSquareService {
     }
     int page = parsePositive(query.get("page"), 1);
     int pageSize = Math.min(parsePositive(query.get("pageSize"), 9), 24);
-    String rawSort = string(query.get("sort"));
+    String rawSort = Payloads.trimmed(query.get("sort"));
     String sort = rawSort != null && SORTS.contains(rawSort) ? rawSort : "latest";
-    String keyword = string(query.get("keyword"));
-    String destination = string(query.get("destination"));
+    String keyword = Payloads.trimmed(query.get("keyword"));
+    String destination = Payloads.trimmed(query.get("destination"));
 
     if ("friends".equals(scope)) {
       return friendsSquare(userId, page, pageSize, destination);
@@ -573,7 +574,4 @@ public class TripSquareService {
     }
   }
 
-  private String string(Object value) {
-    return value == null ? null : value.toString().trim();
-  }
 }

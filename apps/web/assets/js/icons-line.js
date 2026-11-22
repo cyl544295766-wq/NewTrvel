@@ -1,4 +1,4 @@
-/* Travel OS · 暗色线条 SVG 图标集（共享注入）
+/* 织途 · 暗色线条 SVG 图标集（共享注入）
  * 每个页面在 <body> 顶部引一次：<script src="../assets/js/icons-line.js"></script>
  * 与 icons3d.js（3D 黏土块精灵）互不影响；本套为暗色主题设计：
  *  - 24×24 线条图标，stroke="currentColor"，线宽由各页面 CSS 控制

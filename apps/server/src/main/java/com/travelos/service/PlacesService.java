@@ -1,5 +1,6 @@
 package com.travelos.service;
 
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -164,19 +165,19 @@ public class PlacesService {
     List<Map<String, Object>> result = new ArrayList<>();
     Set<String> seen = new LinkedHashSet<>();
     for (Map<String, Object> poi : pois) {
-      String name = string(poi.get("name"));
+      String name = Payloads.text(poi.get("name"));
       if (name == null || name.isBlank()) {
         continue;
       }
-      double[] coordinates = parseLocation(string(poi.get("location")));
-      String identity = string(poi.get("id")) + "|" + name + "|"
+      double[] coordinates = parseLocation(Payloads.text(poi.get("location")));
+      String identity = Payloads.text(poi.get("id")) + "|" + name + "|"
           + (coordinates == null ? "" : coordinates[0] + "," + coordinates[1]);
       if (!seen.add(identity)) {
         continue;
       }
       Map<String, Object> biz = poi.get("biz_ext") instanceof Map<?, ?> rawBiz
           ? castMap(rawBiz) : Map.of();
-      String typecode = string(poi.get("typecode"));
+      String typecode = Payloads.text(poi.get("typecode"));
       String cityName = city != null ? city : emptyToNull(listOrString(poi.get("cityname")));
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("name", name.trim());
@@ -254,12 +255,12 @@ public class PlacesService {
     List<Map<String, Object>> result = new ArrayList<>();
     Set<String> seen = new LinkedHashSet<>();
     for (Map<String, Object> tip : tips) {
-      String name = string(tip.get("name"));
+      String name = Payloads.text(tip.get("name"));
       if (name == null || name.isBlank()) {
         continue;
       }
-      double[] coordinates = parseLocation(string(tip.get("location")));
-      String identity = string(tip.get("id")) + "|" + name + "|"
+      double[] coordinates = parseLocation(Payloads.text(tip.get("location")));
+      String identity = Payloads.text(tip.get("id")) + "|" + name + "|"
           + (coordinates == null ? "" : String.valueOf(coordinates[0])) + "|"
           + (coordinates == null ? "" : String.valueOf(coordinates[1]));
       if (!seen.add(identity)) {
@@ -274,17 +275,17 @@ public class PlacesService {
         address = rawAddress == null ? null : rawAddress.toString().trim();
       }
       Map<String, Object> suggestion = new LinkedHashMap<>();
-      suggestion.put("id", string(tip.get("id")) == null || string(tip.get("id")).isEmpty()
+      suggestion.put("id", Payloads.text(tip.get("id")) == null || Payloads.text(tip.get("id")).isEmpty()
           ? identity
-          : string(tip.get("id")));
+          : Payloads.text(tip.get("id")));
       suggestion.put("name", name);
       suggestion.put("address", address == null || address.isEmpty() ? null : address);
-      suggestion.put("district", string(tip.get("district")) == null
-          || string(tip.get("district")).isEmpty() ? null : string(tip.get("district")).trim());
+      suggestion.put("district", Payloads.text(tip.get("district")) == null
+          || Payloads.text(tip.get("district")).isEmpty() ? null : Payloads.text(tip.get("district")).trim());
       suggestion.put("city", city);
       suggestion.put("province", null);
-      suggestion.put("type", mapAmapPlaceType(string(tip.get("typecode"))));
-      suggestion.put("sourceType", string(tip.get("typecode")));
+      suggestion.put("type", mapAmapPlaceType(Payloads.text(tip.get("typecode"))));
+      suggestion.put("sourceType", Payloads.text(tip.get("typecode")));
       suggestion.put("latitude", coordinates == null ? null
           : BigDecimal7(coordinates[1]));
       suggestion.put("longitude", coordinates == null ? null
@@ -371,10 +372,6 @@ public class PlacesService {
     result += (150.0 * Math.sin(longitude / 12.0 * Math.PI)
         + 300.0 * Math.sin(longitude / 30.0 * Math.PI)) * 2.0 / 3.0;
     return result;
-  }
-
-  private String string(Object value) {
-    return value == null ? null : value.toString();
   }
 
   private record CachedSuggestions(long expiresAt, List<Map<String, Object>> suggestions) {

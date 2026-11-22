@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Travel OS · 旅程详情</title>
+<title>织途 · 旅程详情</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -689,7 +689,7 @@
 <script src="../assets/js/icons-line.js"></script>
 <header class="topbar">
   <div class="tb-inner">
-    <a class="tb-brand" href="/home/">Travel OS<small>TRIP COCKPIT</small></a>
+    <a class="tb-brand" href="/home/">织途<small>MAPPIC</small></a>
     <nav class="nav tb-nav" id="sideNav" aria-label="主导航">
       <a href="/home/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-home"></use></svg></span><span class="txt">首页</span></a>
       <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span><span class="txt">我的旅行</span><span class="dot"></span></a>
@@ -892,7 +892,8 @@
       if (!s || !e) return 0;
       var a = new Date(s), b = new Date(e);
       if (isNaN(a) || isNaN(b)) return 0;
-      return Math.max(1, Math.round((b - a) / 86400000));
+      // 含首日：与 trips / home / trip-form 的口径统一，避免同一行程两处天数不一致
+      return Math.max(1, Math.round((b - a) / 86400000) + 1);
     }
     function codeFor(trip) {
       var d = (trip.destination || '').trim();
@@ -968,7 +969,7 @@
       var spent = state.expenses && state.expenses.summary && parseFloat(state.expenses.summary.totalAmount) || 0;
 
       document.getElementById('crumbTitle').textContent = t.title || '未命名旅程';
-      document.title = 'Travel OS · ' + (t.title || '旅程详情');
+      document.title = '织途 · ' + (t.title || '旅程详情');
 
       // 主票 HTML
       var html = ''

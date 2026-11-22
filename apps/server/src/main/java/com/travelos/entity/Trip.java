@@ -60,6 +60,10 @@ public class Trip {
   @TableField("archived_at")
   private Date archivedAt;
 
+  /** 是否为 App 端「我的行程」：一个用户最多一条（由部分唯一索引保证） */
+  @TableField("app_default")
+  private Boolean appDefault;
+
   @TableField("deleted_at")
   private Date deletedAt;
 
@@ -103,6 +107,8 @@ public class Trip {
   public void setIsFavorite(Boolean isFavorite) { this.isFavorite = isFavorite; }
   public Date getArchivedAt() { return archivedAt; }
   public void setArchivedAt(Date archivedAt) { this.archivedAt = archivedAt; }
+  public Boolean getAppDefault() { return appDefault; }
+  public void setAppDefault(Boolean appDefault) { this.appDefault = appDefault; }
   public Date getDeletedAt() { return deletedAt; }
   public void setDeletedAt(Date deletedAt) { this.deletedAt = deletedAt; }
   public Date getCreatedAt() { return createdAt; }

@@ -1,4 +1,4 @@
-/* Travel OS · 3D 图标精灵（共享注入）
+/* 织途 · 3D 图标精灵（共享注入）
  * 每个页面在 <body> 顶部引一次：<script src="../assets/js/icons3d.js"></script>
  * 同步执行并插到脚本节点之前，保证页面里所有 <use href="#ic3d-*"> 在解析时图标已存在。
  *

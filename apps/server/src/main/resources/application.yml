@@ -34,6 +34,25 @@ auth:
   # P2-2：生产（HTTPS）务必置 true，令牌 Cookie 不再走明文
   secure-cookie: ${AUTH_SECURE_COOKIE:false}
 
+huawei:
+  account:
+    # 账号 kit（Account Kit）服务端凭据：AGC → 项目设置 → 应用 → 开放能力 → 账号 kit
+    # client-id 必须与客户端 AGC 应用一致；未配置时 /api/auth/huawei/login 返回 503
+    client-id: ${HUAWEI_CLIENT_ID:}
+    client-secret: ${HUAWEI_CLIENT_SECRET:}
+    # ID Token 的 iss 声明；华为账号固定为 https://accounts.huawei.com
+    issuer: ${HUAWEI_ISSUER:https://accounts.huawei.com}
+    token-endpoint: ${HUAWEI_TOKEN_ENDPOINT:https://oauth-login.cloud.huawei.com/oauth2/v3/token}
+    jwks-endpoint: ${HUAWEI_JWKS_ENDPOINT:https://oauth-login.cloud.huawei.com/oauth2/v3/certs}
+    # 默认走账号开放接口（显式返回 openID / unionID），需要换 OIDC userinfo 时改这里
+    user-info-endpoint: ${HUAWEI_USERINFO_ENDPOINT:https://account.cloud.huawei.com/rest.php?nsp_fmt=JSON&nsp_svc=GOpen.User.getInfo}
+  web:
+    # 网页端（浏览器跳转）华为登录：回调必须在 AGC 侧登记过，且与服务端完全一致
+    callback-url: ${HUAWEI_WEB_CALLBACK:http://192.168.1.5:3001/api/auth/huawei/web/callback}
+    # 回调成功后跳回的站内地址（前端由本服务托管）。
+    # 注意必须带尾斜杠：静态资源目录 /home 会 404，只有 /home/ 才会命中 index.html
+    success-redirect: ${HUAWEI_WEB_SUCCESS_REDIRECT:/home/}
+
 cors:
   # P2-2：跨域白名单（逗号分隔）；留空 = 仅同源可用（默认安全态）
   allowed-origins: ${CORS_ALLOWED_ORIGINS:}

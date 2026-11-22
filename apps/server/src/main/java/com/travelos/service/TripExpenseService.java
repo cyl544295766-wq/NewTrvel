@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
@@ -119,16 +120,16 @@ public class TripExpenseService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
-    long amountCents = toCents(string(dto.get("amount")), false);
-    String payerUserId = optionalString(dto.get("payerUserId")) == null
+    long amountCents = toCents(Payloads.text(dto.get("amount")), false);
+    String payerUserId = Payloads.text(dto.get("payerUserId")) == null
         ? userId
         : dto.get("payerUserId").toString();
     SharePlan plan = planShares(tripId, payerUserId, amountCents, dto, List.of());
     List<Map<String, String>> shares = plan.shares();
 
-    String category = optionalString(dto.get("category")) == null ? "other"
+    String category = Payloads.text(dto.get("category")) == null ? "other"
         : dto.get("category").toString();
-    String title = optionalString(dto.get("title"));
+    String title = Payloads.text(dto.get("title"));
     if (title == null || title.isBlank()) {
       // 快速记账：标题缺省用类别名
       title = CATEGORY_LABELS.getOrDefault(category, "其他");
@@ -136,7 +137,7 @@ public class TripExpenseService {
     Date spentAt = dto.get("spentAt") == null
         ? new Date()
         : DateUtil.parse(dto.get("spentAt").toString());
-    String tripDayId = optionalString(dto.get("tripDayId"));
+    String tripDayId = Payloads.text(dto.get("tripDayId"));
     if (tripDayId == null) {
       tripDayId = matchTripDayId(tripId, spentAt);
     } else {
@@ -149,11 +150,11 @@ public class TripExpenseService {
     expense.setPayerUserId(payerUserId);
     expense.setTitle(title.trim());
     expense.setAmount(centsToDecimal(amountCents));
-    expense.setCurrency(optionalString(dto.get("currency")) == null ? "CNY"
+    expense.setCurrency(Payloads.text(dto.get("currency")) == null ? "CNY"
         : dto.get("currency").toString().trim());
     expense.setCategory(category);
     expense.setSpentAt(spentAt);
-    expense.setNotes(toNullable(dto.get("notes")));
+    expense.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     expense.setReceiptUrl(receiptUrl);
     expense.setSplitType(plan.splitType());
     expense.setTripDayId(tripDayId);
@@ -176,11 +177,11 @@ public class TripExpenseService {
       throw ApiException.notFound("费用不存在");
     }
 
-    String payerUserId = optionalString(dto.get("payerUserId")) == null
+    String payerUserId = Payloads.text(dto.get("payerUserId")) == null
         ? expense.getPayerUserId()
         : dto.get("payerUserId").toString();
     long amountCents = dto.containsKey("amount")
-        ? toCents(string(dto.get("amount")), false)
+        ? toCents(Payloads.text(dto.get("amount")), false)
         : Math.round(expense.getAmount().doubleValue() * 100);
     List<Map<String, String>> existingShares = shareMapper
         .selectList(new LambdaQueryWrapper<TripExpenseShare>()
@@ -193,13 +194,13 @@ public class TripExpenseService {
     List<Map<String, String>> shares = plan.shares();
 
     if (dto.containsKey("title")) {
-      String title = string(dto.get("title"));
+      String title = Payloads.text(dto.get("title"));
       expense.setTitle(title == null ? null : title.trim());
     }
     if (dto.containsKey("amount")) {
       expense.setAmount(centsToDecimal(amountCents));
     }
-    if (dto.containsKey("currency") && optionalString(dto.get("currency")) != null) {
+    if (dto.containsKey("currency") && Payloads.text(dto.get("currency")) != null) {
       expense.setCurrency(dto.get("currency").toString().trim());
     }
     if (dto.containsKey("category") && dto.get("category") != null) {
@@ -209,7 +210,7 @@ public class TripExpenseService {
       expense.setSpentAt(DateUtil.parse(dto.get("spentAt").toString()));
     }
     if (dto.containsKey("notes")) {
-      expense.setNotes(toNullable(dto.get("notes")));
+      expense.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     }
     if (dto.containsKey("payerUserId")) {
       expense.setPayerUserId(payerUserId);
@@ -218,7 +219,7 @@ public class TripExpenseService {
       expense.setReceiptUrl(validateReceipt(dto.get("receiptUrl"), expense.getReceiptUrl(), userId));
     }
     if (dto.containsKey("tripDayId")) {
-      String tripDayId = optionalString(dto.get("tripDayId"));
+      String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
         ensureDayBelongsToTrip(tripDayId, tripId);
       }
@@ -729,7 +730,7 @@ public class TripExpenseService {
    */
   private SharePlan planShares(String tripId, String payerUserId, long amountCents,
       Map<String, Object> dto, List<Map<String, String>> fallbackShares) {
-    String splitType = optionalString(dto.get("splitType"));
+    String splitType = Payloads.text(dto.get("splitType"));
 
     if (dto.get("shares") instanceof List<?> rawShares && !rawShares.isEmpty()) {
       boolean hasRatio = false;
@@ -908,7 +909,7 @@ public class TripExpenseService {
    * @param userId  文件创建者（file_metadata 归属）
    */
   private String validateReceipt(Object raw, String current, String userId) {
-    String url = toNullable(raw);
+    String url = Payloads.trimmedOrNull(raw);
     if (url == null) {
       return null;
     }
@@ -1251,19 +1252,4 @@ public class TripExpenseService {
     return String.format(java.util.Locale.ROOT, "%.2f", cents / 100.0);
   }
 
-  private String string(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String optionalString(Object value) {
-    return value == null ? null : value.toString();
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
-  }
 }

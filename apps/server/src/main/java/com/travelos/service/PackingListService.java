@@ -1,6 +1,7 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.entity.PackingItem;
 import com.travelos.entity.PackingList;
@@ -44,7 +45,7 @@ public class PackingListService {
     String category = requiredString(dto.get("category"), "category should not be empty");
     PackingList list = new PackingList();
     list.setTripId(tripId);
-    list.setName(normalizeName(string(dto.get("name")), 100, "清单名称"));
+    list.setName(normalizeName(Payloads.text(dto.get("name")), 100, "清单名称"));
     list.setCategory(category);
     // 创建者以当前登录用户为准，禁止信任前端传入的 creatorId 等字段
     list.setCreatorId(userId);
@@ -68,7 +69,7 @@ public class PackingListService {
       String userId) {
     PackingList list = requireList(tripId, listId);
     if (dto.containsKey("name")) {
-      list.setName(normalizeName(string(dto.get("name")), 100, "清单名称"));
+      list.setName(normalizeName(Payloads.text(dto.get("name")), 100, "清单名称"));
     }
     if (dto.containsKey("category") && dto.get("category") != null) {
       list.setCategory(dto.get("category").toString());
@@ -107,7 +108,7 @@ public class PackingListService {
     item.setName(normalizeName(requiredString(dto.get("name"), "name should not be empty"), 200, "物品名称"));
     item.setQuantity(quantity);
     item.setIsPacked(false);
-    item.setNotes(toNullable(dto.get("notes")));
+    item.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     item.setOrderIndex(dto.containsKey("orderIndex") && dto.get("orderIndex") != null
         ? Integer.parseInt(dto.get("orderIndex").toString())
         : itemsOf(listId).size());
@@ -128,13 +129,13 @@ public class PackingListService {
       item.setQuantity(quantity);
     }
     if (dto.containsKey("name") && dto.get("name") != null) {
-      item.setName(normalizeName(string(dto.get("name")), 200, "物品名称"));
+      item.setName(normalizeName(Payloads.text(dto.get("name")), 200, "物品名称"));
     }
     if (dto.containsKey("isPacked") && dto.get("isPacked") != null) {
       item.setIsPacked(Boolean.parseBoolean(dto.get("isPacked").toString()));
     }
     if (dto.containsKey("notes")) {
-      item.setNotes(toNullable(dto.get("notes")));
+      item.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
     }
     if (dto.containsKey("orderIndex") && dto.get("orderIndex") != null) {
       item.setOrderIndex(Integer.parseInt(dto.get("orderIndex").toString()));
@@ -235,7 +236,6 @@ public class PackingListService {
     }
   }
 
-
   private PackingList requireList(String tripId, String listId) {
     PackingList list = findListById(listId);
     if (list == null || !list.getTripId().equals(tripId)) {
@@ -258,18 +258,6 @@ public class PackingListService {
       throw ApiException.badRequest(label + "长度必须为 1-" + maxLength + " 个字符");
     }
     return name;
-  }
-
-  private String toNullable(Object value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.toString().trim();
-    return trimmed.isEmpty() ? null : trimmed;
-  }
-
-  private String string(Object value) {
-    return value == null ? null : value.toString();
   }
 
   private String requiredString(Object value, String message) {

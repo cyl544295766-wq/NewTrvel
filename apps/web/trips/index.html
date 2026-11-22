@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Travel OS · 我的旅行</title>
+<title>织途 · 我的旅行</title>
 <link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -559,7 +559,7 @@
 <script src="../assets/js/icons-line.js"></script>
 <header class="topbar">
   <div class="tb-inner">
-    <a class="tb-brand" href="/home/">Travel OS<small>TRIP COCKPIT</small></a>
+    <a class="tb-brand" href="/home/">织途<small>MAPPIC</small></a>
     <nav class="nav tb-nav" id="sideNav" aria-label="主导航">
       <a href="/home/"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-home"></use></svg></span><span class="txt">首页</span></a>
       <a href="/trips/" aria-current="page"><span class="ico" aria-hidden="true"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span><span class="txt">我的旅行</span><span class="dot"></span></a>
@@ -702,7 +702,8 @@
       if (!start || !end) return 0;
       var a = new Date(start), b = new Date(end);
       if (isNaN(a) || isNaN(b)) return 0;
-      return Math.max(1, Math.round((b - a) / 86400000));
+      // 按自然日含首日计算：11/20 → 11/20 是 1 天（与 home、trip-form、map 保持一致）
+      return Math.max(1, Math.round((b - a) / 86400000) + 1);
     }
 
     function codeFor(trip) {

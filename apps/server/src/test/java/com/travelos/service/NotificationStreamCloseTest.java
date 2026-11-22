@@ -56,8 +56,7 @@ class NotificationStreamCloseTest {
         SECRET, "access_token", false);
     userMapper = mock(UserMapper.class);
     adminService = new AdminService(userMapper, mock(TripMapper.class),
-        mock(TripJournalMapper.class), mock(TripExpenseMapper.class),
-        mock(AiMessageMapper.class), userService, streamService);
+        mock(TripJournalMapper.class), mock(AiMessageMapper.class), streamService);
   }
 
   private User activeUser(String id, String username) {
