@@ -222,8 +222,8 @@
 
   /* ---------- 位置与拖拽 ---------- */
   function bounds() {
-    var w = S.pet.offsetWidth || 46;
-    var h = S.pet.offsetHeight || 54;
+    var w = S.pet.offsetWidth;
+    var h = S.pet.offsetHeight;
     var pad = S.opt.pad;
     return {
       minX: pad, maxX: Math.max(pad, window.innerWidth - w - pad),
@@ -250,8 +250,8 @@
 
   /* ---------- 边缘吸附 ---------- */
   function snapTarget(edge) {
-    var w = S.pet.offsetWidth || 46;
-    var h = S.pet.offsetHeight || 54;
+    var w = S.pet.offsetWidth;
+    var h = S.pet.offsetHeight;
     var b = bounds();
     var x = S.x, y = S.y;
     /* 吸附位改为完全在视口内（x=0 / x=innerWidth-w），保证吸附后仍可命中拖拽；
@@ -270,12 +270,13 @@
   }
   function snapTo(edge, ms) {
     S.snapped = edge;
+    S.pet.setAttribute('data-edge', edge);
     var t = snapTarget(edge);
     moveTo(t.x, t.y, ms);
   }
   function showFull(ms) {
-    var w = S.pet.offsetWidth || 46;
-    var h = S.pet.offsetHeight || 54;
+    var w = S.pet.offsetWidth;
+    var h = S.pet.offsetHeight;
     var x = S.x, y = S.y;
     if (S.snapped === 'left')   x = 0;
     if (S.snapped === 'right')  x = window.innerWidth - w;
@@ -284,8 +285,8 @@
     moveTo(x, y, ms);
   }
   function maybeSnap(ms) {
-    var w = S.pet.offsetWidth || 46;
-    var h = S.pet.offsetHeight || 54;
+    var w = S.pet.offsetWidth;
+    var h = S.pet.offsetHeight;
     var cx = S.x + w / 2, cy = S.y + h / 2;
     var cand = [
       { edge: 'left',   d: cx },
@@ -312,6 +313,7 @@
     if (!S.drag.moved && Math.abs(dx) + Math.abs(dy) > S.opt.dragThreshold) {
       S.drag.moved = true;
       S.snapped = null;
+      S.pet.removeAttribute('data-edge');
     }
     if (!S.drag.moved) return;
     var b = bounds();
@@ -347,7 +349,7 @@
     b.setAttribute('aria-label', S.opt.name + ' · AI 助手');
     b.innerHTML = ''
       + '<div class="pb-head">'
-      +   '<span class="av" aria-hidden="true">🐾</span>'
+      +   '<span class="av" aria-hidden="true"></span>'
       +   '<div class="who"><div class="nm">' + escapeHtml(S.opt.name) + '</div>'
       +   '<div class="role">' + escapeHtml(S.opt.role) + '</div></div>'
       +   '<button type="button" class="ex" title="展开 / 收起对话面板" aria-label="展开对话面板" aria-expanded="false">⤢</button>'
@@ -455,11 +457,12 @@
     if (S.expanded || S.mobile) return;   /* 抽屉 / sheet 走 CSS 定位 */
     var bw = S.bubble.offsetWidth || 480;
     var bh = S.bubble.offsetHeight || 420;
-    var left = Math.min(Math.max(S.x + 23 - bw / 2, 10), window.innerWidth - bw - 10);
+    var centerX = S.x + S.pet.offsetWidth / 2;
+    var left = Math.min(Math.max(centerX - bw / 2, 10), window.innerWidth - bw - 10);
     S.bubble.style.left = Math.round(left) + 'px';
     var top = S.y - bh - 16;
     S.bubble.style.top = Math.round(Math.max(10, top)) + 'px';
-    var tailX = Math.round(S.x + 23 - left - 6);
+    var tailX = Math.round(centerX - left - 6);
     S.bubble.style.setProperty('--tail-x', Math.min(Math.max(tailX, 14), bw - 20) + 'px');
   }
 
@@ -535,7 +538,7 @@
     var tripMode = !!S.tripId;
     S.el.body.innerHTML = ''
       + '<div class="pet-empty">'
-      +   '<div class="e1">嗨，我是 ' + escapeHtml(S.opt.name) + ' 🐾'
+      +   '<div class="e1">嗨，我是 ' + escapeHtml(S.opt.name)
       +     (tripMode ? '　·　本行程模式' : '') + '</div>'
       +   '<div class="e2">' + (tripMode
               ? '规划、餐厅、酒店、记账…都可以让我来安排'
@@ -560,7 +563,7 @@
   function renderLogin() {
     S.el.body.innerHTML = ''
       + '<div class="pet-login">'
-      +   '<div class="t">登录之后就能和我聊天啦 🐾</div>'
+      +   '<div class="t">登录后即可和我聊旅行</div>'
       +   '<a href="/login/">去登录</a>'
       + '</div>';
     S.el.inputRow.hidden = true;
@@ -1047,15 +1050,9 @@
       S.pet.setAttribute('aria-haspopup', 'dialog');
       S.pet.setAttribute('aria-expanded', 'false');
       S.pet.innerHTML = ''
-        + '<div class="body-wrap">'
-        +   '<div class="body"><div class="belly"></div><div class="scarf"></div>'
-        +     '<div class="eyes"><span class="eye"></span><span class="eye"></span></div>'
-        +     '<span class="cheek l"></span><span class="cheek r"></span>'
-        +   '</div>'
-        +   '<div class="feet"><span class="foot"></span><span class="foot"></span></div>'
-        + '</div>'
-        + '<div class="shadow"></div>'
-        + '<span class="name-chip">' + escapeHtml(S.opt.name) + ' · 点击聊聊</span>';
+        + '<div class="shadow" aria-hidden="true"></div>'
+        + '<div class="body-wrap" aria-hidden="true"></div>'
+        + '<span class="name-chip" aria-hidden="true">' + escapeHtml(S.opt.name) + ' · 点击聊聊</span>';
       S.host.appendChild(S.pet);
       S.pet.addEventListener('pointerdown', onPointerDown);
       S.pet.addEventListener('pointermove', onPointerMove);

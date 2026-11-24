@@ -14,13 +14,17 @@
   pointer-events: none;
 }
 
-/* ===== 宠物本体（纯 CSS 手绘，不依赖图片资源） ===== */
+/* ===== 旅行助手形象 ===== */
+.pet, .pet-bubble {
+  --pet-portrait: url("../img/travel-pet.webp");
+}
+
 .pet {
   position: absolute;
   left: 0;
   top: 0;
-  width: 46px;
-  height: 54px;
+  width: 64px;
+  height: 76px;
   pointer-events: auto;
   cursor: grab;
   touch-action: none;         /* 拖拽时禁止页面滚动（移动端） */
@@ -28,98 +32,21 @@
   /* 吸附/悬停恢复的过渡由 JS 按场景内联设置，这里不设默认过渡 */
 }
 .pet[data-state="drag"] { cursor: grabbing; }
+.pet:focus-visible {
+  outline: 2px solid var(--brand-soft, #5BC5C0);
+  outline-offset: 3px;
+  border-radius: 18px;
+}
 
 .pet .body-wrap {
   position: absolute;
-  inset: 0 0 8px 0;
+  inset: 0 0 5px;
+  background: var(--pet-portrait) center bottom / contain no-repeat;
+  filter: drop-shadow(0 3px 4px rgba(56, 45, 28, .3));
+  pointer-events: none;
   transition: transform 0.25s ease;
 }
 .pet[data-facing="left"] .body-wrap { transform: scaleX(-1); }
-
-.pet .body {
-  position: absolute;
-  inset: 0;
-  border-radius: 50% 50% 46% 46%;
-  background: radial-gradient(circle at 34% 28%, #2FB0A8 0%, #1E9A93 42%, #0D6E6E 100%);
-  box-shadow: inset -4px -6px 0 rgba(9, 74, 74, 0.35), 0 6px 14px rgba(13, 110, 110, 0.30);
-}
-/* 肚皮 */
-.pet .belly {
-  position: absolute;
-  left: 12px; right: 12px; bottom: 4px; height: 18px;
-  border-radius: 50%;
-  background: #EAF7F6;
-  opacity: .92;
-}
-/* 围巾（印章橙） */
-.pet .scarf {
-  position: absolute;
-  left: 8px; right: 8px; bottom: 20px; height: 7px;
-  border-radius: 999px;
-  background: var(--stamp, #FF8A4C);
-  box-shadow: 0 1px 0 rgba(9, 74, 74, 0.25);
-}
-.pet .scarf::after {
-  content: "";
-  position: absolute;
-  right: 7px; bottom: -6px;
-  width: 7px; height: 11px;
-  border-radius: 2px;
-  background: var(--stamp, #FF8A4C);
-  transform: rotate(14deg);
-}
-/* 眼睛（含眨眼动画） */
-.pet .eyes {
-  position: absolute;
-  left: 11px; top: 14px; right: 11px;
-  height: 8px;
-  display: flex;
-  justify-content: space-between;
-}
-.pet .eye {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: #123A3A;
-  position: relative;
-  animation: petBlink 4.6s infinite;
-}
-.pet .eye::after {
-  content: "";
-  position: absolute;
-  left: 1.2px; top: 0.8px;
-  width: 2px; height: 2px;
-  border-radius: 50%;
-  background: #fff;
-  opacity: .9;
-}
-@keyframes petBlink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  95% { transform: scaleY(0.12); }
-}
-/* 腮红 */
-.pet .cheek {
-  position: absolute;
-  top: 22px;
-  width: 6px; height: 3.5px;
-  border-radius: 50%;
-  background: #FF9E6F;
-  opacity: .55;
-}
-.pet .cheek.l { left: 7px; }
-.pet .cheek.r { right: 7px; }
-/* 脚（走路时交替摆动） */
-.pet .feet {
-  position: absolute;
-  left: 8px; right: 8px; bottom: 4px;
-  height: 8px;
-  display: flex;
-  justify-content: space-between;
-}
-.pet .foot {
-  width: 11px; height: 7px;
-  border-radius: 50% 50% 40% 40%;
-  background: #0B5858;
-}
 /* 待机：上下浮动 */
 .pet[data-state="idle"] .body-wrap { animation: petFloat 2.6s ease-in-out infinite; }
 @keyframes petFloat {
@@ -133,24 +60,27 @@
 }
 /* 拖拽态：抬起（放大 + 影子收缩），暂停待机浮动 */
 .pet[data-state="drag"] .body-wrap { animation: none; transform: scale(1.1); }
+.pet[data-state="drag"][data-facing="left"] .body-wrap { transform: scale(-1.1, 1.1); }
 .pet[data-state="drag"] .shadow { transform: scaleX(1.18); opacity: .35; }
 
 /* 影子 */
 .pet .shadow {
   position: absolute;
-  left: 6px; right: 6px; bottom: 0;
+  left: 17%; right: 17%; bottom: 0;
   height: 6px;
   border-radius: 50%;
-  background: rgba(13, 110, 110, 0.18);
+  background: rgba(56, 45, 28, .22);
+  pointer-events: none;
   filter: blur(1px);
   transition: transform .2s ease, opacity .2s ease;
 }
 /* hover 名牌（可点击暗示） */
 .pet .name-chip {
+  --chip-offset-x: -50%;
   position: absolute;
   left: 50%;
   bottom: calc(100% + 6px);
-  transform: translateX(-50%) translateY(3px);
+  transform: translate(var(--chip-offset-x), 3px);
   white-space: nowrap;
   font-size: 11px;
   color: var(--brand, #0D6E6E);
@@ -163,9 +93,12 @@
   pointer-events: none;
   transition: opacity .18s ease, transform .18s ease;
 }
-.pet:hover .name-chip, .pet.bubble-open .name-chip {
+.pet[data-edge="left"] .name-chip { left: 0; --chip-offset-x: 0%; }
+.pet[data-edge="right"] .name-chip { left: 100%; --chip-offset-x: -100%; }
+.pet[data-edge="top"] .name-chip { top: calc(100% + 6px); bottom: auto; }
+.pet:not(.bubble-open):is(:hover, :focus-visible) .name-chip {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(var(--chip-offset-x));
 }
 
 /* ===== 对话气泡 ===== */
@@ -201,22 +134,19 @@
 .pet-bubble .pb-head {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
   padding: 10px 12px;
-  background: linear-gradient(125deg, #0D6E6E 0%, #1E9A93 100%);
+  background: #185858;
   color: #fff;
 }
 .pet-bubble .pb-head .av {
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  background: #EAF7F6;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  background: #F5E7D1 var(--pet-portrait) center top / 93% auto no-repeat;
   flex: none;
 }
-.pet-bubble .pb-head .nm { font-weight: 600; font-size: 13.5px; line-height: 1.2; }
-.pet-bubble .pb-head .role { font-size: 10.5px; opacity: .82; letter-spacing: .05em; }
+.pet-bubble .pb-head .nm { font-weight: 700; font-size: 14px; line-height: 1.35; }
+.pet-bubble .pb-head .role { font-size: 11px; color: #D5ECE8; }
 .pet-bubble .pb-head .x {
   margin-left: auto;
   width: 26px; height: 26px;
@@ -560,7 +490,7 @@
 /* ===== 无障碍 / 弱动效 ===== */
 @media (prefers-reduced-motion: reduce) {
   /* 移动由用户拖拽驱动，保留交互；仅停用装饰性动画与吸附过渡 */
-  .pet .body-wrap, .pet .eye, .pet .shadow { animation: none !important; }
+  .pet .body-wrap, .pet .shadow { animation: none !important; }
   .pet { transition: none !important; }
   .pet-bubble, .pet-mask { transition: none !important; }
 }
@@ -569,7 +499,7 @@
   .pet-host { display: none !important; }
 }
 @media (max-width: 720px) {
-  .pet { width: 40px; height: 48px; }
+  .pet { width: 49px; height: 61px; }
   /* 移动端：气泡即底部 sheet（模态） */
   .pet-bubble {
     left: 0; right: 0; bottom: 0; top: auto;
