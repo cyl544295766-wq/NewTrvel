@@ -4,7 +4,7 @@
  * 把原「悬浮宠物」升级为全站唯一的 AI 助手组件，并补上原先只在
  * 行程详情抽屉里才有的能力：
  *   1. 宠物角色在屏幕范围内自由漫游 / 拖拽 / 边缘吸附；
- *   2. 点击宠物弹出对话气泡，接统一后端（/api/ai/conversations）；
+ *   2. 点击宠物打开大对话面板，接统一后端（/api/ai/conversations）；
  *   3. 支持「行程上下文」：传入 tripId 时使用行程维度会话，
  *      否则使用全局会话（会话 id 按上下文分别持久化到 localStorage）；
  *   4. 草稿内联确认：行程变更 / 记账草稿直接在气泡中「应用 / 放弃」，
@@ -114,7 +114,7 @@
     convId: null,
     sending: false,
     streamAbort: null,   /* 当前流式请求的 AbortController（用户主动停止用） */
-    expanded: false,    /* 桌面展开为右侧抽屉 */
+    expanded: false,    /* 桌面使用右侧抽屉，窄屏使用底部面板 */
     mobile: false,      /* ≤720px：气泡即底部 sheet */
     convs: []           /* 当前上下文可切换的会话列表 */
   };
@@ -384,7 +384,7 @@
     document.body.appendChild(m);
     S.mask = m;
     m.addEventListener('click', function () {
-      if (S.expanded) setExpanded(false); else hideBubble();
+      if (S.expanded && !S.mobile) setExpanded(false); else hideBubble();
     });
     /* 注意：不能把事件处理函数直接绑到 send 上 —— 否则事件对象会冒充 preset 参数
      * 发送中再次点击 = 主动停止（中断流 → 服务端同步取消生成任务） */
@@ -419,11 +419,12 @@
     if (ex) {
       ex.textContent = S.expanded ? '⤡' : '⤢';
       ex.setAttribute('aria-expanded', S.expanded ? 'true' : 'false');
-      ex.setAttribute('aria-label', S.expanded ? '收起为气泡' : '展开对话面板');
+      ex.setAttribute('aria-label', S.expanded ? '缩小聊天面板' : '放大聊天面板');
+      ex.title = ex.getAttribute('aria-label');
       ex.hidden = S.mobile;   /* 移动端本身就是 sheet，无需展开按钮 */
     }
     var bar = S.bubble.querySelector('.pb-bar');
-    if (bar) bar.hidden = !modal;
+    if (bar) bar.hidden = !modal || !isLoggedIn();
     if (S.pet) S.pet.setAttribute('aria-expanded', S.bubbleOpen ? 'true' : 'false');
   }
 
@@ -435,6 +436,7 @@
     if (on && !S.mobile) {
       loadConversations();
       if (S.el.input && !S.el.inputRow.hidden) S.el.input.focus();
+      else if (S.bubbleOpen) S.bubble.querySelector('.x').focus();
     } else {
       placeBubble();
       if (S.pet) S.pet.focus();
@@ -445,7 +447,6 @@
     var m = isMobile();
     if (m === S.mobile) return;
     S.mobile = m;
-    S.expanded = S.expanded && !m;
     if (S.bubble) {
       applyLayout();
       if (modalActive()) loadConversations(); else placeBubble();
@@ -483,6 +484,7 @@
     });
   }
   function loadConversations() {
+    if (!isLoggedIn()) return;
     renderBar();
     var qs = S.tripId ? ('?tripId=' + encodeURIComponent(S.tripId)) : '?scope=global';
     apiGet('/ai/conversations' + qs)
@@ -1000,8 +1002,13 @@
   }
 
   async function showBubble() {
+    if (S.bubbleOpen) {
+      if (!S.mobile) setExpanded(true);
+      return;
+    }
     if (S.snapped) showFull(240);
     buildBubble();
+    S.expanded = true;
     S.bubbleOpen = true;
     S.pet.classList.add('bubble-open');
     setState('idle', S.facing);
@@ -1010,18 +1017,19 @@
     if (modalActive()) loadConversations(); else placeBubble();
     if (!isLoggedIn()) {
       renderLogin();
+      S.bubble.querySelector('.x').focus();
       return;
     }
     S.el.inputRow.hidden = false;
+    S.el.input.focus();
     S.el.body.innerHTML = '<div class="pet-msg ai"><div class="txt"><span class="pet-typing"><i></i><i></i><i></i></span></div></div>';
     await loadHistory();
-    setTimeout(function () { if (S.el.input && !S.el.inputRow.hidden) S.el.input.focus(); }, 120);
   }
 
   function hideBubble() {
     if (!S.bubble) return;
-    S.expanded = false;
     var wasModal = modalActive();
+    S.expanded = false;
     S.bubble.classList.remove('open');
     S.bubbleOpen = false;
     S.pet.classList.remove('bubble-open');
@@ -1076,8 +1084,20 @@
       });
       window.addEventListener('scroll', function () { placeBubble(); }, { passive: true });
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape' || !S.bubbleOpen) return;
-        if (S.expanded) setExpanded(false); else hideBubble();
+        if (!S.bubbleOpen || e.defaultPrevented) return;
+        if (e.key === 'Escape') {
+          hideBubble();
+        } else if (e.key === 'Tab' && modalActive()) {
+          var focusable = Array.from(S.bubble.querySelectorAll('a[href], button, input, select')).filter(function (el) {
+            return !el.disabled && el.getClientRects().length > 0;
+          });
+          var edge = e.shiftKey ? focusable[0] : focusable[focusable.length - 1];
+          var next = e.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+          if (next && (document.activeElement === edge || !S.bubble.contains(document.activeElement))) {
+            e.preventDefault();
+            next.focus();
+          }
+        }
       });
       try {
         var mq = global.matchMedia('(max-width: 720px)');

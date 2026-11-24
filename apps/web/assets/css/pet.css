@@ -133,6 +133,7 @@
 }
 .pet-bubble .pb-head {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
@@ -149,7 +150,7 @@
 .pet-bubble .pb-head .role { font-size: 11px; color: #D5ECE8; }
 .pet-bubble .pb-head .x {
   margin-left: auto;
-  width: 26px; height: 26px;
+  width: 36px; height: 36px;
   border: none;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.16);
@@ -262,6 +263,7 @@
 }
 /* 输入区 */
 .pet-bubble .pb-input {
+  flex-shrink: 0;
   display: flex;
   gap: 7px;
   padding: 9px 10px;
@@ -437,7 +439,7 @@
 
 .pet-bubble .pb-head .who { flex: 1; min-width: 0; overflow: hidden; }
 .pet-bubble .pb-head .ex {
-  flex: none; width: 26px; height: 26px; margin-left: auto; line-height: 1;
+  flex: none; width: 36px; height: 36px; margin-left: auto; line-height: 1;
   border: none; border-radius: 8px;
   background: rgba(255, 255, 255, 0.16); color: #fff;
   cursor: pointer; font-size: 13px; transition: background .15s;
@@ -483,7 +485,7 @@
 .pet-bubble.expanded.open { transform: none; }
 .pet-bubble.expanded::after { display: none; }
 .pet-bubble.expanded .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.pet-bubble.expanded .pb-msgs { flex: 1; max-height: none; padding: 18px 20px 12px; }
+.pet-bubble.expanded .pb-msgs { flex: 1; min-height: 0; max-height: none; padding: 18px 20px 12px; }
 /* 抽屉更宽，限制气泡行宽，避免长句横跨整屏影响阅读 */
 .pet-bubble.expanded .pet-msg { max-width: 78%; }
 
@@ -504,7 +506,10 @@
   .pet-bubble {
     left: 0; right: 0; bottom: 0; top: auto;
     width: 100%; max-width: 100%;
-    max-height: 92vh;
+    height: 92vh;
+    height: 92dvh;
+    max-height: none;
+    padding-bottom: env(safe-area-inset-bottom);
     border-radius: 16px 16px 0 0;
     display: flex; flex-direction: column;
     transform: translateY(100%);
@@ -512,6 +517,7 @@
   .pet-bubble.open { transform: none; }
   .pet-bubble::after { display: none; }
   .pet-bubble .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .pet-bubble .pb-msgs { flex: 1; max-height: none; }
+  .pet-bubble .pb-msgs { flex: 1; min-height: 0; max-height: none; }
+  .pet-bubble .pb-head .x { width: 44px; height: 44px; }
   .pet-mask.show { background: rgba(18, 58, 60, 0.5); }
 }

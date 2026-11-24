@@ -64,7 +64,9 @@ async function main() {
 
   /* ---- 2. 拖拽：实时跟随，松手停止 ---- */
   console.log('--- drag ---');
-  const cx = p0.x + 23, cy = p0.y + 27;
+  const petSize = await page.locator('.pet').evaluate(pet => ({ width: pet.offsetWidth, height: pet.offsetHeight }));
+  const halfWidth = petSize.width / 2, halfHeight = petSize.height / 2;
+  const cx = p0.x + halfWidth, cy = p0.y + halfHeight;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 200, cy - 150, { steps: 6 });
@@ -74,7 +76,7 @@ async function main() {
   await page.mouse.up();
   await page.waitForTimeout(120);
   const dropped = await readPos();
-  check(Math.abs(dropped.x - 700 + 23) <= 2 && Math.abs(dropped.y - 450 + 27) <= 2,
+  check(Math.abs(dropped.x - 700 + halfWidth) <= 2 && Math.abs(dropped.y - 450 + halfHeight) <= 2,
     '松手后停在释放位置（grab 偏移保持）: ' + JSON.stringify(dropped));
   await page.waitForTimeout(900);
   const settled = await readPos();
@@ -92,8 +94,8 @@ async function main() {
 
   /* ---- 4. 边缘吸附：拖近右边缘松手 → 半隐藏 ---- */
   console.log('--- edge snap ---');
-  const expSnapX = 1440 - 46;  /* 修复后：吸附位=完全可见（可拖拽），非半隐藏 */
-  await page.mouse.move(clamped.x + 23, clamped.y + 27);
+  const expSnapX = 1440 - petSize.width;
+  await page.mouse.move(clamped.x + halfWidth, clamped.y + halfHeight);
   await page.mouse.down();
   await page.mouse.move(1436, 500, { steps: 8 });
   await page.mouse.up();
@@ -120,26 +122,26 @@ async function main() {
 
   /* ---- 6. resize：吸附态随窗口重贴边 ---- */
   await page.setViewportSize({ width: 1000, height: 800 });
-  await waitX(1000 - 46);  /* 修复后吸附位=完全可见：innerWidth - w */
+  await waitX(1000 - petSize.width);
   const rs = await readPos();
-  check(rs.x === 1000 - 46, '窗口缩小后重新贴右缘（x = ' + rs.x + '）');
+  check(rs.x === 1000 - petSize.width, '窗口缩小后重新贴右缘（x = ' + rs.x + '）');
   await page.screenshot({ path: path.join(SHOTS, 'snapped.png'), fullPage: false, timeout: 60000 }).catch((e) => console.log('  (skip) snapped 截图失败：' + e.message.split('\n')[0]));
 
   /* ---- 7. 点按吸附中的宠物 → 恢复完整 + 打开气泡 ---- */
-  await page.mouse.move(977 + 10, (await readPos()).y + 27);
+  await page.mouse.move(1000 - halfWidth, (await readPos()).y + halfHeight);
   await page.mouse.down();
   await page.mouse.up();
   await Promise.all([
-    page.waitForSelector('.pet-bubble.open', { timeout: 5000 }),
-    waitX(1000 - 46)
+    page.waitForSelector('.pet-bubble.open.expanded', { timeout: 5000 }),
+    waitX(1000 - petSize.width)
   ]);
   const openedFull = await readPos();
-  check(openedFull.x === 1000 - 46, '点按吸附宠物：恢复完整显示（x = ' + openedFull.x + '）');
+  check(openedFull.x === 1000 - petSize.width, '点按吸附宠物：恢复完整显示（x = ' + openedFull.x + '）');
   check(await page.locator('.pet-bubble.open').count() === 1, '点按后气泡打开');
   await page.locator('.pb-head .x').click();
-  await waitX(1000 - 46);  /* 修复后吸附位=完全可见 */
+  await waitX(1000 - petSize.width);
   const backHalf = await readPos();
-  check(backHalf.x === 1000 - 46, '气泡关闭后回到吸附位（x = ' + backHalf.x + '）');
+  check(backHalf.x === 1000 - petSize.width, '对话关闭后回到吸附位（x = ' + backHalf.x + '）');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForTimeout(400);
 
@@ -148,11 +150,15 @@ async function main() {
   /* ---- 2. 点击 → 气泡打开 ---- */
   console.log('--- bubble open ---');
   await page.locator('.pet').click();
-  await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
+  await page.waitForSelector('.pet-bubble.open.expanded[aria-modal="true"]', { timeout: 5000 });
   const nm = (await page.locator('.pb-head .nm').textContent()).trim();
   check(nm === '游游', '气泡标题 = 宠物名: ' + nm);
+  await page.locator('.pb-head [aria-label="缩小聊天面板"]').click();
+  await page.waitForSelector('.pet-bubble.open:not(.expanded)[aria-modal="false"]');
   const tailX = await page.locator('.pet-bubble').evaluate(el => el.style.getPropertyValue('--tail-x'));
-  check(!!tailX, '气泡尾巴已对准宠物 (--tail-x = ' + tailX + ')');
+  check(!!tailX, '缩小后气泡尾巴已对准宠物');
+  await page.locator('.pb-head [aria-label="放大聊天面板"]').click();
+  await page.waitForSelector('.pet-bubble.open.expanded[aria-modal="true"]');
 
   /* ---- 3. 已登录：加载历史（可能为空态含示例问题） ---- */
   await page.waitForTimeout(1200);
@@ -164,11 +170,6 @@ async function main() {
 
   /* ---- 8. 示例问题 chip（空态直接发送，真实 AI 回复） ---- */
   console.log('--- AI conversation (chip) ---');
-  /* 重新打开气泡（视口已还原 1440，宠物吸附在右缘半隐藏） */
-  await page.mouse.move(1417 + 10, (await readPos()).y + 27);
-  await page.mouse.down();
-  await page.mouse.up();
-  await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
   await page.waitForSelector('.pet-chip', { timeout: 10000 });
   await page.locator('.pet-chip').first().click();
   try {

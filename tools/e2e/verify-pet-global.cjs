@@ -83,9 +83,7 @@ async function main() {
     console.log('  !!  trip-detail 未渲染模块（本次自建行程）'); failures++;
   } else {
     await page.locator('.pet').click();
-    await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
-    await page.locator('.pet-bubble .ex').click();
-    await page.waitForSelector('.pet-bubble.expanded', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('.pet-bubble.open.expanded[aria-modal="true"]', { timeout: 5000 });
     await page.waitForTimeout(600);
     const layering = await page.evaluate(() => {
       const petZ = parseInt(getComputedStyle(document.querySelector('.pet-host')).zIndex, 10);
