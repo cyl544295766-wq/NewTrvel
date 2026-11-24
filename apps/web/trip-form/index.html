@@ -705,6 +705,15 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog id="dateImpact" aria-labelledby="dateImpactTitle"
+    style="width:min(34rem, calc(100% - 2rem)); max-height:85vh; padding:24px; border:1px solid #38424F; border-radius:16px; color:#EFF5F6; background:#161A23;">
+  <h2 id="dateImpactTitle">确认行程改期</h2>
+  <div id="dateImpactBody"></div>
+  <form method="dialog" style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+    <button type="submit" class="btn-cancel" value="cancel" autofocus>返回编辑</button>
+    <button type="submit" class="btn-save" value="confirm" id="confirmDateImpact">确认并保存</button>
+  </form>
+</dialog>
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
@@ -912,7 +921,9 @@
     });
 
     /* ===== 编辑模式：加载行程 ===== */
+    var originalStart = '', originalEnd = '';
     async function loadTrip() {
+      $('btnSave').disabled = true;
       try {
         var data = await apiGet('/trips/' + tripId);
         var t = data && data.trip;
@@ -921,6 +932,8 @@
         inDest.value = t.destination || '';
         if (t.startDate) inStart.value = String(t.startDate).slice(0, 10);
         if (t.endDate) inEnd.value = String(t.endDate).slice(0, 10);
+        originalStart = inStart.value;
+        originalEnd = inEnd.value;
         if (t.budget != null) inBudget.value = Number(t.budget);
         inCover.value = t.coverImageUrl || '';
         inDesc.value = t.description || '';
@@ -930,10 +943,61 @@
         });
         $('cDesc').textContent = inDesc.value.length + ' / 500';
         updatePreview();
+        $('btnSave').disabled = false;
       } catch (err) {
         showToast(humanError(err));
         setTimeout(function () { location.replace('/trips/'); }, 1200);
       }
+    }
+
+    async function confirmDateChange(path, payload, refreshed) {
+      var query = new URLSearchParams();
+      ['startDate', 'endDate'].forEach(function (key) {
+        if (Object.hasOwn(payload, key)) query.set(key, payload[key] || '');
+      });
+      var preview = await apiGet(path + '/date-change-preview?' + query.toString());
+      var dialog = $('dateImpact');
+      var body = $('dateImpactBody');
+      body.replaceChildren();
+      function paragraph(text) {
+        var p = document.createElement('p');
+        p.textContent = text;
+        body.append(p);
+      }
+      if (refreshed) paragraph('行程已有变动，请重新核对这份预览。');
+      var range = preview.newRange;
+      paragraph((range.startDate || '未设置开始日期') + ' 至 ' + (range.endDate || '未设置结束日期'));
+      var groups = [
+        ['移动', preview.moves, function (d) { return d.from + ' → ' + d.to; }],
+        ['保留', preview.preserved, function (d) { return d.date; }],
+        ['移除空白天', preview.removed, function (d) { return d.date; }],
+        ['新增', preview.additions, function (d) { return d.date; }]
+      ];
+      groups.forEach(function (group) {
+        var days = group[1] || [];
+        if (!days.length) return;
+        var heading = document.createElement('p');
+        heading.textContent = group[0] + ' ' + days.length + ' 天';
+        body.append(heading);
+        var list = document.createElement('ul');
+        days.forEach(function (day) {
+          var item = document.createElement('li');
+          item.textContent = '第 ' + day.dayIndex + ' 天 · ' + group[2](day);
+          list.append(item);
+        });
+        body.append(list);
+      });
+      if (preview.message || preview.blockedReason) paragraph(preview.blockedReason || preview.message);
+      if (!groups.some(function (group) { return group[1] && group[1].length; }) && !preview.message) {
+        paragraph('现有行程天无需调整。');
+      }
+      $('confirmDateImpact').disabled = !preview.canSave;
+      dialog.returnValue = '';
+      dialog.showModal();
+      var confirmed = await new Promise(function (resolve) {
+        dialog.addEventListener('close', function () { resolve(dialog.returnValue === 'confirm'); }, { once: true });
+      });
+      return confirmed ? preview.previewToken : null;
     }
 
     /* ===== 保存 ===== */
@@ -957,6 +1021,8 @@
       if (isEdit) {
         payload.status = curStatus;
         payload.budget = bud === '' ? null : bud;
+        if (inStart.value === originalStart) delete payload.startDate;
+        if (inEnd.value === originalEnd) delete payload.endDate;
       }
 
       var saveBtn = $('btnSave');
@@ -966,7 +1032,28 @@
       try {
         var newId = tripId;
         if (isEdit) {
-          await apiPatch('/trips/' + tripId, payload);
+          var path = '/trips/' + tripId;
+          var hasDateChange = Object.hasOwn(payload, 'startDate') || Object.hasOwn(payload, 'endDate');
+          if (hasDateChange) {
+            var refreshed = false;
+            while (true) {
+              var token = await confirmDateChange(path, payload, refreshed);
+              if (!token) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = oldText;
+                return;
+              }
+              try {
+                await apiPatch(path, Object.assign({}, payload, { previewToken: token }));
+                break;
+              } catch (err) {
+                if (err.status !== 409) throw err;
+                refreshed = true;
+              }
+            }
+          } else {
+            await apiPatch(path, payload);
+          }
           showToast('已保存');
         } else {
           /* 注意：create 不接收 budget，创建成功后单独 PATCH 补写 */

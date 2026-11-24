@@ -1,10 +1,11 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.travelos.common.Payloads;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
+import com.travelos.common.Payloads;
 import com.travelos.entity.Trip;
 import com.travelos.entity.TripDay;
 import com.travelos.entity.TripPlace;
@@ -72,18 +73,22 @@ public class TripDayService {
   @Transactional
   public Map<String, Object> update(String tripId, String dayId, Map<String, Object> dto,
       String userId) {
-    TripDay day = tripDayMapper.selectById(dayId);
-    if (day == null || !day.getTripId().equals(tripId)) {
+    TripDay day = tripDayMapper.selectOne(new LambdaQueryWrapper<TripDay>()
+        .eq(TripDay::getId, dayId).eq(TripDay::getTripId, tripId).last("FOR UPDATE"));
+    if (day == null) {
       throw ApiException.notFound("行程天数不存在");
     }
+    var changes = new LambdaUpdateWrapper<TripDay>().eq(TripDay::getId, dayId);
     if (dto.containsKey("title")) {
       day.setTitle(Payloads.trimmedOrNull(dto.get("title")));
+      changes.set(TripDay::getTitle, day.getTitle());
     }
     if (dto.containsKey("summary")) {
       day.setSummary(Payloads.trimmedOrNull(dto.get("summary")));
+      changes.set(TripDay::getSummary, day.getSummary());
     }
     day.setUpdatedAt(new Date());
-    tripDayMapper.updateById(day);
+    tripDayMapper.update(null, changes.set(TripDay::getUpdatedAt, day.getUpdatedAt()));
     return Map.of("day", toDayResponse(day));
   }
 

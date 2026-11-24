@@ -76,23 +76,17 @@ class SettlementCurrencyTest {
   @AfterAll
   void cleanup() {
     for (String tid : createdTripIds) {
-      for (String table : new String[]{
-          "trip_expense_shares", "trip_expenses", "trip_budgets",
-          "trip_settlements", "trip_members", "trips"}) {
-        try {
-          if ("trip_expense_shares".equals(table)) {
-            jdbc.update("DELETE FROM " + table + " WHERE expense_id IN (SELECT id FROM trip_expenses WHERE trip_id=?)", tid);
-          } else {
-            jdbc.update("DELETE FROM " + table + " WHERE trip_id=?", tid);
-          }
-        } catch (Exception ignored) {}
+      for (String table : List.of("trip_expenses", "trip_budgets", "trip_settlements", "trip_members")) {
+        jdbc.update("DELETE FROM " + table + " WHERE trip_id=?", tid);
       }
+      jdbc.update("DELETE FROM trips WHERE id=?", tid);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM trips WHERE id=?", Integer.class, tid));
     }
     for (String uid : createdUserIds) {
-      try {
-        jdbc.update("DELETE FROM user_friends WHERE user_id=? OR friend_id=?", uid, uid);
-        jdbc.update("DELETE FROM users WHERE id=?", uid);
-      } catch (Exception ignored) {}
+      jdbc.update("DELETE FROM notifications WHERE user_id=?", uid);
+      jdbc.update("DELETE FROM user_friends WHERE user_id=? OR friend_id=?", uid, uid);
+      jdbc.update("DELETE FROM users WHERE id=?", uid);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM users WHERE id=?", Integer.class, uid));
     }
   }
 

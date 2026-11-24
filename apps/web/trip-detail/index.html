@@ -966,7 +966,8 @@
       var st = STATUS[t.status] || STATUS.draft;
       var days = t.startDate && t.endDate ? daysBetween(t.startDate, t.endDate) : 0;
       var codeText = t.status === 'draft' ? 'DRAFT' : codeFor(t);
-      var spent = state.expenses && state.expenses.summary && parseFloat(state.expenses.summary.totalAmount) || 0;
+      var expenseTotals = state.expenses && state.expenses.summary && state.expenses.summary.totalByCurrency;
+      var spent = Number(expenseTotals && expenseTotals.CNY) || 0;
 
       document.getElementById('crumbTitle').textContent = t.title || '未命名旅程';
       document.title = '织途 · ' + (t.title || '旅程详情');
@@ -983,7 +984,7 @@
         +     '<div class="field"><div class="k">开始日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.startDate) || '日期待定') + '</div></div>'
         +     '<div class="field"><div class="k">结束日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.endDate) || '日期待定') + '</div></div>'
         +     '<div class="field"><div class="k">预算</div><div class="v">' + escapeHtml(fmtMoney(t.budget || 0)) + '</div></div>'
-        +     '<div class="field"><div class="k">已花费</div><div class="v' + (spent > 0 ? ' warn' : '') + '">' + escapeHtml(fmtMoney(spent)) + '</div></div>'
+        +     '<div class="field"><div class="k">已花费 · CNY</div><div class="v' + (spent > 0 ? ' warn' : '') + '">' + escapeHtml(fmtMoney(spent)) + '</div></div>'
         +   '</div>'
         +   '<div class="desc' + (t.description ? '' : ' empty') + '">'
         +     '<span class="k">描述</span>'
@@ -1344,10 +1345,13 @@
       if (typeof d !== 'object') return String(d);
       var role = d.role ? (LOG_ROLE[d.role] || d.role) : null;
       var who = d.username ? '@' + d.username : null;
+      function logAmount(amount) {
+        return amount == null ? '' : amount + (d.currency ? ' ' + d.currency : '');
+      }
 
       switch (l.action) {
         case 'expense_deleted':
-          return [d.title, d.amount ? '¥ ' + d.amount : null].filter(Boolean).join(' · ');
+          return [d.title, logAmount(d.amount)].filter(Boolean).join(' · ');
         case 'ai_expense_applied':
           return d.amount ? String(d.amount) : '';
         case 'ai_itinerary_applied':
@@ -1369,7 +1373,7 @@
           return [d.from ? '@' + d.from : null, d.to ? '@' + d.to : null].filter(Boolean).join(' → ');
         case 'settlement_confirmed':
           return [d.transfers != null ? d.transfers + ' 笔转账' : null,
-                  d.totalAmount ? '合计 ¥ ' + d.totalAmount : null].filter(Boolean).join(' · ');
+                  d.totalAmount != null ? '合计 ' + logAmount(d.totalAmount) : null].filter(Boolean).join(' · ');
         case 'ai_conversation_deleted':
           return '';
         default:
@@ -1380,7 +1384,7 @@
       if (d.title) parts.push(d.title);
       if (d.name) parts.push(d.name);
       if (d.caption) parts.push(d.caption);
-      if (d.amount) parts.push('¥ ' + d.amount);
+      if (d.amount != null) parts.push(logAmount(d.amount));
       if (role) parts.push('角色 ' + role);
       if (who) parts.push(who);
       return parts.join(' · ');

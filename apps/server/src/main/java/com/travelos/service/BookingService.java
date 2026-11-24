@@ -70,12 +70,7 @@ public class BookingService {
     if (booking.getTitle() == null || booking.getTitle().isBlank()) {
       throw ApiException.badRequest("预订标题不能为空");
     }
-    if (booking.getTripDayId() != null) {
-      ensureDayBelongsToTrip(booking.getTripDayId(), tripId);
-    }
-    if (booking.getTripPlaceId() != null) {
-      ensurePlaceBelongsToTrip(booking.getTripPlaceId(), tripId);
-    }
+    applyAssociations(booking, tripId, dto);
     booking.setTripId(tripId);
     // 属主以当前登录用户为准，禁止信任前端传入的 creatorId 等字段
     booking.setCreatorId(userId);
@@ -94,6 +89,14 @@ public class BookingService {
     // 数据隔离：仅创建者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
     fillFromDto(booking, dto, userId);
+    applyAssociations(booking, tripId, dto);
+    applyDefaultReminder(booking, dto);
+    booking.setUpdatedAt(new Date());
+    bookingMapper.updateById(booking);
+    return Map.of("booking", toResponse(booking, true));
+  }
+
+  private void applyAssociations(Booking booking, String tripId, Map<String, Object> dto) {
     if (dto.containsKey("tripDayId")) {
       String tripDayId = Payloads.text(dto.get("tripDayId"));
       if (tripDayId != null) {
@@ -108,10 +111,6 @@ public class BookingService {
       }
       booking.setTripPlaceId(tripPlaceId);
     }
-    applyDefaultReminder(booking, dto);
-    booking.setUpdatedAt(new Date());
-    bookingMapper.updateById(booking);
-    return Map.of("booking", toResponse(booking, true));
   }
 
   @Transactional
@@ -148,6 +147,8 @@ public class BookingService {
     Map<String, Object> dto = new LinkedHashMap<>();
     dto.put("title", booking.getTitle());
     dto.put("amount", booking.getAmount().toPlainString());
+    dto.put("currency", booking.getCurrency());
+    dto.put("tripDayId", booking.getTripDayId());
     dto.put("category", TYPE_TO_EXPENSE_CATEGORY.getOrDefault(
         booking.getType() == null ? "other" : booking.getType(), "other"));
     if (booking.getStartTime() != null) {
@@ -169,6 +170,7 @@ public class BookingService {
     auditService.record(userId, tripId, "booking_converted", "booking", bookingId,
         Map.of("title", booking.getTitle(),
             "amount", Fmt.money(booking.getAmount()),
+            "currency", TripExpenseService.normalizeCurrency(booking.getCurrency()),
             "expenseId", booking.getExpenseId()));
     return Map.of("booking", toResponse(booking, true), "expense", expense);
   }

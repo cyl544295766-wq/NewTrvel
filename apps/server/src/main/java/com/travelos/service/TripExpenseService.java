@@ -249,7 +249,7 @@ public class TripExpenseService {
     expenseMapper.deleteById(expenseId);
     auditService.record(userId, tripId, "expense_deleted", "trip_expense", expenseId,
         Map.of("title", expense.getTitle() == null ? "" : expense.getTitle(),
-            "amount", Fmt.money(expense.getAmount())));
+            "amount", Fmt.money(expense.getAmount()), "currency", normalizeCurrency(expense.getCurrency())));
     return Map.of("success", true);
   }
 
@@ -329,8 +329,9 @@ public class TripExpenseService {
       spentByCategory.merge(expense.getCategory(), cents, Long::sum);
     }
 
-    // 预估占用 = 行程点预估费用 + bookings.amount（均不做汇率折算，产品决策）
+    // 行程点预估使用 CNY；异币预订单独按原币汇总。
     Map<String, Long> estimatedByCategory = new LinkedHashMap<>();
+    Map<String, Long> foreignEstimatedByCurrency = new LinkedHashMap<>();
     long totalEstimated = 0;
     for (TripPlace place : tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
         .eq(TripPlace::getTripId, tripId))) {
@@ -352,6 +353,11 @@ public class TripExpenseService {
         continue;
       }
       long cents = toCentsQuiet(booking.getAmount());
+      String currency = normalizeCurrency(booking.getCurrency());
+      if (!budgetCurrency.equals(currency)) {
+        foreignEstimatedByCurrency.merge(currency, cents, Long::sum);
+        continue;
+      }
       String category = BOOKING_TYPE_TO_CATEGORY.getOrDefault(booking.getType(), "other");
       estimatedByCategory.merge(category, cents, Long::sum);
       totalEstimated += cents;
@@ -403,6 +409,9 @@ public class TripExpenseService {
     Map<String, String> foreignFmt = new LinkedHashMap<>();
     foreignByCurrency.forEach((cur, amt) -> foreignFmt.put(cur, centsToString(amt)));
     body.put("foreignCurrencySpent", foreignFmt);
+    Map<String, String> foreignEstimated = new LinkedHashMap<>();
+    foreignEstimatedByCurrency.forEach((cur, amt) -> foreignEstimated.put(cur, centsToString(amt)));
+    body.put("foreignCurrencyEstimated", foreignEstimated);
     return body;
   }
 
@@ -508,7 +517,9 @@ public class TripExpenseService {
     Map<String, Object> body = new LinkedHashMap<>();
     // 兼容旧单币种响应：currency/totalAmount/nets/transfers 取主币种
     @SuppressWarnings("unchecked")
-    Map<String, Object> primaryResult = (Map<String, Object>) byCurrency.get(primary);
+    Map<String, Object> primaryResult = totalByCur.isEmpty()
+        ? computeTransfers(members, Map.of(), Map.of(), primary)
+        : (Map<String, Object>) byCurrency.get(primary);
     body.put("currency", primary);
     body.put("totalAmount", primaryResult.get("totalAmount"));
     body.put("nets", primaryResult.get("nets"));
@@ -522,7 +533,7 @@ public class TripExpenseService {
     if (multiCurrency) {
       body.put("confirmBlockedReason",
           "当前行程包含多种币种（" + String.join("、", currencies) + "），分币种结算尚未上线。"
-              + "预览已按币种独立计算，确认前请先统一只保留一种币种。");
+              + "可查看各币种的独立结算明细，当前无法确认结算。");
     }
     body.put("latestSettlement", latestSettlementMap(tripId));
     return body;
@@ -623,7 +634,8 @@ public class TripExpenseService {
           "旅行「" + tripTitle + "」的账目已结清，共 " + transfers.size() + " 笔转账，点击查看结算方案。");
     }
     auditService.record(confirmedBy, tripId, "settlement_confirmed", "trip", tripId,
-        Map.of("totalAmount", plan.get("totalAmount"), "transfers", transfers.size()));
+        Map.of("totalAmount", plan.get("totalAmount"), "currency", plan.get("currency"),
+            "transfers", transfers.size()));
     return Map.of("settlement", settlementMap(settlement, tripTitle));
   }
 
@@ -638,9 +650,9 @@ public class TripExpenseService {
     // 主币种：出现次数最多（并列取先出现）
     Map<String, Integer> currencyCount = new LinkedHashMap<>();
     for (TripExpense expense : expenses) {
-      currencyCount.merge(expense.getCurrency(), 1, Integer::sum);
+      currencyCount.merge(normalizeCurrency(expense.getCurrency()), 1, Integer::sum);
     }
-    String primary = expenses.isEmpty() ? "CNY" : expenses.get(0).getCurrency();
+    String primary = "CNY";
     int best = 0;
     for (Map.Entry<String, Integer> entry : currencyCount.entrySet()) {
       if (entry.getValue() > best) {
@@ -660,8 +672,9 @@ public class TripExpenseService {
     long primaryTotal = 0;
     for (TripExpense expense : expenses) {
       long cents = toCentsQuiet(expense.getAmount());
-      if (!expense.getCurrency().equals(primary)) {
-        otherCurrencyTotals.merge(expense.getCurrency(), cents, Long::sum);
+      String currency = normalizeCurrency(expense.getCurrency());
+      if (!currency.equals(primary)) {
+        otherCurrencyTotals.merge(currency, cents, Long::sum);
         continue;
       }
       primaryTotal += cents;

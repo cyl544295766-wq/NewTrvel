@@ -222,14 +222,7 @@ public class DashboardService {
             return map;
           })
           .toList();
-      recentJournals = tripJournalService.filterVisibleBatch(
-              journalMapper.selectList(new LambdaQueryWrapper<TripJournal>()
-                  .in(TripJournal::getTripId, tripIds)
-                  .eq(TripJournal::getIsDraft, false)
-                  .orderByDesc(TripJournal::getCreatedAt)
-                  .last("LIMIT 20")), userId)
-          .stream()
-          .limit(3)
+      recentJournals = latestVisibleJournals(tripIds, userId).stream()
           .map(journal -> {
             Trip trip = tripMap.get(journal.getTripId());
             Map<String, Object> map = new LinkedHashMap<>();
@@ -270,6 +263,34 @@ public class DashboardService {
     body.put("upcomingDocuments", upcomingDocuments);
     body.put("recentJournals", recentJournals);
     return body;
+  }
+
+  private List<TripJournal> latestVisibleJournals(List<String> tripIds, String userId) {
+    int batchSize = 20;
+    List<TripJournal> visible = new ArrayList<>(3);
+    TripJournal cursor = null;
+    while (visible.size() < 3) {
+      var query = new LambdaQueryWrapper<TripJournal>()
+          .in(TripJournal::getTripId, tripIds)
+          .eq(TripJournal::getIsDraft, false)
+          .orderByDesc(TripJournal::getCreatedAt, TripJournal::getId)
+          .last("LIMIT " + batchSize);
+      if (cursor != null) {
+        Date date = cursor.getCreatedAt();
+        String id = cursor.getId();
+        query.and(q -> q.lt(TripJournal::getCreatedAt, date)
+            .or(tie -> tie.eq(TripJournal::getCreatedAt, date).lt(TripJournal::getId, id)));
+      }
+      List<TripJournal> batch = journalMapper.selectList(query);
+      tripJournalService.filterVisibleBatch(batch, userId).stream()
+          .limit(3 - visible.size())
+          .forEach(visible::add);
+      if (batch.size() < batchSize) {
+        break;
+      }
+      cursor = batch.get(batch.size() - 1);
+    }
+    return visible;
   }
 
   private Map<String, Object> tripResponse(Trip trip) {

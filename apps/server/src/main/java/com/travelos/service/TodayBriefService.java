@@ -340,7 +340,7 @@ public class TodayBriefService {
         weather, bookings, budget, packing, documents);
 
     SummaryResult summary = llmSummary
-        ? summarizeViaLlm(trip, mode, day, schedule, weather, bookings, budget, packing, documents,
+        ? summarizeViaLlm(trip, mode, day, schedule, weather, bookings, packing, documents,
             alerts, zone)
         : new SummaryResult(fallbackSummary(mode, day, schedule, alerts.size(), packing), "fallback");
 
@@ -367,7 +367,7 @@ public class TodayBriefService {
     body.put("trip", tripMap);
     body.put("mode", mode);
     body.put("day", dayMap);
-    body.put("summary", summary.text());
+    body.put("summary", appendTodaySpending(summary.text(), budget));
     body.put("summarySource", summary.source());
     body.put("schedule", schedule);
     body.put("weather", weather);
@@ -499,8 +499,7 @@ public class TodayBriefService {
           continue;
         }
         if (expense.getAmount() != null) {
-          String cur = expense.getCurrency() == null || expense.getCurrency().isBlank()
-              ? "CNY" : expense.getCurrency();
+          String cur = TripExpenseService.normalizeCurrency(expense.getCurrency());
           spentByCurrency.merge(cur, expense.getAmount(), BigDecimal::add);
           todayCount++;
         }
@@ -534,6 +533,9 @@ public class TodayBriefService {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("tripBudget", budget.get("tripBudget"));
+    body.put("budgetCurrency", budget.get("budgetCurrency"));
+    body.put("foreignCurrencySpent", budget.get("foreignCurrencySpent"));
+    body.put("foreignCurrencyEstimated", budget.get("foreignCurrencyEstimated"));
     body.put("totalSpent", budget.get("totalSpent"));
     body.put("totalEstimated", budget.get("totalEstimated"));
     body.put("totalRemaining", budget.get("totalRemaining"));
@@ -749,7 +751,8 @@ public class TodayBriefService {
       String expenseUrl = "/expenses/?trip=" + tripId;
       if (totalBudget.signum() > 0 && spent.compareTo(totalBudget) > 0) {
         alerts.add(alert("budget_risk", "urgent", "花费已超过预算",
-            "累计花费 " + budget.get("totalSpent") + " 已超过总预算 " + budget.get("tripBudget"),
+            "累计花费 " + budget.get("totalSpent") + " CNY 已超过总预算 "
+                + budget.get("tripBudget") + " CNY",
             "totalSpent=" + budget.get("totalSpent") + ", tripBudget=" + budget.get("tripBudget"),
             action("查看账目", expenseUrl), 2));
       } else if (Boolean.TRUE.equals(budget.get("totalWarning"))) {
@@ -761,7 +764,8 @@ public class TodayBriefService {
       } else if (totalBudget.signum() > 0 && remaining.signum() >= 0
           && remaining.compareTo(totalBudget.divide(BigDecimal.TEN, 2, RoundingMode.HALF_UP)) <= 0) {
         alerts.add(alert("budget_risk", "warning", "剩余预算不足一成",
-            "总预算 " + budget.get("tripBudget") + "，剩余 " + budget.get("totalRemaining"),
+            "总预算 " + budget.get("tripBudget") + " CNY，剩余 "
+                + budget.get("totalRemaining") + " CNY",
             "totalRemaining=" + budget.get("totalRemaining") + ", tripBudget="
                 + budget.get("tripBudget"),
             action("查看账目", expenseUrl), 2));
@@ -806,13 +810,13 @@ public class TodayBriefService {
 
   private SummaryResult summarizeViaLlm(Trip trip, String mode, TripDay day,
       List<Map<String, Object>> schedule, Map<String, Object> weather,
-      List<Map<String, Object>> bookings, Map<String, Object> budget, Map<String, Object> packing,
+      List<Map<String, Object>> bookings, Map<String, Object> packing,
       Map<String, Object> documents, List<Alert> alerts, ZoneId zone) {
     String template = fallbackSummary(mode, day, schedule, alerts.size(), packing);
     if (!llm.isEnabled()) {
       return new SummaryResult(template, "fallback");
     }
-    String facts = factText(trip, mode, day, schedule, weather, bookings, budget, packing,
+    String facts = factText(trip, mode, day, schedule, weather, bookings, packing,
         documents, alerts, zone);
     Future<String> future = llmExecutor.submit(() -> {
       Map<String, Object> message = llm.chat(List.of(
@@ -838,11 +842,12 @@ public class TodayBriefService {
           + "要求：1) 只使用数据中出现的事实，绝不添加数据中不存在的地点、时间、天气、价格或预订；"
           + "2) 信息不足时直接说不足，不要用常识性事实冒充真实数据；"
           + "3) 结合已有提醒给出简短可执行的建议，但不要编造新的提醒；"
-          + "4) 不暴露订单号、确认码、证件号或文件地址；5) 直接输出摘要正文，不要标题、列表或 Markdown。";
+          + "4) 不暴露订单号、确认码、证件号或文件地址；"
+          + "5) 不输出金额，系统会另行按币种展示；6) 直接输出摘要正文，不要标题、列表或 Markdown。";
 
   /** 给 LLM 的最小字段事实文本：不含订单号/确认码/证件内容。 */
   private String factText(Trip trip, String mode, TripDay day, List<Map<String, Object>> schedule,
-      Map<String, Object> weather, List<Map<String, Object>> bookings, Map<String, Object> budget,
+      Map<String, Object> weather, List<Map<String, Object>> bookings,
       Map<String, Object> packing, Map<String, Object> documents, List<Alert> alerts, ZoneId zone) {
     StringBuilder text = new StringBuilder();
     text.append("行程：").append(trip.getTitle())
@@ -878,23 +883,6 @@ public class TodayBriefService {
               || Boolean.TRUE.equals(booking.get("hasConfirmCode")) ? "（已有确认信息）" : "（缺确认信息）");
     }
     text.append("\n");
-    if (budget != null) {
-      text.append("预算：总 ").append(budget.get("tripBudget")).append("（")
-          .append(budget.getOrDefault("budgetCurrency", "CNY")).append("），已花 ")
-          .append(budget.get("totalSpent")).append("，剩余 ").append(budget.get("totalRemaining"));
-      // TR-02：多币种时提示今日分币种支出，避免混币虚假合计
-      if (budget.get("todaySpentByCurrency") instanceof java.util.Map<?, ?> byCur && byCur.size() > 1) {
-        text.append("，今日 ");
-        byCur.forEach((cur, amt) -> text.append(amt).append(" ").append(cur).append("、"));
-        text.setLength(text.length() - 1); // 去尾逗号
-      } else {
-        text.append("，今日 ").append(budget.get("todaySpent"));
-      }
-      if (budget.get("foreignCurrencySpent") instanceof java.util.Map<?, ?> foreign && !foreign.isEmpty()) {
-        text.append("（另有异币支出未计入预算）");
-      }
-      text.append("\n");
-    }
     if (packing != null) {
       text.append("打包：共 ").append(packing.get("totalItems")).append(" 件，未打包 ")
           .append(packing.get("unpackedItems")).append(" 件\n");
@@ -906,10 +894,23 @@ public class TodayBriefService {
     }
     text.append("提醒：").append(alerts.isEmpty() ? "无" : "").append("\n");
     for (Alert alert : alerts) {
-      text.append("- [").append(alert.body().get("title")).append("] ")
-          .append(alert.body().get("detail")).append("\n");
+      text.append("- [").append(alert.body().get("title")).append("]");
+      if (!"budget_risk".equals(alert.body().get("type"))) {
+        text.append(" ").append(alert.body().get("detail"));
+      }
+      text.append("\n");
     }
     return text.toString();
+  }
+
+  private String appendTodaySpending(String summary, Map<String, Object> budget) {
+    if (budget == null || !(budget.get("todaySpentByCurrency") instanceof Map<?, ?> amounts)
+        || amounts.isEmpty()) {
+      return summary;
+    }
+    var spending = new java.util.StringJoiner("、", " 今日已记账：", "。");
+    amounts.forEach((currency, amount) -> spending.add(amount + " " + currency));
+    return summary + spending;
   }
 
   /** 模板降级摘要：LLM 未配置/失败时保证接口仍返回可读摘要（alertCount 为提醒条数）。 */

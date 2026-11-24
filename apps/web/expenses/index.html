@@ -657,10 +657,13 @@
     <!-- 汇总 -->
     <section class="wallet">
       <div class="wcard">
-        <div class="k">预算用量 · BUDGET</div>
+        <div class="k">预算用量 · CNY</div>
         <div class="v" id="wSpent">– <small id="wBudgetLab">/ –</small></div>
         <div class="meter-bar" id="meterBar"><span class="spent" id="meterSpent" style="width:0%"></span><span class="est" id="meterEst" style="width:0%"></span></div>
         <div class="pct-lab"><span>已用 <b id="wPct">0%</b></span><span>剩余 <b id="wRemain">–</b></span></div>
+        <div class="foot" id="wEst"></div>
+        <div class="foot" id="wForeignSpent"></div>
+        <div class="foot" id="wForeignEstimated"></div>
       </div>
       <div class="wcard">
         <div class="k">记账笔数 · ENTRIES</div>
@@ -668,7 +671,7 @@
         <div class="foot" id="wFoot">最大一笔 –</div>
       </div>
       <div class="wcard">
-        <div class="k">人均花费 · PER HEAD</div>
+        <div class="k">人均花费 · CNY</div>
         <div class="v" id="wPerHead">–</div>
         <div class="foot" id="wPerFoot">按全体成员均摊</div>
       </div>
@@ -689,8 +692,16 @@
       </div>
       <div class="fp-grid">
         <div class="fp-field wide">
-          <label>金额 <span class="req">*</span>（CNY）</label>
+          <label for="fAmount">金额 <span class="req">*</span></label>
           <input type="number" id="fAmount" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="fp-field">
+          <label for="fCurrency">原币币种</label>
+          <input type="text" id="fCurrency" value="CNY" list="expenseCurrencies" autocomplete="off">
+          <datalist id="expenseCurrencies">
+            <option value="CNY"><option value="USD"><option value="EUR"><option value="JPY">
+            <option value="HKD"><option value="GBP"><option value="AUD"><option value="KRW">
+          </datalist>
         </div>
         <div class="fp-field">
           <label>付款人</label>
@@ -743,6 +754,7 @@
       <div class="report-grid">
         <div class="rp-card">
           <div class="t">费用分类 <small>· 占比</small></div>
+          <p class="rp-empty" id="rpCurrency" hidden></p>
           <div id="rpCat"></div>
         </div>
         <div class="rp-card">
@@ -772,10 +784,11 @@
         <div class="stl-card">
           <div class="t">转账方案 · 最少转账次数</div>
           <div id="stlTransfers"></div>
+          <div class="foot" id="stlHistory"></div>
           <div class="stl-foot">
             <span class="hint" id="stlHint"></span>
             <span style="flex:1"></span>
-            <button type="button" class="btn-primary-sm" id="btnConfirmStl">确认结算</button>
+            <button type="button" class="btn-primary-sm" id="btnConfirmStl" aria-describedby="stlHint" disabled>确认结算</button>
           </div>
         </div>
       </div>
@@ -861,9 +874,23 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-    function money(s) {
+    function currencyCode(value) {
+      var code = String(value || '').trim();
+      return !code ? 'CNY' : /^[a-z]{3}$/i.test(code) ? code.toUpperCase() : code;
+    }
+    function money(s, currency) {
       var n = Number(s);
-      return isNaN(n) ? '¥ –' : '¥ ' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      var code = currencyCode(currency);
+      var amount = Number.isFinite(n) ? n.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : '–';
+      return (code === 'CNY' ? '¥' : code) + ' ' + amount;
+    }
+    function moneyHtml(s, currency) {
+      return escapeHtml(money(s, currency));
+    }
+    function currencyTotals(amounts) {
+      return Object.entries(amounts || {}).map(function (entry) {
+        return money(entry[1], entry[0]);
+      }).join(' · ');
     }
     function fmtDate(iso) {
       if (!iso) return '';
@@ -908,7 +935,8 @@
     /* ===== 汇总卡 ===== */
     function renderWallet() {
       var bud = state.budget || {};
-      var total = Number(bud.totalSpent != null ? bud.totalSpent : (state.summary ? state.summary.totalAmount : 0));
+      var totals = (state.summary && state.summary.totalByCurrency) || {};
+      var total = Number(bud.totalSpent != null ? bud.totalSpent : totals.CNY || 0);
       var budget = Number(bud.tripBudget || (state.trip && state.trip.budget) || 0);
       var est = Number(bud.totalEstimated || 0);
 
@@ -919,23 +947,34 @@
       $('meterEst').style.width = estPct + '%';
       $('meterBar').classList.toggle('over', budget > 0 && total > budget);
       $('wPct').textContent = budget > 0 ? Math.round(total / budget * 100) + '%' : '–';
-      $('wRemain').textContent = budget > 0 ? money(Math.max(0, budget - total)) : '–';
+      $('wRemain').textContent = budget > 0 ? money(bud.totalRemaining ?? (budget - total - est)) : '–';
+      $('wEst').textContent = est ? '预估 ' + money(est) + ' · 地点预估以 CNY 记账' : '';
+      var foreignSpent = currencyTotals(bud.foreignCurrencySpent
+        || Object.fromEntries(Object.entries(totals).filter(function (entry) { return entry[0] !== 'CNY'; })));
+      var foreignEstimated = currencyTotals(bud.foreignCurrencyEstimated);
+      $('wForeignSpent').textContent = foreignSpent ? '外币实付 ' + foreignSpent : '';
+      $('wForeignEstimated').textContent = foreignEstimated ? '外币预订预估 ' + foreignEstimated : '';
 
       var n = state.expenses.length;
       $('wCount').innerHTML = n + ' <small>笔</small>';
-      var max = 0, maxT = '';
+      var largest = new Map();
       state.expenses.forEach(function (e) {
-        var a = Number(e.amount);
-        if (a > max) { max = a; maxT = e.title || catOf(e.category).label; }
+        var code = currencyCode(e.currency);
+        if (!largest.has(code) || Number(e.amount) > Number(largest.get(code).amount)) {
+          largest.set(code, e);
+        }
       });
-      $('wFoot').innerHTML = max ? '最大一笔 <b>' + escapeHtml(maxT) + ' ' + money(max) + '</b>' : '还没有记账';
+      $('wFoot').textContent = largest.size ? '各币种最大一笔 ' + Array.from(largest.values()).map(function (e) {
+        return (e.title || catOf(e.category).label) + ' ' + money(e.amount, e.currency);
+      }).join(' · ') : '还没有记账';
 
       var per = state.members.length ? total / state.members.length : 0;
       $('wPerHead').textContent = n ? money(per) : '–';
       $('wPerFoot').textContent = '按 ' + state.members.length + ' 位成员均摊';
 
       var meta = $('pageMeta');
-      meta.innerHTML = '<b>' + escapeHtml(state.trip.title || '') + '</b> · ' + n + ' 笔 · 共 ' + money(total);
+      meta.innerHTML = '<b>' + escapeHtml(state.trip.title || '') + '</b> · ' + n + ' 笔'
+        + (Object.keys(totals).length ? ' · ' + escapeHtml(currencyTotals(totals)) : '');
     }
 
     /* ===== 明细列表 ===== */
@@ -956,7 +995,7 @@
       list.innerHTML = sorted.map(function (e) {
         var c = catOf(e.category);
         var sharesHtml = (e.shares || []).map(function (s) {
-          return '<span>' + escapeHtml(s.displayName || '成员') + ' ' + money(s.shareAmount) + '</span>';
+          return '<span>' + escapeHtml(s.displayName || '成员') + ' ' + moneyHtml(s.shareAmount, e.currency) + '</span>';
         }).join('');
         return ''
           + '<article class="exp-card" data-eid="' + escapeHtml(e.id) + '" style="--cc:' + c.c + ';--cb:' + c.bg + ';">'
@@ -979,7 +1018,7 @@
           +       '<button type="button" class="ed" title="编辑">✎</button>'
           +       '<button type="button" class="del" title="删除">×</button>'
           +     '</div>'
-          +     '<div class="exp-amt">' + money(e.amount) + '<small>' + escapeHtml(e.splitType === 'equal' ? '均摊' : e.splitType === 'ratio' ? '按比例' : '按金额') + '</small></div>'
+          +     '<div class="exp-amt">' + moneyHtml(e.amount, e.currency) + '<small>' + escapeHtml(e.splitType === 'equal' ? '均摊' : e.splitType === 'ratio' ? '按比例' : '按金额') + '</small></div>'
           +   '</div>'
           + '</article>';
       }).join('');
@@ -1016,6 +1055,11 @@
     function renderReport() {
       var rep = state.report || {};
       var total = Number(rep.totalAmount || 0);
+      var currency = currencyCode(rep.currency);
+      var others = currencyTotals(rep.otherCurrencies);
+      $('rpCurrency').hidden = !(rep.byCategory && rep.byCategory.length);
+      $('rpCurrency').textContent = '图表币种 ' + currency + ' · ' + money(total, currency)
+        + (others ? ' · 其他币种 ' + others : '');
 
       /* 分类环形 */
       var catBox = $('rpCat');
@@ -1039,7 +1083,7 @@
             + '<span class="dot" style="background:' + c.c + '"></span>'
             + '<span class="nm">' + c.label + '</span>'
             + '<span class="bar"><i style="width:' + pctv + '%;background:' + c.c + '"></i></span>'
-            + '<span class="am">' + money(x.amount) + '</span>'
+            + '<span class="am">' + moneyHtml(x.amount, currency) + '</span>'
             + '</div>';
         }).join('');
         catBox.innerHTML = ''
@@ -1061,9 +1105,9 @@
             var h = maxDay > 0 ? Math.max(6, Math.round(Number(x.amount) / maxDay * 120)) : 6;
             /* 列宽设上限：只有一天时柱子才不会撑满整幅 */
             return '<div style="flex:1;max-width:88px;text-align:center;" title="' + escapeHtml(x.label || x.day || '') + '">'
-              + '<div style="font-size:10px;color:var(--mute);margin-bottom:4px;">' + money(x.amount).replace('¥', '') + '</div>'
+              + '<div style="font-size:10px;color:var(--mute);margin-bottom:4px;">' + moneyHtml(x.amount, currency) + '</div>'
               + '<div style="height:' + h + 'px;max-width:64px;margin:0 auto;background:linear-gradient(180deg,var(--brand-soft),var(--brand));border-radius:6px 6px 2px 2px;"></div>'
-              + '<div style="font-size:10px;color:var(--mute);margin-top:5px;">' + escapeHtml(x.label || '') + '</div>'
+              + '<div style="font-size:10px;color:var(--mute);margin-top:5px;">' + escapeHtml(x.label || x.date || '') + '</div>'
               + '</div>';
           }).join('') + '</div>';
       }
@@ -1083,7 +1127,7 @@
           }
           return '<div style="margin-bottom:14px;">'
             + '<div style="display:flex;font-size:12.5px;"><b style="color:var(--ink);">' + escapeHtml(m.displayName) + '</b>'
-            + '<span style="margin-left:auto;color:var(--mute);">垫 ' + money(m.paid) + ' · 应付 ' + money(m.owed) + '</span></div>'
+            + '<span style="margin-left:auto;color:var(--mute);">垫 ' + moneyHtml(m.paid, currency) + ' · 应付 ' + moneyHtml(m.owed, currency) + '</span></div>'
             + bar(m.paid, 'var(--brand)')
             + bar(m.owed, '#F3B596')
             + '</div>';
@@ -1211,46 +1255,67 @@
     function renderSettlement() {
       var stl = state.settlement;
       var netsBox = $('stlNets'), trBox = $('stlTransfers');
+      var confirm = $('btnConfirmStl');
+      confirm.disabled = !stl || !stl.canConfirm;
+      $('stlHint').textContent = !stl ? '' : stl.confirmBlockedReason
+        || (stl.canConfirm ? '' : '当前没有需要结算的账目');
+      var last = stl && stl.latestSettlement;
+      var snapshot = last && last.snapshot;
+      $('stlHistory').textContent = snapshot
+        ? '最近确认快照 · ' + fmtDate(last.createdAt) + ' · '
+          + (snapshot.currency ? money(snapshot.totalAmount, snapshot.currency) : '币种未记录')
+        : '';
       if (!stl) {
         netsBox.innerHTML = '<div class="rp-empty">结算数据加载失败</div>';
         trBox.innerHTML = '';
         return;
       }
-      var nets = stl.nets || [];
-      netsBox.innerHTML = nets.length ? nets.map(function (n) {
+      var groups = Object.entries(stl.byCurrency || {});
+      if (!groups.length) groups = [[currencyCode(stl.currency), stl]];
+      function groupHeading(currency) {
+        return '<h3>' + escapeHtml(currency) + '</h3>';
+      }
+      netsBox.innerHTML = groups.map(function (entry) {
+        var currency = entry[0];
+        var nets = entry[1].nets || [];
+        return groupHeading(currency) + (nets.length ? nets.map(function (n) {
         var net = Number(n.net);
         var cls = net > 0.004 ? 'pos' : net < -0.004 ? 'neg' : 'mut';
         var lab = net > 0.004 ? '应收' : net < -0.004 ? '应付' : '已结清';
         return '<div class="net-row">'
           + '<span class="av">' + escapeHtml((n.displayName || '?').charAt(0)) + '</span>'
           + '<div><div class="nm">' + escapeHtml(n.displayName) + '</div>'
-          + '<div class="d">垫付 ' + money(n.paid) + ' · 应付 ' + money(n.owed) + '</div></div>'
-          + '<div class="amt"><span class="' + cls + '">' + money(Math.abs(net)) + '</span>'
+          + '<div class="d">垫付 ' + moneyHtml(n.paid, currency) + ' · 应付 ' + moneyHtml(n.owed, currency) + '</div></div>'
+          + '<div class="amt"><span class="' + cls + '">' + moneyHtml(Math.abs(net), currency) + '</span>'
           + '<div class="mut">' + lab + '</div></div>'
           + '</div>';
-      }).join('') : '<div class="rp-empty">暂无成员</div>';
+        }).join('') : '<div class="rp-empty">暂无成员</div>');
+      }).join('');
 
-      var transfers = stl.transfers || [];
-      trBox.innerHTML = transfers.length ? transfers.map(function (t) {
+      trBox.innerHTML = groups.map(function (entry) {
+        var currency = entry[0];
+        var transfers = entry[1].transfers || [];
+        return groupHeading(currency) + (transfers.length ? transfers.map(function (t) {
         return '<div class="transfer-row">'
           + '<span class="who">' + escapeHtml(t.fromDisplayName || t.fromUserId) + '</span>'
           + '<span class="flow"><span class="ln"></span><span class="arrow">➜</span><span class="ln"></span></span>'
           + '<span class="who">' + escapeHtml(t.toDisplayName || t.toUserId) + '</span>'
-          + '<span class="amt">' + money(t.amount) + '</span>'
+          + '<span class="amt">' + moneyHtml(t.amount, currency) + '</span>'
           + '</div>';
-      }).join('') : '<div class="rp-empty" style="padding:22px 0;">✓ 账目已两清，无需转账</div>';
-      $('stlHint').textContent = transfers.length ? '共 ' + transfers.length + ' 笔转账 · 合计 ' + money(transfers.reduce(function (s, t) { return s + Number(t.amount); }, 0)) : '';
+        }).join('') : '<div class="rp-empty" style="padding:22px 0;">账目已两清，无需转账</div>');
+      }).join('');
     }
 
     $('btnConfirmStl').addEventListener('click', async function () {
       var b = $('btnConfirmStl');
+      if (!state.settlement || !state.settlement.canConfirm) return;
       b.disabled = true;
       try {
         await apiPost('/trips/' + tripId + '/expenses/settlement/confirm', {});
         showToast('结算已确认，快照已存档并通知成员');
         await loadAll();
       } catch (err) { showToast(humanError(err)); }
-      b.disabled = false;
+      b.disabled = !state.settlement || !state.settlement.canConfirm;
     });
 
     /* ===== 记账表单 ===== */
@@ -1319,6 +1384,7 @@
       $('btnSaveExp').textContent = expense ? '保存修改' : '保存';
       if (expense) {
         $('fAmount').value = Number(expense.amount) || '';
+        $('fCurrency').value = currencyCode(expense.currency);
         $('fTitle').value = expense.title || '';
         $('fNotes').value = expense.notes || '';
         $('fDate').value = expense.spentAt ? String(expense.spentAt).slice(0, 10) : '';
@@ -1337,6 +1403,7 @@
         });
       } else {
         $('fAmount').value = ''; $('fTitle').value = ''; $('fNotes').value = '';
+        $('fCurrency').value = 'CNY';
         var today = new Date();
         $('fDate').value = today.getFullYear() + '-' + ('0' + (today.getMonth() + 1)).slice(-2) + '-' + ('0' + today.getDate()).slice(-2);
         setCat('food');
@@ -1368,7 +1435,7 @@
         notes: $('fNotes').value.trim() || null,
         spentAt: $('fDate').value || null,
         payerUserId: $('fPayer').value || null,
-        currency: 'CNY'
+        currency: currencyCode($('fCurrency').value)
       };
 
       if (mode === 'equal') {
@@ -1394,7 +1461,7 @@
           showToast('已保存修改');
         } else {
           await apiPost('/trips/' + tripId + '/expenses', body);
-          showToast('已记账 ' + money(amt));
+          showToast('已记账 ' + money(amt, body.currency));
         }
         closeForm();
         await loadAll();

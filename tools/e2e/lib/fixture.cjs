@@ -9,11 +9,13 @@
  */
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const PG = 'docker exec travel-os-postgres psql -U travel_os -d travel_os -t -A -c';
+const PG = ['exec', process.env.E2E_PG_CONTAINER || 'travel-os-postgres', 'psql',
+  '-X', '-v', 'ON_ERROR_STOP=1', '-U', process.env.E2E_PG_USER || 'travel_os',
+  '-d', process.env.E2E_PG_DATABASE || 'travel_os', '-t', '-A', '-c'];
 const LOOPBACK = ['127.0.0.1', 'localhost', '::1'];
 
 function assertLocalOrigin(origin) {
@@ -31,7 +33,7 @@ function assertLocalOrigin(origin) {
 }
 
 function psql(sql) {
-  return execSync(`${PG} "${sql.replace(/"/g, '\\"')}"`, { encoding: 'utf8' }).trim();
+  return execFileSync('docker', [...PG, sql], { encoding: 'utf8' }).trim();
 }
 
 const _tables = new Map();
@@ -252,6 +254,7 @@ class Cleaner {
       if (journalIds) del('trip_journals', `DELETE FROM trip_journals WHERE id IN ${journalIds};`);
       del('trip_journals', `DELETE FROM trip_journals WHERE trip_id IN ${tl};`);
       del('trip_budgets', `DELETE FROM trip_budgets WHERE trip_id IN ${tl};`);
+      del('trip_settlements', `DELETE FROM trip_settlements WHERE trip_id IN ${tl};`);
       del('packing_lists', `DELETE FROM packing_lists WHERE trip_id IN ${tl};`);
       del('trip_places', `DELETE FROM trip_places WHERE trip_id IN ${tl};`);
       del('trip_days', `DELETE FROM trip_days WHERE trip_id IN ${tl};`);
@@ -295,6 +298,7 @@ class Cleaner {
       check('trips', `SELECT count(*) FROM trips WHERE id IN ${tl};`);
       check('trip_days', `SELECT count(*) FROM trip_days WHERE trip_id IN ${tl};`);
       check('trip_places', `SELECT count(*) FROM trip_places WHERE trip_id IN ${tl};`);
+      check('trip_settlements', `SELECT count(*) FROM trip_settlements WHERE trip_id IN ${tl};`);
       const expenseIds2 = idList(this.expenses);
       if (expenseIds2) check('trip_expenses', `SELECT count(*) FROM trip_expenses WHERE id IN ${expenseIds2};`);
       const photoIds2 = idList(this.photos.map((p) => p.id));

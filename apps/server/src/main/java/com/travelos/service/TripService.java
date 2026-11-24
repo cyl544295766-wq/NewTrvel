@@ -1,38 +1,44 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.travelos.common.Payloads;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
-import com.travelos.entity.Booking;
+import com.travelos.common.Payloads;
 import com.travelos.entity.Photo;
 import com.travelos.entity.Trip;
 import com.travelos.entity.TripDay;
 import com.travelos.entity.TripMember;
 import com.travelos.entity.TripPlace;
-import com.travelos.mapper.BookingMapper;
 import com.travelos.mapper.PhotoMapper;
-import com.travelos.mapper.TravelDocumentMapper;
 import com.travelos.mapper.TripDayMapper;
-import com.travelos.mapper.TripExpenseMapper;
-import com.travelos.mapper.TripJournalMapper;
 import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripMemberMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.trip.TripPermission;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Calendar;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
+import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class TripService {
@@ -43,26 +49,18 @@ public class TripService {
   private final PhotoMapper photoMapper;
   private final TripDayMapper tripDayMapper;
   private final TripPlaceMapper tripPlaceMapper;
-  private final BookingMapper bookingMapper;
-  private final TripExpenseMapper expenseMapper;
-  private final TripJournalMapper journalMapper;
-  private final TravelDocumentMapper documentMapper;
+  private final JdbcTemplate jdbcTemplate;
 
   public TripService(TripMapper tripMapper, TripMemberMapper tripMemberMapper,
       TripMemberService tripMemberService, PhotoMapper photoMapper, TripDayMapper tripDayMapper,
-      TripPlaceMapper tripPlaceMapper, BookingMapper bookingMapper,
-      TripExpenseMapper expenseMapper, TripJournalMapper journalMapper,
-      TravelDocumentMapper documentMapper) {
+      TripPlaceMapper tripPlaceMapper, JdbcTemplate jdbcTemplate) {
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
     this.tripMemberService = tripMemberService;
     this.photoMapper = photoMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
-    this.bookingMapper = bookingMapper;
-    this.expenseMapper = expenseMapper;
-    this.journalMapper = journalMapper;
-    this.documentMapper = documentMapper;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Transactional
@@ -182,274 +180,314 @@ public class TripService {
   @Transactional
   public Map<String, Object> update(String tripId, Map<String, Object> dto, String userId) {
     TripMember membership = tripMemberService.requireTripMember(tripId, userId);
-    Trip trip = findLive(tripId);
+    Trip trip = findLiveForUpdate(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }
-    // 合并原值和新值后验证日期（TR-03：部分更新时只验提交字段会导致倒序）
-    // Date → yyyy-MM-dd 格式（Date.toString() 产生的 "Tue Sep 01..." 无法被 DateUtil.parse 解析）
-    Object effStart = dto.containsKey("startDate") ? dto.get("startDate")
-        : (trip.getStartDate() == null ? null : formatDateString(trip.getStartDate()));
-    Object effEnd = dto.containsKey("endDate") ? dto.get("endDate")
-        : (trip.getEndDate() == null ? null : formatDateString(trip.getEndDate()));
-    validateDateRange(effStart, effEnd);
+    Date start = effectiveDate(dto, "startDate", trip.getStartDate());
+    Date end = effectiveDate(dto, "endDate", trip.getEndDate());
+    boolean datesChanged = !Objects.equals(start, trip.getStartDate())
+        || !Objects.equals(end, trip.getEndDate());
+    DayPlan dayPlan = null;
+    if (datesChanged || dto.containsKey("previewToken")) {
+      String expectedToken = dto.containsKey("previewToken")
+          ? Objects.toString(dto.get("previewToken"), "") : null;
+      dayPlan = planDays(trip, start, end, true, expectedToken);
+    }
 
-    if (dto.containsKey("title")) {
-      String title = Payloads.text(dto.get("title"));
-      trip.setTitle(title == null ? null : title.trim());
+    var changes = new LambdaUpdateWrapper<Trip>().eq(Trip::getId, tripId);
+    String title = Payloads.trimmed(dto.get("title"));
+    if (title != null) {
+      trip.setTitle(title);
+      changes.set(Trip::getTitle, trip.getTitle());
     }
     if (dto.containsKey("description")) {
       trip.setDescription(Payloads.trimmedOrNull(dto.get("description")));
+      changes.set(Trip::getDescription, trip.getDescription());
     }
     if (dto.containsKey("destination")) {
       trip.setDestination(Payloads.trimmedOrNull(dto.get("destination")));
+      changes.set(Trip::getDestination, trip.getDestination());
     }
     if (dto.containsKey("startDate")) {
-      trip.setStartDate(toDateOrNull(dto.get("startDate")));
+      trip.setStartDate(start);
+      changes.set(Trip::getStartDate, start);
     }
     if (dto.containsKey("endDate")) {
-      trip.setEndDate(toDateOrNull(dto.get("endDate")));
+      trip.setEndDate(end);
+      changes.set(Trip::getEndDate, end);
     }
     if (dto.containsKey("status") && dto.get("status") != null) {
       trip.setStatus(dto.get("status").toString());
+      changes.set(Trip::getStatus, trip.getStatus());
     }
     if (dto.containsKey("coverImageUrl")) {
       trip.setCoverImageUrl(
           validateCoverImageUrl(dto.get("coverImageUrl"), tripId, trip.getCoverImageUrl()));
+      changes.set(Trip::getCoverImageUrl, trip.getCoverImageUrl());
     }
     if (dto.containsKey("budget")) {
       trip.setBudget(toBudgetOrNull(dto.get("budget")));
+      changes.set(Trip::getBudget, trip.getBudget());
     }
     trip.setUpdatedAt(new Date());
-    tripMapper.updateById(trip);
-    Map<String, Object> syncResult = syncDaysWithRange(tripId);
-    // TR-03：返回日期变动影响摘要（保留/移除的天）
+    tripMapper.update(null, changes.set(Trip::getUpdatedAt, trip.getUpdatedAt()));
+    Map<String, Object> syncResult = dayPlan == null
+        ? Map.of("created", 0, "updated", 0, "removed", 0)
+        : applyDayPlan(tripId, dayPlan);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("trip", toTripResponse(trip, membership.getRole(), null));
     result.put("daySync", syncResult);
     return result;
   }
 
-  /**
-   * 把行程天与旅行的开始/结束日期对齐：补齐缺失的天、按 dayIndex 重排已有天的日期。
-   * 日期整体前移/后移时会先写临时日期再落最终日期，避开 (trip_id, date) 唯一约束。
-   * 新范围之外的天：已排过内容（景点/预订）的保留，空天删除，避免误删用户已排好的计划。
-   */
+  private static final List<String> DAY_REFERENCE_TABLES = List.of(
+      "trip_places", "bookings", "trip_expenses", "photos", "trip_journals",
+      "travel_documents", "trip_weather", "trip_legs");
+
+  private record DayTarget(int dayIndex, Date date, TripDay existing) {
+  }
+
+  private record DayPlan(List<TripDay> days, List<DayTarget> moves, List<DayTarget> additions,
+      List<TripDay> preserved, List<TripDay> removed, String blockedReason, String token) {
+    Map<String, Object> impact() {
+      return Map.of(
+          "moves", moves.stream().map(move -> Map.of(
+              "dayId", move.existing().getId(), "dayIndex", move.dayIndex(),
+              "from", Fmt.dateKey(move.existing().getDate()), "to", Fmt.dateKey(move.date()))).toList(),
+          "additions", additions.stream().map(day -> Map.of(
+              "dayIndex", day.dayIndex(), "date", Fmt.dateKey(day.date()))).toList(),
+          "preserved", preserved.stream().map(DayPlan::dayEntry).toList(),
+          "removed", removed.stream().map(DayPlan::dayEntry).toList(),
+          "createCount", additions.size(),
+          "hasRisk", !preserved.isEmpty() || !removed.isEmpty() || blockedReason != null);
+    }
+
+    private static Map<String, Object> dayEntry(TripDay day) {
+      return Map.of("dayId", day.getId(), "dayIndex", day.getDayIndex(),
+          "date", Fmt.dateKey(day.getDate()));
+    }
+  }
+
   @Transactional
   public Map<String, Object> syncDaysWithRange(String tripId) {
-    Trip trip = findLive(tripId);
+    Trip trip = findLiveForUpdate(tripId);
     if (trip == null || trip.getStartDate() == null || trip.getEndDate() == null) {
       return Map.of("created", 0, "updated", 0, "removed", 0);
     }
-    List<Date> dates = DateUtil.dayRange(trip.getStartDate(), trip.getEndDate());
-    if (dates.size() > 60) {
-      throw ApiException.badRequest("行程天数不能超过 60 天");
-    }
-    List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
-        .eq(TripDay::getTripId, tripId)
-        .orderByAsc(TripDay::getDayIndex));
-
-    Map<Integer, TripDay> byIndex = new LinkedHashMap<>();
-    for (TripDay day : days) {
-      if (day.getDayIndex() != null) {
-        byIndex.putIfAbsent(day.getDayIndex(), day);
-      }
-    }
-
-    // 第一步：需要改日期的天先挪到临时日期，避免与其它天撞 (trip_id, date) 唯一键
-    List<TripDay> pending = new ArrayList<>();
-    for (int index = 0; index < dates.size(); index++) {
-      TripDay day = byIndex.get(index + 1);
-      if (day == null || sameDay(day.getDate(), dates.get(index))) {
-        continue;
-      }
-      day.setDate(tempDate(pending.size()));
-      day.setUpdatedAt(new Date());
-      tripDayMapper.updateById(day);
-      pending.add(day);
-    }
-
-    // 第二步：补齐缺失的天
-    int created = 0;
-    for (int index = 0; index < dates.size(); index++) {
-      if (byIndex.get(index + 1) != null) {
-        continue;
-      }
-      TripDay fresh = new TripDay();
-      fresh.setTripId(tripId);
-      fresh.setDate(dates.get(index));
-      fresh.setDayIndex(index + 1);
-      fresh.setCreatedAt(new Date());
-      fresh.setUpdatedAt(new Date());
-      tripDayMapper.insert(fresh);
-      created++;
-    }
-
-    // 第三步：临时日期落回最终日期（要补的天已经建好，此时不会撞唯一键）
-    int updated = 0;
-    for (TripDay day : pending) {
-      Integer dayIndex = day.getDayIndex();
-      if (dayIndex == null || dayIndex < 1 || dayIndex > dates.size()) {
-        continue;
-      }
-      day.setDate(dates.get(dayIndex - 1));
-      day.setUpdatedAt(new Date());
-      tripDayMapper.updateById(day);
-      updated++;
-    }
-
-    // 第四步：新范围之外的空天清理掉，有内容的天保留
-    int removed = 0;
-    List<String> preservedDayIds = new ArrayList<>();
-    for (TripDay day : days) {
-      if (day.getDayIndex() == null || day.getDayIndex() <= dates.size()) {
-        continue;
-      }
-      if (dayHasContent(day.getId())) {
-        preservedDayIds.add(day.getId());
-        continue;
-      }
-      tripDayMapper.deleteById(day.getId());
-      removed++;
-    }
-    Map<String, Object> result = new LinkedHashMap<>();
-    result.put("created", created);
-    result.put("updated", updated);
-    result.put("removed", removed);
-    result.put("preservedDayIds", preservedDayIds);
-    result.put("preservedCount", preservedDayIds.size());
-    return result;
+    return applyDayPlan(tripId, planDays(trip, trip.getStartDate(), trip.getEndDate(), true, null));
   }
 
-  private boolean dayHasContent(String dayId) {
-    if (dayId == null) {
-      return false;
-    }
-    // TR-03：检查所有实际引用该天的关联表（地点、预订、费用、照片、游记、文档）
-    // 不能仅凭地点或预订为空就判定该天无内容——费用/照片/游记也是用户排好的计划
-    Long places = tripPlaceMapper.selectCount(new LambdaQueryWrapper<TripPlace>()
-        .eq(TripPlace::getTripDayId, dayId));
-    if (places != null && places > 0) {
-      return true;
-    }
-    Long bookings = bookingMapper.selectCount(new LambdaQueryWrapper<Booking>()
-        .eq(Booking::getTripDayId, dayId));
-    if (bookings != null && bookings > 0) {
-      return true;
-    }
-    Long expenses = expenseMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TripExpense>()
-        .eq(com.travelos.entity.TripExpense::getTripDayId, dayId));
-    if (expenses != null && expenses > 0) {
-      return true;
-    }
-    Long photos = photoMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.Photo>()
-        .eq(com.travelos.entity.Photo::getTripDayId, dayId));
-    if (photos != null && photos > 0) {
-      return true;
-    }
-    Long journals = journalMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TripJournal>()
-        .eq(com.travelos.entity.TripJournal::getTripDayId, dayId));
-    if (journals != null && journals > 0) {
-      return true;
-    }
-    Long documents = documentMapper.selectCount(new LambdaQueryWrapper<com.travelos.entity.TravelDocument>()
-        .eq(com.travelos.entity.TravelDocument::getTripDayId, dayId));
-    return documents != null && documents > 0;
-  }
-
-  private boolean sameDay(Date left, Date right) {
-    return left != null && DateUtil.utcDay(left).equals(DateUtil.utcDay(right));
-  }
-
-  /** Date → yyyy-MM-dd 字符串（Date.toString() 格式无法被 DateUtil.parse 解析）。 */
-  private static String formatDateString(Date date) {
-    return new java.text.SimpleDateFormat("yyyy-MM-dd").format(date);
-  }
-
-  /** TR-03：日期变更预览——不实际修改，返回哪些天会移动/保留/移除。 */
-  public Map<String, Object> dateChangePreview(String tripId, Object newStart, Object newEnd,
-      String userId) {
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public Map<String, Object> dateChangePreview(String tripId, Map<String, String> dates, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     Trip trip = findLive(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }
-    // 合并原值
-    Object effStart = newStart != null ? newStart
-        : (trip.getStartDate() == null ? null : formatDateString(trip.getStartDate()));
-    Object effEnd = newEnd != null ? newEnd
-        : (trip.getEndDate() == null ? null : formatDateString(trip.getEndDate()));
-    validateDateRange(effStart, effEnd);
-    if (effStart == null || effEnd == null) {
-      return Map.of("message", "无日期草稿，补齐日期时会自动生成行程天");
+    Date start = effectiveDate(dates, "startDate", trip.getStartDate());
+    Date end = effectiveDate(dates, "endDate", trip.getEndDate());
+    DayPlan plan = planDays(trip, start, end, false, null);
+    Map<String, Object> range = new LinkedHashMap<>();
+    range.put("startDate", start == null ? null : Fmt.dateKey(start));
+    range.put("endDate", end == null ? null : Fmt.dateKey(end));
+    Map<String, Object> result = new LinkedHashMap<>(plan.impact());
+    result.put("newRange", range);
+    result.put("previewToken", plan.token());
+    result.put("canSave", plan.blockedReason() == null);
+    if (plan.blockedReason() != null) {
+      result.put("blockedReason", plan.blockedReason());
+    } else if (start == null || end == null) {
+      result.put("message", "日期不完整，已有行程天会原样保留。补齐日期时会同步行程天。");
     }
-    List<Date> newDates = DateUtil.dayRange(
-        DateUtil.parse(effStart.toString()), DateUtil.parse(effEnd.toString()));
-    List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
-        .eq(TripDay::getTripId, tripId)
-        .orderByAsc(TripDay::getDayIndex));
-
-    List<Map<String, Object>> moves = new ArrayList<>();
-    List<Map<String, Object>> preserved = new ArrayList<>();
-    List<Map<String, Object>> removed = new ArrayList<>();
-    int createCount = 0;
-
-    Map<Integer, TripDay> byIndex = new LinkedHashMap<>();
-    for (TripDay day : days) {
-      if (day.getDayIndex() != null) {
-        byIndex.putIfAbsent(day.getDayIndex(), day);
-      }
-    }
-    for (int i = 0; i < newDates.size(); i++) {
-      TripDay day = byIndex.get(i + 1);
-      if (day == null) {
-        createCount++;
-      } else if (!sameDay(day.getDate(), newDates.get(i))) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("dayIndex", i + 1);
-        m.put("from", day.getDate());
-        m.put("to", newDates.get(i));
-        moves.add(m);
-      }
-    }
-    for (TripDay day : days) {
-      if (day.getDayIndex() == null || day.getDayIndex() <= newDates.size()) {
-        continue;
-      }
-      boolean hasContent = dayHasContent(day.getId());
-      Map<String, Object> entry = new LinkedHashMap<>();
-      entry.put("dayId", day.getId());
-      entry.put("dayIndex", day.getDayIndex());
-      entry.put("date", day.getDate());
-      if (hasContent) {
-        preserved.add(entry);
-      } else {
-        removed.add(entry);
-      }
-    }
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("newRange", Map.of("startDate", effStart, "endDate", effEnd));
-    body.put("moves", moves);
-    body.put("preserved", preserved);
-    body.put("removed", removed);
-    body.put("createCount", createCount);
-    body.put("hasRisk", !preserved.isEmpty());
-    return body;
+    return result;
   }
 
-  /** 临时日期：远离真实行程日期且彼此不重复，仅供同步过程中的过渡使用。 */
-  private Date tempDate(int offset) {
-    Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-    calendar.clear();
-    calendar.set(1900, Calendar.JANUARY, 1);
-    calendar.add(Calendar.DATE, offset);
-    return calendar.getTime();
+  private Date effectiveDate(Map<String, ?> changes, String key, Date current) {
+    if (!changes.containsKey(key)) {
+      return current;
+    }
+    String value = Payloads.trimmedOrNull(changes.get(key));
+    return value == null ? null : DateUtil.parse(value);
   }
+
+  private DayPlan planDays(Trip trip, Date start, Date end, boolean lock, String expectedToken) {
+    var query = new LambdaQueryWrapper<TripDay>().eq(TripDay::getTripId, trip.getId());
+    if (lock) {
+      query.last("FOR UPDATE");
+    }
+    // 行级权限拦截器会把 FOR UPDATE 重排到 ORDER BY 前，因此在持锁后排序。
+    List<TripDay> days = tripDayMapper.selectList(query).stream()
+        .sorted(Comparator.comparing(TripDay::getDayIndex)).toList();
+    var references = dayReferences(trip.getId());
+    String token = dayPlanToken(trip, start, end, days, references);
+    if (expectedToken != null && !expectedToken.equals(token)) {
+      throw ApiException.conflict("改期预览已失效，请重新查看影响并确认。");
+    }
+    if (start != null && end != null) {
+      if (end.before(start)) {
+        throw ApiException.badRequest("结束日期不能早于开始日期");
+      }
+      long daySpan = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(
+          DateUtil.utcDay(end).getTime() - DateUtil.utcDay(start).getTime());
+      if (daySpan >= 60) {
+        throw ApiException.badRequest("行程天数不能超过 60 天");
+      }
+    }
+    List<DayTarget> moves = new ArrayList<>();
+    List<DayTarget> additions = new ArrayList<>();
+    List<TripDay> preserved = new ArrayList<>();
+    List<TripDay> removed = new ArrayList<>();
+    String blockedReason = null;
+
+    if (start == null || end == null) {
+      preserved.addAll(days);
+    } else {
+      List<Date> dates = DateUtil.dayRange(start, end);
+      Map<Integer, TripDay> byIndex = new HashMap<>();
+      for (TripDay day : days) {
+        byIndex.put(day.getDayIndex(), day);
+      }
+      for (int i = 0; i < dates.size(); i++) {
+        int dayIndex = i + 1;
+        Date date = dates.get(i);
+        TripDay day = byIndex.get(dayIndex);
+        if (day == null) {
+          additions.add(new DayTarget(dayIndex, date, null));
+        } else if (!DateUtil.utcDay(day.getDate()).equals(date)) {
+          moves.add(new DayTarget(dayIndex, date, day));
+        }
+      }
+      Set<Date> targetDates = new HashSet<>(dates);
+      for (TripDay day : days) {
+        if (day.getDayIndex() >= 1 && day.getDayIndex() <= dates.size()) {
+          continue;
+        }
+        if (references.containsKey(day.getId()) || Payloads.trimmedOrNull(day.getTitle()) != null
+            || Payloads.trimmedOrNull(day.getSummary()) != null) {
+          preserved.add(day);
+          if (targetDates.contains(DateUtil.utcDay(day.getDate()))) {
+            blockedReason = "新日期范围与已有内容的第 " + day.getDayIndex()
+                + " 天（" + Fmt.dateKey(day.getDate()) + "）重叠，请调整日期后重试。";
+          }
+        } else {
+          removed.add(day);
+        }
+      }
+    }
+    return new DayPlan(days, moves, additions, preserved, removed, blockedReason, token);
+  }
+
+  private Map<String, List<String>> dayReferences(String tripId) {
+    Map<String, List<String>> references = new HashMap<>();
+    // 使用来自固定表名列表的 SQL，并通过已授权行程的 day ID 限定范围。
+    for (String table : DAY_REFERENCE_TABLES) {
+      jdbcTemplate.query("SELECT child.trip_day_id, child.id FROM " + table + " child"
+              + " JOIN trip_days day ON day.id = child.trip_day_id"
+              + " WHERE day.trip_id = ? ORDER BY child.id",
+          rs -> {
+            references.computeIfAbsent(rs.getString(1), key -> new ArrayList<>())
+                .add(table + ":" + rs.getString(2));
+          }, tripId);
+    }
+    return references;
+  }
+
+  private String dayPlanToken(Trip trip, Date start, Date end, List<TripDay> days,
+      Map<String, List<String>> references) {
+    try {
+      var digest = MessageDigest.getInstance("SHA-256");
+      addTokenValue(digest, trip.getId());
+      addTokenValue(digest, trip.getStartDate());
+      addTokenValue(digest, trip.getEndDate());
+      addTokenValue(digest, start);
+      addTokenValue(digest, end);
+      for (TripDay day : days) {
+        addTokenValue(digest, day.getId());
+        addTokenValue(digest, day.getDayIndex());
+        addTokenValue(digest, day.getDate());
+        addTokenValue(digest, day.getUpdatedAt());
+        addTokenValue(digest, day.getTitle());
+        addTokenValue(digest, day.getSummary());
+        var ids = references.getOrDefault(day.getId(), List.of());
+        addTokenValue(digest, ids.size());
+        ids.forEach(ref -> addTokenValue(digest, ref));
+      }
+      return HexFormat.of().formatHex(digest.digest());
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException(ex);
+    }
+  }
+
+  private static void addTokenValue(MessageDigest digest, Object value) {
+    if (value == null) {
+      digest.update((byte) 0);
+      return;
+    }
+    digest.update((byte) 1);
+    byte[] bytes = (value instanceof Date date ? Long.toString(date.getTime()) : value.toString())
+        .getBytes(StandardCharsets.UTF_8);
+    digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+    digest.update(bytes);
+  }
+
+  private Map<String, Object> applyDayPlan(String tripId, DayPlan plan) {
+    if (plan.blockedReason() != null) {
+      throw ApiException.conflict(plan.blockedReason());
+    }
+    Map<String, Object> result = new LinkedHashMap<>(plan.impact());
+    result.put("created", plan.additions().size());
+    result.put("updated", plan.moves().size());
+    result.put("removedDays", result.get("removed"));
+    result.put("removed", plan.removed().size());
+    result.put("preservedDayIds", plan.preserved().stream().map(TripDay::getId).toList());
+    result.put("preservedCount", plan.preserved().size());
+
+    for (TripDay day : plan.removed()) {
+      tripDayMapper.deleteById(day.getId());
+    }
+    // 先临时移走待重排的天，规避 (trip_id, date) 唯一约束，同时保留原 ID。
+    Set<Date> occupied = new HashSet<>();
+    plan.days().forEach(day -> occupied.add(DateUtil.utcDay(day.getDate())));
+    plan.moves().forEach(move -> occupied.add(move.date()));
+    plan.additions().forEach(day -> occupied.add(day.date()));
+    LocalDate temporary = LocalDate.of(1900, 1, 1);
+    for (DayTarget move : plan.moves()) {
+      Date tempDate = Date.from(temporary.atStartOfDay(ZoneOffset.UTC).toInstant());
+      while (!occupied.add(tempDate)) {
+        temporary = temporary.plusDays(1);
+        tempDate = Date.from(temporary.atStartOfDay(ZoneOffset.UTC).toInstant());
+      }
+      setDayDate(move.existing().getId(), tempDate);
+    }
+    for (DayTarget addition : plan.additions()) {
+      TripDay fresh = new TripDay();
+      fresh.setTripId(tripId);
+      fresh.setDayIndex(addition.dayIndex());
+      fresh.setDate(addition.date());
+      tripDayMapper.insert(fresh);
+    }
+    for (DayTarget move : plan.moves()) {
+      setDayDate(move.existing().getId(), move.date());
+    }
+    return result;
+  }
+
+  private void setDayDate(String dayId, Date date) {
+    tripDayMapper.update(null, new LambdaUpdateWrapper<TripDay>().eq(TripDay::getId, dayId)
+        .set(TripDay::getDate, date).set(TripDay::getUpdatedAt, new Date()));
+  }
+
+  Trip findLiveForUpdate(String tripId) {
+    return tripMapper.selectOne(new LambdaQueryWrapper<Trip>()
+        .eq(Trip::getId, tripId).isNull(Trip::getDeletedAt).last("FOR UPDATE"));
+  }
+
 
   @Transactional
   public Map<String, Object> archive(String tripId, String userId) {
     TripMember membership = tripMemberService.requireTripMember(tripId, userId);
-    Trip trip = findLive(tripId);
+    Trip trip = findLiveForUpdate(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }
@@ -463,7 +501,7 @@ public class TripService {
   @Transactional
   public Map<String, Object> remove(String tripId, String userId) {
     TripMember membership = tripMemberService.requireTripMember(tripId, userId);
-    Trip trip = findLive(tripId);
+    Trip trip = findLiveForUpdate(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }
@@ -532,7 +570,7 @@ public class TripService {
   @Transactional
   public Map<String, Object> favorite(String tripId, String userId) {
     TripMember membership = tripMemberService.requireTripMember(tripId, userId);
-    Trip trip = findLive(tripId);
+    Trip trip = findLiveForUpdate(tripId);
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }

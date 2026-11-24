@@ -159,7 +159,8 @@ public class TripTemplateService {
 
     List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
         .eq(TripDay::getTripId, tripId)
-        .orderByAsc(TripDay::getDayIndex));
+        .last("FOR UPDATE")).stream()
+        .sorted(java.util.Comparator.comparing(TripDay::getDayIndex)).toList();
     List<String> titles = template.dayTitles();
     int daysTitled = 0;
     for (int i = 0; i < days.size() && i < titles.size(); i++) {

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -55,10 +56,9 @@ public class TripController {
   /** TR-03：日期变更预览——返回哪些天会移动/保留/移除，不实际修改。 */
   @GetMapping("/{tripId}/date-change-preview")
   public Map<String, Object> dateChangePreview(@PathVariable String tripId,
-      @org.springframework.web.bind.annotation.RequestParam(required = false) String startDate,
-      @org.springframework.web.bind.annotation.RequestParam(required = false) String endDate,
+      @RequestParam Map<String, String> dates,
       @CurrentUser UserContext user) {
-    return tripService.dateChangePreview(tripId, startDate, endDate, user.id());
+    return tripService.dateChangePreview(tripId, dates, user.id());
   }
 
   @PatchMapping("/{tripId}")

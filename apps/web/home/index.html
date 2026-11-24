@@ -1683,11 +1683,14 @@
     list.forEach(function (e) {
       var c = catOf(e.category);
       var label = e.title && String(e.title).trim() ? e.title : c.label;
+      var currency = String(e.currency || '').trim();
+      if (/^[a-z]{3}$/i.test(currency)) currency = currency.toUpperCase();
+      var amountLabel = (currency === 'CNY' ? '¥ ' : currency ? currency + ' ' : '') + num(e.amount);
       html.push('<div class="exp-row">');
       html.push('<span class="dot2" style="background:' + c.c + ';"></span>');
       html.push('<div class="mid2"><div class="ttl">' + escapeHtml(label) + '</div>'
         + '<div class="cat">' + escapeHtml(c.label) + ' · ' + fmtSlash(e.spentAt || e.createdAt) + '</div></div>');
-      html.push('<span class="amt">&yen; ' + escapeHtml(num(e.amount)) + '</span>');
+      html.push('<span class="amt">' + escapeHtml(amountLabel) + '</span>');
       html.push('</div>');
     });
     host.innerHTML = html.join('');

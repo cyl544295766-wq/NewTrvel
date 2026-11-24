@@ -339,7 +339,7 @@ public class TripSquareService {
       throw ApiException.badRequest("visibility 只能是 public、friends 或 private");
     }
     // 行权限下非成员查不到该行程，先绕过校验存在性，再由 owner 检查给出 403
-    Trip trip = bypassed(() -> tripService.findLive(tripId));
+    Trip trip = bypassed(() -> tripService.findLiveForUpdate(tripId));
     if (trip == null) {
       throw ApiException.notFound("Trip not found");
     }

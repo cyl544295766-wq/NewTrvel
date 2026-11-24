@@ -2,6 +2,7 @@ package com.travelos.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.travelos.ai.LlmGatewayService;
 import com.travelos.common.EnvLoader;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -26,6 +28,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.when;
 
 /**
  * 需求验收测试：TR-01 游记可见性 / TR-02 多币种 / TR-03 日期校验与关联保护。
@@ -55,6 +60,9 @@ class RequirementVerificationTest {
 
   @Autowired
   JdbcTemplate jdbc;
+
+  @MockBean
+  LlmGatewayService llm;
 
   private HttpClient http;
   private String suffix;
@@ -86,6 +94,8 @@ class RequirementVerificationTest {
     if (dateTripId != null) allTripIds.add(dateTripId);
     allTripIds.addAll(createdTripIds);
     for (String tid : allTripIds) {
+      jdbc.update("DELETE FROM edit_locks WHERE scope_id IN (SELECT id FROM trip_days WHERE trip_id=?)"
+          + " OR scope_id IN (SELECT 'journal:' || id FROM trip_journals WHERE trip_id=?)", tid, tid);
       jdbc.update("DELETE FROM trip_journal_audience WHERE journal_id IN (SELECT id FROM trip_journals WHERE trip_id=?)", tid);
       jdbc.update("DELETE FROM trip_journal_photos WHERE journal_id IN (SELECT id FROM trip_journals WHERE trip_id=?)", tid);
       jdbc.update("DELETE FROM trip_journals WHERE trip_id=?", tid);
@@ -93,6 +103,7 @@ class RequirementVerificationTest {
       jdbc.update("DELETE FROM trip_expenses WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM bookings WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM trip_places WHERE trip_id=?", tid);
+      jdbc.update("DELETE FROM trip_legs WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM trip_days WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM photos WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM travel_documents WHERE trip_id=?", tid);
@@ -102,11 +113,13 @@ class RequirementVerificationTest {
       jdbc.update("DELETE FROM trip_settlements WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM trip_budgets WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM trips WHERE id=?", tid);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM trips WHERE id=?", Integer.class, tid));
     }
     for (String uid : createdUserIds) {
       jdbc.update("DELETE FROM notifications WHERE user_id=?", uid);
       jdbc.update("DELETE FROM user_friends WHERE user_id=? OR friend_id=?", uid, uid);
       jdbc.update("DELETE FROM users WHERE id=?", uid);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM users WHERE id=?", Integer.class, uid));
     }
   }
 
@@ -200,184 +213,270 @@ class RequirementVerificationTest {
 
   @Test
   @Order(15)
-  void tr01b_recentThreeInvisibleButOlderVisible() throws Exception {
-    String tok = register("tr01buser" + suffix);
-    // 创建行程
-    JsonNode tripResp = apiPost(tok, "/api/trips", Map.of(
-        "title", "TR-01b 窗口测试", "destination", "窗口", "startDate", "2026-08-01", "endDate", "2026-08-10"));
-    String tripId = tripResp.get("trip").get("id").asText();
+  void tr01b_scansPastFirstBatchAndBreaksTimestampTies() throws Exception {
+    String owner = register("tr01buser" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String reader = register("tr01bmem" + suffix);
+    String tripId = apiPost(owner, "/api/trips", Map.of("title", "游记过滤测试"))
+        .path("trip").path("id").asText();
     createdTripIds.add(tripId);
+    String journals = "/api/trips/" + tripId + "/journals";
+    invite(owner, ownerId, reader, "tr01bmem" + suffix, tripId);
 
-    // 创建 5 条私有游记（最新 3 条对 member 不可见）
-    for (int i = 1; i <= 5; i++) {
-      HttpResponse<String> r = httpRequest("POST", "/api/trips/" + tripId + "/journals", tok,
-          Map.of("title", "窗口测试游记-" + i, "content", "内容-" + i,
-              "isDraft", false, "visibility", "private"));
-      assertEquals(200, r.statusCode(), "创建游记失败: " + r.body());
+    for (int i = 0; i < 22; i++) {
+      apiPost(owner, journals, Map.of("title", "不可见标题-" + i, "content", "不可见内容-" + i,
+          "isDraft", false, "visibility", "private"));
     }
-    // 创建 1 条公开游记（更早，对 member 可见）
-    HttpResponse<String> pubR = httpRequest("POST", "/api/trips/" + tripId + "/journals", tok,
-        Map.of("title", "公开游记-窗口", "content", "公开内容",
-            "isDraft", false, "visibility", "public"));
-    assertEquals(200, pubR.statusCode());
+    assertEquals(0, apiGet(reader, "/api/dashboard").path("recentJournals").size());
+    List<String> visible = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      visible.add(apiPost(owner, journals, Map.of("title", "可见游记-" + i, "content", "公开内容",
+          "isDraft", false, "visibility", "public")).path("journal").path("id").asText());
+    }
+    jdbc.update("UPDATE trip_journals SET created_at='2026-08-01' WHERE trip_id=? AND visibility='public'", tripId);
+    jdbc.update("UPDATE trip_journals SET created_at='2026-08-02' WHERE id=?", visible.get(0));
+    // 保证分页边界上所有不可见记录都具有相同时间。
+    jdbc.update("UPDATE trip_journals SET created_at='2026-08-03' WHERE trip_id=? AND visibility='private'", tripId);
 
-    // 邀请 member（好友 + 行程成员）
-    String memberTok = register("tr01bmem" + suffix);
-    String memberId = createdUserIds.get(createdUserIds.size() - 1);
-    apiPost(tok, "/api/friends", Map.of("username", "tr01bmem" + suffix));
-    apiPost(memberTok, "/api/friends/" + createdUserIds.get(createdUserIds.size() - 2) + "/accept", null);
-    apiPost(tok, "/api/trips/" + tripId + "/members", Map.of("username", "tr01bmem" + suffix, "role", "member"));
-
-    // 验收：member 首页应显示公开游记（虽然最新 5 条私有不可见）
-    JsonNode dash = apiGet(memberTok, "/api/dashboard");
-    assertJournalInDash(dash, null, "公开游记-窗口");
-    // 不应显示任何私有游记
-    assertJournalNotInDash(dash, null, "窗口测试游记-1");
-    assertJournalNotInDash(dash, null, "窗口测试游记-5");
-    // API 响应不含私有游记标题
-    String dashJson = dash.toString();
-    assertFalse(dashJson.contains("窗口测试游记"), "API 响应不应包含私有游记标题");
-    assertTrue(dashJson.contains("公开游记-窗口"), "API 响应应包含公开游记");
+    JsonNode dashboard = apiGet(reader, "/api/dashboard");
+    List<String> expected = new ArrayList<>(visible.subList(1, 4));
+    expected.sort(java.util.Comparator.reverseOrder());
+    expected.add(0, visible.get(0));
+    List<String> actual = new ArrayList<>();
+    dashboard.path("recentJournals").forEach(j -> actual.add(j.path("id").asText()));
+    assertEquals(expected.subList(0, 3), actual);
+    assertFalse(dashboard.toString().contains("不可见标题"));
+    assertFalse(dashboard.toString().contains("不可见内容"));
+    jdbc.update("UPDATE trip_journals SET is_draft=true WHERE trip_id=? AND id<>?", tripId, visible.get(0));
+    JsonNode one = apiGet(reader, "/api/dashboard").path("recentJournals");
+    assertEquals(1, one.size());
+    assertEquals(visible.get(0), one.get(0).path("id").asText());
   }
-
-  // ================================================================
-  // TR-02：多币种
-  // ================================================================
 
   @Test
   @Order(20)
   void tr02_multiCurrency() throws Exception {
-    // 1. 创建行程
-    String tok = register("tr02user" + suffix);
-    JsonNode tripResp = apiPost(tok, "/api/trips", Map.of(
-        "title", "TR-02 币种测试", "destination", "多币种", "budget", 500));
-    currencyTripId = tripResp.get("trip").get("id").asText();
+    String owner = register("tr02user" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String member = register("tr02member" + suffix);
+    String memberId = createdUserIds.get(createdUserIds.size() - 1);
+    String today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
+    currencyTripId = apiPost(owner, "/api/trips", Map.of(
+        "title", "TR-02 币种测试", "startDate", today, "endDate", today, "budget", 500))
+        .path("trip").path("id").asText();
+    invite(owner, ownerId, member, "tr02member" + suffix, currencyTripId);
+    String path = "/api/trips/" + currencyTripId;
+    String expenses = path + "/expenses";
+    apiPost(owner, path + "/days/generate", null);
+    apiPost(owner, expenses, Map.of("title", "人民币费用", "amount", 100, "currency", "CNY",
+        "category", "food", "spentAt", today, "shareUserIds", List.of(ownerId, memberId)));
+    String confirm = expenses + "/settlement/confirm";
+    JsonNode snapshot = apiPost(owner, confirm, null).path("settlement");
+    assertEquals("CNY", snapshot.path("snapshot").path("currency").asText());
+    assertEquals("50.00", snapshot.path("snapshot").path("transfers").get(0).path("amount").asText());
 
-    // 2. 创建 100 CNY + 100 USD 费用
-    apiPost(tok, "/api/trips/" + currencyTripId + "/expenses",
-        Map.of("title", "人民币费用", "amount", 100, "currency", "CNY",
-            "category", "food", "spentAt", "2026-08-01"));
-    apiPost(tok, "/api/trips/" + currencyTripId + "/expenses",
-        Map.of("title", "美元费用", "amount", 100, "currency", "USD",
-            "category", "food", "spentAt", "2026-08-01"));
+    apiPost(owner, expenses, Map.of("title", "美元费用", "amount", 100, "currency", "USD",
+        "category", "food", "spentAt", today, "shareUserIds", List.of(ownerId, memberId)));
+    JsonNode wallet = apiGet(owner, expenses + "/summary");
+    JsonNode totalByCurrency = wallet.path("totalByCurrency");
+    assertEquals("100.00", totalByCurrency.path("CNY").asText());
+    assertEquals("100.00", totalByCurrency.path("USD").asText());
+    assertNotEquals("200.00", wallet.path("totalExpenseAmount").asText());
+    JsonNode report = apiGet(owner, expenses + "/report");
+    assertEquals("100.00", report.path("totalAmount").asText());
+    assertEquals("100.00", report.path("otherCurrencies")
+        .path("USD".equals(report.path("currency").asText()) ? "CNY" : "USD").asText());
 
-    // 3. 验收：汇总不应显示虚假的 200 单币种
-    JsonNode summary = apiGet(tok, "/api/trips/" + currencyTripId + "/expenses/summary");
-    JsonNode totalByCurrency = summary.get("totalByCurrency");
-    assertNotNull(totalByCurrency, "汇总应有 totalByCurrency 字段");
-    assertNotEquals("200.00", summary.get("totalExpenseAmount").asText(),
-        "不应把 100 CNY + 100 USD 合并成 200");
-    // 分币种明细：CNY 100、USD 100
-    if (totalByCurrency != null && totalByCurrency.has("CNY")) {
-      assertEquals("100.00", totalByCurrency.get("CNY").asText(), "CNY 分项应为 100");
+    String bookingId = apiPost(owner, path + "/bookings", Map.of("title", "外币预订",
+        "type", "hotel", "amount", "125.43", "currency", "USD"))
+        .path("booking").path("id").asText();
+    JsonNode budget = apiGet(owner, expenses + "/budget");
+    assertEquals("CNY", budget.path("budgetCurrency").asText());
+    assertEquals("100.00", budget.path("totalSpent").asText());
+    assertEquals("0.00", budget.path("totalEstimated").asText());
+    assertEquals("400.00", budget.path("totalRemaining").asText());
+    assertEquals("100.00", budget.path("foreignCurrencySpent").path("USD").asText());
+    assertEquals("125.43", budget.path("foreignCurrencyEstimated").path("USD").asText());
+
+    JsonNode plan = apiGet(owner, expenses + "/settlement");
+    assertFalse(plan.path("canConfirm").asBoolean(true));
+    assertTrue(plan.path("confirmBlockedReason").asText().contains("多种币种"));
+    for (String currency : List.of("CNY", "USD")) {
+      JsonNode group = plan.path("byCurrency").path(currency);
+      assertEquals("100.00", group.path("totalAmount").asText());
+      assertEquals("50.00", group.path("transfers").get(0).path("amount").asText());
     }
-    if (totalByCurrency != null && totalByCurrency.has("USD")) {
-      assertEquals("100.00", totalByCurrency.get("USD").asText(), "USD 分项应为 100");
+    assertEquals(snapshot.path("id"), plan.path("latestSettlement").path("id"));
+    HttpResponse<String> rejected = httpRequest("POST", confirm, owner, null);
+    assertEquals(400, rejected.statusCode());
+    assertTrue(rejected.body().contains("多种币种"));
+
+    JsonNode brief = apiPost(owner, "/api/ai/today-brief",
+        Map.of("tripId", currencyTripId, "date", today, "refresh", true));
+    JsonNode briefAmounts = brief.path("budget").path("todaySpentByCurrency");
+    assertEquals("100.00", briefAmounts.path("CNY").asText());
+    assertEquals("100.00", briefAmounts.path("USD").asText());
+    assertEquals("fallback", brief.path("summarySource").asText());
+    assertTrue(brief.path("summary").asText().contains("100.00 CNY"));
+    assertTrue(brief.path("summary").asText().contains("100.00 USD"));
+    when(llm.isEnabled()).thenReturn(true);
+    when(llm.chat(anyList(), isNull())).thenReturn(Map.of("content", "今日安排可在时间轴查看。"));
+    JsonNode aiBrief = apiPost(owner, "/api/ai/today-brief",
+        Map.of("tripId", currencyTripId, "date", today, "refresh", true));
+    assertEquals("ai", aiBrief.path("summarySource").asText());
+    assertTrue(aiBrief.path("summary").asText().contains("100.00 CNY"));
+    assertTrue(aiBrief.path("summary").asText().contains("100.00 USD"));
+
+    apiPost(owner, path + "/bookings/" + bookingId + "/convert-expense", null);
+    JsonNode converted = apiGet(owner, expenses + "/budget");
+    assertEquals("100.00", converted.path("totalSpent").asText());
+    assertEquals("0.00", converted.path("totalEstimated").asText());
+    assertEquals(0, converted.path("foreignCurrencyEstimated").size());
+    assertEquals("225.43", converted.path("foreignCurrencySpent").path("USD").asText());
+
+    String foreignTrip = apiPost(owner, "/api/trips", Map.of("title", "仅外币"))
+        .path("trip").path("id").asText();
+    createdTripIds.add(foreignTrip);
+    apiPost(owner, "/api/trips/" + foreignTrip + "/members",
+        Map.of("username", "tr02member" + suffix, "role", "member"));
+    String foreignExpenses = "/api/trips/" + foreignTrip + "/expenses";
+    JsonNode expense = apiPost(owner, foreignExpenses, Map.of("amount", "0.03", "currency", "USD",
+        "shareUserIds", List.of(ownerId, memberId))).path("expense");
+    java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+    for (JsonNode share : expense.path("shares")) {
+      sum = sum.add(new java.math.BigDecimal(share.path("shareAmount").asText()));
     }
-
-    // 4. 验收：预算不受异币影响
-    JsonNode budget = apiGet(tok, "/api/trips/" + currencyTripId + "/expenses/budget");
-    assertNotNull(budget.get("budgetCurrency"), "预算应标注币种");
-    assertNotNull(budget.get("foreignCurrencySpent"), "异币费用应单独列出");
-    // 预算进度只含 CNY
-    assertEquals("100.00", budget.get("totalSpent").asText(), "预算进度只计 CNY 100");
-
-    // 5. 验收：混币结算被拦截
-    HttpResponse<String> settleResp = httpRequest("POST",
-        "/api/trips/" + currencyTripId + "/settlement", tok, null);
-    assertNotEquals(200, settleResp.statusCode(), "混币结算应被拦截");
-
-    // 6. 验收：今日简报分币种
-    HttpResponse<String> briefResp = httpRequest("POST", "/api/ai/today-brief", tok,
-        Map.of("tripId", currencyTripId));
-    assertEquals(200, briefResp.statusCode(), "today-brief 调用失败: " + briefResp.body());
-    JsonNode brief = JSON.readTree(briefResp.body());
-    JsonNode budgetSection = brief.get("budget");
-    assertNotNull(budgetSection, "简报应有 budget 段");
-    assertNotNull(budgetSection.get("todaySpentByCurrency"), "简报应有分币种字段");
-
-    // 7. 验收：单币种结算正常（删 USD 后只留 CNY）
-    jdbc.update("DELETE FROM trip_expense_shares WHERE expense_id IN (SELECT id FROM trip_expenses WHERE trip_id=? AND currency='USD')", currencyTripId);
-    jdbc.update("DELETE FROM trip_expenses WHERE trip_id=? AND currency='USD'", currencyTripId);
-    HttpResponse<String> settle2 = httpRequest("POST",
-        "/api/trips/" + currencyTripId + "/settlement", tok, null);
-    // 单币种应通过（200 或400 没有账目），但不是混币拦截
-    if (settle2.statusCode() == 400) {
-      assertFalse(settle2.body().contains("多种币种"), "单币种不应报混币错误");
-    }
+    assertEquals(new java.math.BigDecimal("0.03"), sum);
+    assertTrue(apiGet(owner, foreignExpenses + "/settlement").path("canConfirm").asBoolean());
+    assertEquals("USD", apiPost(owner, foreignExpenses + "/settlement/confirm", null)
+        .path("settlement").path("snapshot").path("currency").asText());
+    assertEquals("0.00", apiGet(owner, foreignExpenses + "/budget").path("totalSpent").asText());
   }
 
-  // ================================================================
-  // TR-03：日期校验 + 关联数据保护
-  // ================================================================
 
   @Test
   @Order(30)
-  void tr03_dateValidation() throws Exception {
-    String tok = register("tr03user" + suffix);
+  void tr03_previewRejectsStalePlansAndPreservesEveryDayReference() throws Exception {
+    String owner = register("tr03user" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String member = register("tr03member" + suffix);
+    dateTripId = apiPost(owner, "/api/trips", Map.of("title", "TR-03 改期",
+        "startDate", "2026-09-01", "endDate", "2026-09-10")).path("trip").path("id").asText();
+    invite(owner, ownerId, member, "tr03member" + suffix, dateTripId);
+    String path = "/api/trips/" + dateTripId;
+    String daysPath = path + "/days";
+    apiPost(owner, daysPath + "/generate", null);
+    assertEquals(400, httpRequest("PATCH", path, owner, Map.of("startDate", "2026-09-15")).statusCode());
+    assertEquals(400, httpRequest("PATCH", path, owner, Map.of("endDate", "2026-08-01")).statusCode());
+    assertEquals(400, httpRequest("GET", path + "/date-change-preview?endDate=2026-12-01", owner, null).statusCode());
 
-    // 1. 创建行程 2026-09-01 ~ 2026-09-10
-    JsonNode tripResp = apiPost(tok, "/api/trips", Map.of(
-        "title", "TR-03 日期测试", "destination", "日期保护",
-        "startDate", "2026-09-01", "endDate", "2026-09-10"));
-    dateTripId = tripResp.get("trip").get("id").asText();
+    JsonNode expansion = apiGet(owner, path + "/date-change-preview?endDate=2026-09-15");
+    assertEquals(5, expansion.path("additions").size());
+    apiPatch(owner, path, Map.of("endDate", "2026-09-15", "previewToken", expansion.path("previewToken").asText()));
+    List<String> dayIds = new ArrayList<>();
+    apiGet(owner, daysPath).path("days").forEach(day -> dayIds.add(day.path("id").asText()));
+    assertEquals(15, dayIds.size());
 
-    // 2. 验收：只改 startDate 不能产生倒序
-    HttpResponse<String> resp = httpRequest("PATCH", "/api/trips/" + dateTripId, tok,
-        Map.of("startDate", "2026-09-15")); // 晚于 endDate
-    assertEquals(400, resp.statusCode(), "只改 startDate 导致倒序应被拒绝");
+    String previewPath = path + "/date-change-preview?endDate=2026-09-03";
+    JsonNode stale = apiGet(owner, previewPath);
+    assertEquals(12, stale.path("removed").size());
+    assertEquals("2026-09-15", apiGet(owner, path).path("trip").path("endDate").asText().substring(0, 10));
+    String mutableDay = daysPath + "/" + dayIds.get(3);
+    apiPost(member, mutableDay + "/edit-lock", null);
+    apiPatch(member, mutableDay, Map.of("title", "协作者保留的第 4 天"));
+    assertEquals(409, httpRequest("PATCH", path, owner,
+        Map.of("endDate", "2026-09-03", "previewToken", stale.path("previewToken").asText())).statusCode());
 
-    // 3. 验收：只改 endDate 也不能倒序
-    HttpResponse<String> resp2 = httpRequest("PATCH", "/api/trips/" + dateTripId, tok,
-        Map.of("endDate", "2026-08-01")); // 早于 startDate
-    assertEquals(400, resp2.statusCode(), "只改 endDate 导致倒序应被拒绝");
+    JsonNode staleAfterTitle = apiGet(owner, previewPath);
+    apiPost(member, path + "/expenses", Map.of("title", "第 5 天费用", "amount", 25,
+        "tripDayId", dayIds.get(4), "spentAt", "2026-09-05"));
+    assertEquals(409, httpRequest("PATCH", path, owner, Map.of("endDate", "2026-09-03",
+        "previewToken", staleAfterTitle.path("previewToken").asText())).statusCode());
+    assertEquals(15, apiGet(owner, daysPath).path("days").size());
 
-    // 4. 验收：正常扩展范围成功
-    HttpResponse<String> resp3 = httpRequest("PATCH", "/api/trips/" + dateTripId, tok,
-        Map.of("endDate", "2026-09-15"));
-    assertEquals(200, resp3.statusCode(), "正常扩展范围应成功");
+    jdbc.update("INSERT INTO photos(id,trip_id,trip_day_id,url,updated_at) "
+        + "VALUES (gen_random_uuid()::text,?,?, 'https://example.invalid/photo.jpg',now())", dateTripId, dayIds.get(5));
+    apiPost(member, path + "/journals", Map.of("title", "第 7 天游记", "content", "行程记录",
+        "isDraft", true, "tripDayId", dayIds.get(6)));
+    jdbc.update("INSERT INTO trip_places(id,trip_id,trip_day_id,name,updated_at) "
+        + "VALUES (gen_random_uuid()::text,?,?, '第 8 天地点',now())", dateTripId, dayIds.get(7));
+    apiPost(member, path + "/bookings", Map.of("title", "第 9 天预订", "type", "hotel", "tripDayId", dayIds.get(8)));
+    jdbc.update("INSERT INTO travel_documents(id,trip_id,trip_day_id,type,title,url,updated_at) "
+        + "VALUES (gen_random_uuid()::text,?,?,'other','第 10 天文档','https://example.invalid/doc',now())",
+        dateTripId, dayIds.get(9));
+    jdbc.update("INSERT INTO trip_legs(id,trip_id,trip_day_id) VALUES (gen_random_uuid()::text,?,?)",
+        dateTripId, dayIds.get(10));
 
-    // 5. 给第 10 天（2026-09-10）添加费用关联
-    jdbc.update("INSERT INTO trip_expenses (id, trip_id, payer_user_id, title, amount, currency, category, spent_at, created_at, updated_at, trip_day_id) " +
-        "SELECT gen_random_uuid(), ?, u.id, '第10天费用', 50, 'CNY', 'food', '2026-09-10', NOW(), NOW(), td.id " +
-        "FROM trip_days td JOIN trip_members tm ON tm.trip_id=td.trip_id JOIN users u ON u.id=tm.user_id " +
-        "WHERE td.trip_id=? AND td.date='2026-09-10' LIMIT 1",
-        dateTripId, dateTripId);
+    JsonNode fresh = apiGet(owner, previewPath);
+    List<String> plannedPreserved = new ArrayList<>();
+    fresh.path("preserved").forEach(day -> plannedPreserved.add(day.path("dayId").asText()));
+    assertEquals(dayIds.subList(3, 11), plannedPreserved);
+    assertEquals(4, fresh.path("removed").size());
+    HttpResponse<String> saved = httpRequest("PATCH", path, owner, Map.of("endDate", "2026-09-03",
+        "previewToken", fresh.path("previewToken").asText()));
+    assertEquals(200, saved.statusCode(), saved.body());
+    JsonNode sync = JSON.readTree(saved.body()).path("daySync");
+    assertEquals(fresh.path("preserved"), sync.path("preserved"));
+    assertEquals(fresh.path("removed"), sync.path("removedDays"));
+    assertEquals(11, apiGet(owner, daysPath).path("days").size());
 
-    // 6. 验收：缩短范围时有关联内容的天不被删除
-    HttpResponse<String> resp4 = httpRequest("PATCH", "/api/trips/" + dateTripId, tok,
-        Map.of("endDate", "2026-09-05"));
-    assertEquals(200, resp4.statusCode(), "缩短范围应成功（有关联的天保留）");
-    // 核对数据库：2026-09-10 的天应仍在（因有费用关联）
-    Integer dayCount = jdbc.queryForObject(
-        "SELECT COUNT(*) FROM trip_days WHERE trip_id=? AND date='2026-09-10'", Integer.class, dateTripId);
-    assertNotNull(dayCount);
-    // 注：dayIndex > 5 的天保留但 dayIndex 不变，所以 day 仍在
-    JsonNode resp4Body = JSON.readTree(resp4.body());
-    JsonNode daySync = resp4Body.get("daySync");
-    if (daySync != null && daySync.has("preservedDayIds")) {
-      assertTrue(daySync.get("preservedDayIds").size() >= 0, "应报告保留的天");
+    List<String> tables = List.of("trip_expenses", "photos", "trip_journals", "trip_places",
+        "bookings", "travel_documents", "trip_legs");
+    for (int i = 0; i < tables.size(); i++) {
+      assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM " + tables.get(i)
+          + " WHERE trip_id=? AND trip_day_id=?", Integer.class, dateTripId, dayIds.get(4 + i)));
     }
 
-    // 7. 验收：日期预览 API 返回影响信息
-    HttpResponse<String> preview = httpRequest("GET",
-        "/api/trips/" + dateTripId + "/date-change-preview?startDate=2026-09-01&endDate=2026-09-03", tok, null);
-    assertEquals(200, preview.statusCode(), "日期预览 API 应可用");
-    JsonNode previewBody = JSON.readTree(preview.body());
-    assertNotNull(previewBody.get("moves"), "预览应有 moves 字段");
-    assertNotNull(previewBody.get("preserved"), "预览应有 preserved 字段");
-    assertNotNull(previewBody.get("removed"), "预览应有 removed 字段");
-    assertNotNull(previewBody.get("hasRisk"), "预览应有 hasRisk 字段");
+    String collision = path + "/date-change-preview?startDate=2026-09-08&endDate=2026-09-10";
+    JsonNode blocked = apiGet(owner, collision);
+    assertFalse(blocked.path("canSave").asBoolean(true));
+    assertTrue(blocked.path("blockedReason").asText().contains("重叠"));
+    assertEquals(409, httpRequest("PATCH", path, owner, Map.of("title", "不应保存",
+        "startDate", "2026-09-08", "endDate", "2026-09-10",
+        "previewToken", blocked.path("previewToken").asText())).statusCode());
+    JsonNode afterCollision = apiGet(owner, path).path("trip");
+    assertEquals("TR-03 改期", afterCollision.path("title").asText());
+    assertEquals("2026-09-03", afterCollision.path("endDate").asText().substring(0, 10));
 
-    // 8. 验收：无日期草稿可保存
-    JsonNode draftResp = apiPost(tok, "/api/trips", Map.of("title", "无日期草稿-TR03"));
-    String draftId = draftResp.get("trip").get("id").asText();
+    JsonNode shift = apiGet(owner, path + "/date-change-preview?startDate=2026-08-30&endDate=2026-09-01");
+    assertEquals(3, shift.path("moves").size());
+    apiPatch(owner, path, Map.of("startDate", "2026-08-30", "endDate", "2026-09-01",
+        "previewToken", shift.path("previewToken").asText()));
+    JsonNode first = apiGet(owner, daysPath).path("days").get(0);
+    assertEquals(dayIds.get(0), first.path("id").asText());
+    assertEquals("2026-08-30", first.path("date").asText().substring(0, 10));
+
+    JsonNode clear = apiGet(owner, path + "/date-change-preview?endDate=");
+    assertTrue(clear.path("newRange").path("endDate").isNull());
+    assertEquals(11, clear.path("preserved").size());
+    Map<String, Object> clearPayload = new java.util.HashMap<>();
+    clearPayload.put("endDate", null);
+    clearPayload.put("previewToken", clear.path("previewToken").asText());
+    apiPatch(owner, path, clearPayload);
+    assertTrue(apiGet(owner, path).path("trip").path("endDate").isNull());
+    apiPatch(owner, path, Map.of("title", "日期待定"));
+    assertEquals(11, apiGet(owner, daysPath).path("days").size());
+
+    String draftId = apiPost(owner, "/api/trips", Map.of("title", "无日期草稿"))
+        .path("trip").path("id").asText();
     createdTripIds.add(draftId);
-    assertTrue(draftResp.get("trip").get("startDate").isNull(), "无日期草稿 startDate 应为 null");
-    HttpResponse<String> patchDraft = httpRequest("PATCH", "/api/trips/" + draftId, tok,
-        Map.of("title", "无日期草稿-已改"));
-    assertEquals(200, patchDraft.statusCode(), "无日期草稿应可部分更新");
+    String draft = "/api/trips/" + draftId;
+    apiPatch(owner, draft, Map.of("title", "无日期草稿可编辑"));
+    assertTrue(apiGet(owner, draft).path("trip").path("startDate").isNull());
+    JsonNode fill = apiGet(owner, draft + "/date-change-preview?startDate=2026-09-01&endDate=2026-09-03");
+    assertEquals(3, fill.path("createCount").asInt());
+    apiPatch(owner, draft, Map.of("startDate", "2026-09-01", "endDate", "2026-09-03",
+        "previewToken", fill.path("previewToken").asText()));
+    assertEquals(3, apiGet(owner, draft + "/days").path("days").size());
   }
+
+  private void invite(String owner, String ownerId, String member, String username, String tripId)
+      throws Exception {
+    apiPost(owner, "/api/friends", Map.of("username", username));
+    apiPost(member, "/api/friends/" + ownerId + "/accept", null);
+    apiPost(owner, "/api/trips/" + tripId + "/members", Map.of("username", username, "role", "member"));
+  }
+
 
   // ================================================================
   // 工具方法
