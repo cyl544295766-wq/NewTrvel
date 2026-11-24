@@ -14,41 +14,42 @@
 <style>
   :root {
     color-scheme: dark;
-    --login-bg: #0A0B0E;
-    --login-text: #fff;
-    --login-muted: #C2CFD0;
-    --login-placeholder: #9BACAE;
-    --login-panel: rgba(255,255,255,.06);
-    --login-surface: rgba(255,255,255,.07);
-    --login-line: rgba(255,255,255,.18);
-    --login-active: rgba(255,255,255,.16);
-    --login-link: #7FD8D4;
-    --login-link-hover: #A5E8E5;
-    --login-brand-accent: #FFB27E;
-    --login-shadow: 0 32px 80px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
-    --login-text-shadow: 0 2px 24px rgba(0,0,0,.5);
-    --login-alert-bg: rgba(255,90,90,.13);
-    --login-alert-line: rgba(255,110,110,.35);
-    --login-alert-text: #FF9C9C;
+    --login-bg: rgb(var(--login-bg-rgb));
+    --login-bg-rgb: 17, 27, 30;
+    --login-text: #f1f6f4;
+    --login-muted: #bacdcb;
+    --login-placeholder: #a7bfbc;
+    --login-panel: #18272a;
+    --login-surface: #213236;
+    --login-line: #3c5355;
+    --login-control-line: #708889;
+    --login-active: #304745;
+    --login-icon: #a8bfbc;
+    --login-link: #8de1d3;
+    --login-link-hover: #b0eee4;
+    --login-shadow: 0 10px 28px rgba(5, 14, 17, .22);
+    --login-alert-bg: #3b292a;
+    --login-alert-line: #986765;
+    --login-alert-text: #ffc0b8;
   }
   :root[data-theme="light"] {
     color-scheme: light;
-    --login-bg: #f4f7f3;
-    --login-text: #123A3C;
-    --login-muted: #405F61;
-    --login-placeholder: #577174;
+    --login-bg-rgb: 237, 243, 239;
+    --login-text: #173335;
+    --login-muted: #425c5c;
+    --login-placeholder: #4f6768;
     --login-panel: #fff;
-    --login-surface: #f2f6f3;
-    --login-line: #bed2cc;
-    --login-active: #dcece5;
-    --login-link: #0D6E6E;
-    --login-link-hover: #0A5555;
-    --login-brand-accent: #9C3E1F;
-    --login-shadow: 0 20px 54px rgba(37,63,55,.11), 0 2px 6px rgba(37,63,55,.06);
-    --login-text-shadow: none;
-    --login-alert-bg: #FFF0EB;
-    --login-alert-line: #E9B0A2;
-    --login-alert-text: #932F22;
+    --login-surface: #f1f6f3;
+    --login-line: #cad9d2;
+    --login-control-line: #758880;
+    --login-active: #e0ece6;
+    --login-icon: #4f6768;
+    --login-link: #12635d;
+    --login-link-hover: #0a4b45;
+    --login-shadow: 0 8px 26px rgba(34, 66, 56, .09);
+    --login-alert-bg: #fff1ee;
+    --login-alert-line: #c9857a;
+    --login-alert-text: #932f22;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: auto; min-height: 100%; }
@@ -58,64 +59,18 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ===== 雪山 3D 场景（三层视差，JS 写入 --px-x/--px-y） ===== */
-  .scene { position: fixed; inset: 0; overflow: hidden; z-index: 0; background: var(--login-bg); }
-  .px {
-    position: absolute; inset: -60px;
-    transform: translate(var(--px-x, 0), var(--px-y, 0));
-    will-change: transform;
-  }
-  .px-bg {
+  /* 雪山聚焦在品牌区，并在靠近表单时融入页面底色。 */
+  .scene { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .scene::before {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: min(76%, 1180px);
     background:
-      linear-gradient(180deg, rgba(8,9,12,.52) 0%, rgba(8,9,12,.16) 38%, rgba(8,9,12,.72) 100%),
-      linear-gradient(90deg, rgba(8,9,12,.80) 0%, rgba(8,9,12,.26) 55%, rgba(8,9,12,.62) 100%),
-      url("../assets/img/login-bg.jpg") center 36% / cover no-repeat;
-  }
-  [data-theme="light"] .px-bg {
-    background:
-      linear-gradient(0deg, #f4f7f3, transparent 32%, rgba(244,247,243,.68) 52%, rgba(244,247,243,.86) 100%),
-      linear-gradient(90deg, rgba(244,247,243,.62) 10%, rgba(244,247,243,.80) 42%, #f4f7f3 70%),
-      url("../assets/img/login-bg.jpg") left center / cover no-repeat;
-  }
-  [data-theme="light"] .scene :is(.scene-vig, #sparkles, .glow, .fx) { display: none; }
-  .glow { position: absolute; border-radius: 50%; pointer-events: none; }
-  .g1 { right: -12%; top: -20%; width: 46vw; height: 46vw;
-    background: radial-gradient(circle, rgba(60,180,175,.22), transparent 65%); }
-  .g2 { left: -14%; bottom: -24%; width: 44vw; height: 44vw;
-    background: radial-gradient(circle, rgba(255,138,76,.16), transparent 65%); }
-  .spark {
-    position: absolute; border-radius: 50%; background: #fff;
-    animation: twinkle 3.4s ease-in-out infinite;
-  }
-  @keyframes twinkle {
-    0%, 100% { opacity: .14; transform: scale(.8); }
-    50%      { opacity: .95; transform: scale(1.15); }
+      linear-gradient(90deg, transparent 32%, var(--login-bg) 99%),
+      linear-gradient(180deg, var(--login-bg), rgba(var(--login-bg-rgb), .87) 49%,
+        rgba(var(--login-bg-rgb), .26) 79%, var(--login-bg)),
+      url("../assets/img/login-bg.jpg") center 54% / cover no-repeat;
   }
 
-  /* 漂浮 3D 图标（深景/近景两层） */
-  .fx {
-    position: absolute; display: block;
-    filter: drop-shadow(0 18px 30px rgba(0,0,0,.5));
-    animation: floaty 8s ease-in-out infinite;
-  }
-  .fx svg { width: 100%; height: 100%; display: block; }
-  @keyframes floaty {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-16px); }
-  }
-  .f1 { width: 56px; height: 56px; left: 7%;  top: 17%; animation-delay: -1.2s; }
-  .f2 { width: 68px; height: 68px; left: 14%; bottom: 20%; animation-delay: -3.4s; }
-  .f3 { width: 48px; height: 48px; left: 37%; top: 11%; animation-delay: -2.2s; }
-  .f4 { width: 82px; height: 82px; right: 8%;  top: 15%; animation-delay: -4.0s; }
-  .f5 { width: 54px; height: 54px; right: 19%; bottom: 16%; animation-delay: -2.8s; }
-  .f6 { width: 44px; height: 44px; right: 35%; top: 23%; animation-delay: -5.2s; }
-
-  .scene-vig {
-    position: absolute; inset: 0;
-    background: radial-gradient(125% 95% at 50% 42%, transparent 52%, rgba(6,7,10,.68) 100%);
-  }
-
-  /* ===== 内容：左品牌大字 + 右玻璃登录卡 ===== */
+  /* 品牌区与表单 */
   .page {
     position: relative; z-index: 2; min-height: 100vh;
     display: grid; grid-template-columns: 1fr min(460px, 92vw);
@@ -125,11 +80,10 @@
   }
   .brand { grid-area: brand; max-width: 620px; }
   .auth-area { grid-area: auth; min-width: 0; }
-  .mark { display: inline-flex; margin-bottom: 18px; filter: drop-shadow(0 8px 18px rgba(0,0,0,.4)); }
+  .mark { display: inline-flex; margin-bottom: 18px; }
   .mark svg { width: 46px; height: 46px; display: block; }
   .b-name {
     font-family: var(--slab); font-weight: 700; font-size: 27px; color: var(--login-text); line-height: 1.1;
-    text-shadow: var(--login-text-shadow);
   }
   .b-name small {
     display: block; font-family: var(--grot); font-weight: 500; font-size: 10.5px;
@@ -138,40 +92,23 @@
   .slogan {
     margin-top: 28px;
     font-family: var(--grot); font-weight: 700;
-    font-size: clamp(30px, 4.4vw, 52px); line-height: 1.14; letter-spacing: -.015em;
-    color: var(--login-text); text-shadow: var(--login-text-shadow);
+    font-size: clamp(30px, 3.9vw, 52px); line-height: 1.17; letter-spacing: -.015em;
+    color: var(--login-text);
   }
-  .slogan em { font-style: normal; color: var(--login-brand-accent); }
-  [data-theme="light"] .slogan span { display: block; }
-  [data-theme="light"] .slogan em { white-space: nowrap; }
+  .slogan span { display: block; }
   .feat { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 34px; }
   .feat span {
     padding: 9px 18px; border-radius: 999px;
-    background: var(--login-surface); border: 1px solid var(--login-line);
+    background: var(--login-panel); border: 1px solid var(--login-line);
     color: var(--login-muted); font-family: var(--grot); font-size: 13.5px;
-    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   }
 
-  /* ===== 玻璃登录卡（JS 写入 --card-rotate-x/y） ===== */
   .card {
-    position: relative; width: 100%;
+    width: 100%;
     background: var(--login-panel);
     border: 1px solid var(--login-line);
     border-radius: 26px; padding: 38px 36px 32px;
-    -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
     box-shadow: var(--login-shadow);
-    transform: perspective(1100px) rotateX(var(--card-rotate-x, 0deg)) rotateY(var(--card-rotate-y, 0deg));
-    transition: transform .28s ease;
-  }
-  .card.shake { animation: shake .5s ease; }
-  [data-theme="light"] .card {
-    -webkit-backdrop-filter: none; backdrop-filter: none;
-    transform: none;
-  }
-  @keyframes shake {
-    0%, 100% { margin-left: 0; }
-    20%, 60% { margin-left: -9px; }
-    40%, 80% { margin-left: 9px; }
   }
   .card h1 {
     font-family: var(--grot); font-weight: 700; font-size: 27px;
@@ -189,7 +126,8 @@
   .tab-pill {
     position: absolute; left: 0; top: 5px; bottom: 5px;
     background: var(--login-active); border-radius: 999px;
-    transition: transform .28s cubic-bezier(.4,0,.2,1), width .28s cubic-bezier(.4,0,.2,1);
+    box-shadow: inset 0 0 0 1px var(--login-line);
+    transition: transform .16s ease, width .16s ease;
   }
   .mode-tabs button {
     position: relative; z-index: 1;
@@ -200,8 +138,7 @@
   }
   .mode-tabs button[aria-selected="true"] { color: var(--login-text); }
   [data-theme="light"] .tab-pill {
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(22,56,58,.12);
+    background: var(--login-panel);
   }
 
   /* 表单 */
@@ -213,30 +150,28 @@
   }
   .input-wrap {
     display: flex; align-items: center; gap: 10px;
-    background: var(--login-surface); border: 1px solid var(--login-line);
+    background: var(--login-surface); border: 1px solid var(--login-control-line);
     border-radius: 14px; padding: 0 14px; height: 52px;
-    transition: border-color .18s, box-shadow .18s;
   }
   .input-wrap:focus-within {
-    border-color: rgba(91,197,192,.65);
-    box-shadow: 0 0 0 3px rgba(91,197,192,.22);
+    border-color: var(--login-link);
+    outline: 2px solid var(--login-link); outline-offset: 2px;
   }
   .input-wrap:has(input[aria-invalid="true"]) { border-color: var(--login-alert-text); }
   .input-wrap .ico { display: grid; place-items: center; flex: none; }
-  .input-wrap .ico svg { width: 23px; height: 23px; display: block; filter: drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
+  .input-wrap .ico svg { width: 23px; height: 23px; display: block; }
   .input-wrap input {
     flex: 1 1 auto; min-width: 0;
     background: none; border: none; outline: none;
     color: var(--login-text); font-family: var(--grot); font-size: 15px;
   }
-  .input-wrap input::placeholder { color: var(--login-placeholder); }
+  .input-wrap input::placeholder { color: var(--login-placeholder); opacity: 1; }
   .toggle-pw {
     background: none; border: none; cursor: pointer;
-    padding: 4px; display: grid; place-items: center;
-    transition: transform .16s ease;
+    padding: 4px; display: grid; place-items: center; border-radius: 8px;
   }
-  .toggle-pw:hover { transform: scale(1.1); }
-  .toggle-pw svg { width: 23px; height: 23px; display: block; filter: drop-shadow(0 2px 5px rgba(0,0,0,.28)); }
+  .toggle-pw:hover { background: var(--login-active); }
+  .toggle-pw svg { width: 23px; height: 23px; display: block; }
   .hint, .field-error, .reset-help { margin-top: 6px; font-size: 12px; line-height: 1.5; }
   .hint, .reset-help { color: var(--login-muted); }
   .field-error { color: var(--login-alert-text); }
@@ -245,7 +180,7 @@
     color: var(--login-link); font-family: inherit; font-size: inherit;
     transition: color .16s;
   }
-  .link:hover { color: var(--login-link-hover); }
+  .link:hover { color: var(--login-link-hover); text-decoration: underline; }
 
   .row-between {
     display: flex; align-items: center; justify-content: space-between;
@@ -255,7 +190,7 @@
     display: inline-flex; align-items: center; gap: 8px;
     font-size: 13px; color: var(--login-muted); cursor: pointer;
   }
-  .check input { accent-color: var(--stamp); width: 15px; height: 15px; }
+  .check input { accent-color: var(--login-link); width: 15px; height: 15px; }
 
   .form-actions {
     margin-top: 18px;
@@ -263,7 +198,7 @@
   .theme-toggle {
     grid-area: auth; align-self: start; justify-self: end; z-index: 1;
     margin: 34px 36px 0 0; min-width: 72px; min-height: 44px; padding: 0 12px;
-    border: 1px solid var(--login-line); border-radius: 999px;
+    border: 1px solid var(--login-control-line); border-radius: 999px;
     background: var(--login-surface); color: var(--login-text);
     font: 600 13px var(--grot); white-space: nowrap; cursor: pointer;
   }
@@ -275,7 +210,7 @@
     position: relative; width: auto; min-height: 44px; height: auto;
     display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px 4px 6px;
     background: var(--login-panel); color: var(--login-text);
-    border: 1px solid var(--login-line); border-radius: 999px;
+    border: 1px solid var(--login-control-line); border-radius: 999px;
     font: 600 13px var(--grot); cursor: pointer; touch-action: manipulation;
   }
   .login-assistant .pet:hover { background: var(--login-active); }
@@ -284,19 +219,17 @@
   }
 
   /* 主按钮（橙色 CTA，与首页一致） */
-  .btn-stamp {
+  .login-submit {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; min-height: 54px; padding: 6px 8px; margin-top: 0;
     background: var(--stamp); color: #392014; border: none; border-radius: 999px;
     font-family: var(--grot); font-weight: 600; font-size: 16px; cursor: pointer;
-    box-shadow: 0 12px 32px rgba(255,138,76,.4);
-    transition: transform .16s ease, box-shadow .16s ease, opacity .16s;
+    transition: background-color .16s ease, opacity .16s ease;
   }
-  .btn-stamp:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgba(255,138,76,.48); }
-  .btn-stamp:active { transform: translateY(0); }
-  .btn-stamp.is-loading { opacity: .7; cursor: wait; transform: none; }
-  .arr { font-size: 18px; transition: transform .18s; }
-  .btn-stamp:hover .arr { transform: translateX(3px); }
+  .login-submit:enabled:hover { background-color: #f67e42; }
+  .login-submit:enabled:active { background-color: #eb743c; }
+  .login-submit.is-loading { opacity: .7; cursor: wait; }
+  .arr { font-size: 18px; }
 
   .alt-note { margin-top: 18px; text-align: center; font-size: 13.5px; color: var(--login-muted); }
 
@@ -311,10 +244,9 @@
     display: flex; align-items: center; justify-content: center; gap: 8px;
     height: 46px; border-radius: 12px; text-decoration: none;
     background: transparent; color: var(--login-text); font-size: 14.5px; font-weight: 600;
-    border: 1px solid var(--login-line); transition: transform .16s, box-shadow .16s;
+    border: 1px solid var(--login-control-line); transition: background-color .16s ease;
   }
-  .hw-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0,0,0,.18); }
-  .hw-btn:active { transform: translateY(0); }
+  .hw-btn:hover { background: var(--login-surface); }
   /* 华为官方花瓣标识，尺寸与文字基线对齐 */
   .hw-logo { display: block; width: 18px; height: 18px; flex: none; }
   .hw-note { margin: 8px 0 0; text-align: center; font-size: 12px; color: var(--login-muted); }
@@ -327,7 +259,7 @@
     font-size: 13px; line-height: 1.55; margin-bottom: 18px;
   }
   .alert .ic { flex: none; }
-  .alert .ic svg { width: 19px; height: 19px; display: block; margin-top: 1px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.3)); }
+  .alert .ic svg { width: 19px; height: 19px; display: block; margin-top: 1px; }
   .alert[hidden] { display: none; }
 
   /* 模式切换的字段显隐 */
@@ -335,14 +267,12 @@
   body[data-mode="register"] .login-only { display: none; }
 
   /* 焦点可达性 */
-  a:focus-visible, button:focus-visible, input:focus-visible {
-    outline: 2px solid var(--stamp); outline-offset: 3px;
+  a:focus-visible, button:focus-visible, .check input:focus-visible, .login-assistant .pet:focus-visible {
+    outline: 2px solid var(--login-link); outline-offset: 3px;
   }
 
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
-    .card { transform: none !important; }
-    .px { transform: none !important; }
   }
 
   /* ===== 响应式 ===== */
@@ -354,15 +284,10 @@
       gap: 16px 12px; padding: 18px 20px 28px; align-content: start;
     }
     .scene { position: absolute; height: 170px; inset: 0 0 auto; }
-    .scene .px { inset: 0; transform: none; }
-    .scene :is(.scene-vig, #sparkles, .glow, .fx) { display: none; }
-    .px-bg {
-      background: linear-gradient(180deg, rgba(10,11,14,.45), var(--login-bg)),
-        url("../assets/img/login-bg.jpg") center 44% / cover no-repeat;
-    }
-    [data-theme="light"] .px-bg {
-      background: linear-gradient(180deg, rgba(244,247,243,.40), var(--login-bg)),
-        url("../assets/img/login-bg.jpg") center 44% / cover no-repeat;
+    .scene::before {
+      width: 100%;
+      background: linear-gradient(180deg, rgba(var(--login-bg-rgb), .86), var(--login-bg)),
+        url("../assets/img/login-bg.jpg") center 46% / cover no-repeat;
     }
     .brand { display: flex; align-items: center; gap: 8px; }
     .mark { margin: 0; }
@@ -370,7 +295,6 @@
     .b-name { font-size: 23px; }
     .b-name small, .slogan, .feat { display: none; }
     .theme-toggle { grid-area: theme; margin: 0; }
-    .card { transform: none; }
     .card-head { padding-right: 0; }
   }
   @media (max-width: 560px) {
@@ -391,44 +315,16 @@
     .alt-note { margin-top: 12px; }
   }
 
-  /* ===== 暗色线条图标（#ln-*）：配色与线宽 ===== */
+  /* 线条图标（#ln-*） */
   .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
-  .scene .fx svg.ln {
-    color: #8FE0DB; stroke-width: 1.35;
-    filter: drop-shadow(0 0 12px rgba(143,224,219,.55));
-  }
-  .scene .fx.acc svg.ln {
-    color: #FFC08F;
-    filter: drop-shadow(0 0 12px rgba(255,192,143,.55));
-  }
-  .input-wrap .ico svg.ln { color: var(--login-link); stroke-width: 2.1; }
-  .toggle-pw svg.ln { color: var(--login-link); stroke-width: 2; }
-  .alert .ic svg.ln { color: var(--login-brand-accent); stroke-width: 2; }
+  .input-wrap svg.ln { color: var(--login-icon); stroke-width: 2; }
+  .alert .ic svg.ln { stroke-width: 2; }
 </style>
 </head>
 <body data-mode="login">
 
 <script src="../assets/js/icons-line.js"></script>
-<!-- 装饰场景：雪山照片 + 双色柔光 + 星屑 + 漂浮 3D 图标（三层视差） -->
-<div class="scene" aria-hidden="true">
-  <div class="px px-bg" data-depth="6"></div>
-  <div class="px" data-depth="12">
-    <span class="glow g1"></span>
-    <span class="glow g2"></span>
-    <div id="sparkles"></div>
-  </div>
-  <div class="px" data-depth="24">
-    <span class="fx f1"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-plane"></use></svg></span>
-    <span class="fx f2 acc"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-luggage"></use></svg></span>
-    <span class="fx f3"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-globe"></use></svg></span>
-  </div>
-  <div class="px" data-depth="40">
-    <span class="fx f4"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-mountain"></use></svg></span>
-    <span class="fx f5"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-book"></use></svg></span>
-    <span class="fx f6 acc"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-spark"></use></svg></span>
-  </div>
-  <div class="scene-vig"></div>
-</div>
+<div class="scene" aria-hidden="true"></div>
 
 <main class="page">
 
@@ -446,7 +342,7 @@
       </svg>
     </span>
     <div class="b-name">织途<small>行程驾驶舱</small></div>
-    <p class="slogan"><span>把每一次出发，</span><span>都收进<em>同一本行程簿</em></span></p>
+    <p class="slogan"><span>把每一次出发，</span><span>都收进同一本行程簿</span></p>
     <div class="feat"><span>行程规划</span><span>多人协作</span><span>费用结算</span><span>AI 助手</span></div>
   </header>
 
@@ -514,7 +410,7 @@
       <p class="reset-help login-only" id="resetHelp" hidden>请把用户名发给行程管理员，由管理员在后台重置密码。</p>
 
       <div class="form-actions">
-        <button class="btn-stamp" type="submit" id="submitBtn">
+        <button class="login-submit" type="submit" id="submitBtn">
           <span id="submitText">进入我的行程</span>
           <span class="arr" aria-hidden="true">→</span>
         </button>
@@ -567,9 +463,7 @@
     var forgotBtn = document.getElementById('forgotBtn');
     var resetHelp = document.getElementById('resetHelp');
     var fields = [usernameInput, pwInput, confirmInput];
-    var card = document.getElementById('card');
     var pill = document.getElementById('tabPill');
-    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // 已登录则直接跳走（避免重复登录）
     if (isLoggedIn()) {
@@ -581,49 +475,6 @@
     if (window.TravelOSAi) {
       window.TravelOSAi.init({ mountEl: '#loginAssistant', inlineLauncher: true });
     }
-
-    /* ===== 场景装饰：星屑 + 鼠标视差（尊重 reduced-motion） ===== */
-    (function decorateScene() {
-      var box = document.getElementById('sparkles');
-      if (box && !reduceMotion) {
-        for (var i = 0; i < 16; i++) {
-          var dot = document.createElement('span');
-          dot.className = 'spark';
-          var size = 2 + Math.random() * 3;
-          dot.style.width = size + 'px';
-          dot.style.height = size + 'px';
-          dot.style.left = (4 + Math.random() * 92) + '%';
-          dot.style.top = (4 + Math.random() * 42) + '%';
-          dot.style.animationDelay = (-Math.random() * 4).toFixed(2) + 's';
-          box.appendChild(dot);
-        }
-      }
-      if (reduceMotion || window.matchMedia('(max-width: 980px)').matches) return;
-      var layers = document.querySelectorAll('.scene .px');
-      window.addEventListener('pointermove', function (e) {
-        if (e.pointerType !== 'mouse') return;
-        var dx = e.clientX / window.innerWidth - 0.5;
-        var dy = e.clientY / window.innerHeight - 0.5;
-        layers.forEach(function (el) {
-          var depth = parseFloat(el.getAttribute('data-depth') || '0');
-          el.style.setProperty('--px-x', (-dx * depth).toFixed(1) + 'px');
-          el.style.setProperty('--px-y', (-dy * depth).toFixed(1) + 'px');
-        });
-        if (card && card.matches(':hover')) {
-          var rect = card.getBoundingClientRect();
-          var localX = (e.clientX - rect.left) / rect.width - 0.5;
-          var localY = (e.clientY - rect.top) / rect.height - 0.5;
-          card.style.setProperty('--card-rotate-x', (-localY * 3.2).toFixed(2) + 'deg');
-          card.style.setProperty('--card-rotate-y', (localX * 3.2).toFixed(2) + 'deg');
-        }
-      });
-      if (card) {
-        card.addEventListener('pointerleave', function () {
-          card.style.setProperty('--card-rotate-x', '0deg');
-          card.style.setProperty('--card-rotate-y', '0deg');
-        });
-      }
-    })();
 
     /* ===== 登录/注册切换：滑动指示条 ===== */
     function movePill() {
@@ -729,12 +580,6 @@
     function fail(msg) {
       alertText.textContent = msg;
       alertBox.hidden = false;
-      /* 出错时卡片轻晃，把视线引到错误提示 */
-      if (!reduceMotion) {
-        card.classList.remove('shake');
-        void card.offsetWidth;
-        card.classList.add('shake');
-      }
     }
 
     function setLoading(loading) {
