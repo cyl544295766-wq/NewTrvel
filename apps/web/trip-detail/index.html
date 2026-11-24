@@ -727,6 +727,13 @@
 
     <!-- 主体加载占位 -->
     <section class="pass" id="pass" hidden></section>
+    <section class="module-panel" id="journey-preparation" hidden>
+      <div class="sec-head">
+        <span class="t" id="journeyTitle"></span>
+        <span class="hint" id="journeyHint"></span>
+      </div>
+      <div class="actions" id="journeyActions"></div>
+    </section>
 
     <div class="tabs" role="tablist" aria-label="详情分组" id="tabs" hidden>
       <button role="tab" aria-selected="true" aria-controls="pane-overview" id="tab-overview">概览</button>
@@ -874,14 +881,14 @@
     function fmtMonthDay(iso) {
       if (!iso) return '';
       var d = new Date(iso); if (isNaN(d)) return '';
-      var mm = String(d.getMonth() + 1).padStart(2, '0');
-      var dd = String(d.getDate()).padStart(2, '0');
+      var mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      var dd = String(d.getUTCDate()).padStart(2, '0');
       return mm + ' / ' + dd;
     }
     function fmtDateLong(iso) {
       if (!iso) return '';
       var d = new Date(iso); if (isNaN(d)) return '';
-      return d.getFullYear() + ' / ' + fmtMonthDay(iso);
+      return d.getUTCFullYear() + ' / ' + fmtMonthDay(iso);
     }
     function fmtMoney(s) {
       var n = parseFloat(s);
@@ -930,33 +937,59 @@
           apiGet('/trips/' + tripId + '/packing-lists'),
           apiGet('/trips/' + tripId + '/journals'),
           apiGet('/auth/me'),
+          apiGet('/trips/' + tripId + '/next-action'),
         ]);
         function pick(i) { return results[i].status === 'fulfilled' ? results[i].value : null; }
         var d0 = pick(0), d1 = pick(1), d2 = pick(2), d3 = pick(3), d4 = pick(4);
         var d5 = pick(5), d6 = pick(6), d7 = pick(7), d8 = pick(8);
         state.me = (pick(9) && pick(9).user) || null;
+        state.journey = pick(10);
 
         state.trip = d0 && d0.trip;
         if (!state.trip) {
-          showToast('找不到该旅程');
-          setTimeout(function () { location.replace('/trips/'); }, 1000);
+          showToast('该行程已删除、你已失去访问权限，或暂时无法加载');
+          setTimeout(function () { location.replace('/trips/'); }, 2400);
           return;
         }
+        var editable = ['owner', 'admin', 'member'].includes(state.trip.currentUserRole);
+        document.getElementById('btnEdit').hidden = !editable;
+        document.getElementById('btnArchive').hidden = !editable;
         state.members  = (d1 && d1.members) || [];
+        state.membersAvailable = !!d1;
         state.days     = (d2 && d2.days) || [];
-        state.expenses = d3 || { expenses: [], summary: { totalAmount: '0.00', currency: 'CNY' } };
+        state.daysAvailable = !!d2;
+        state.expenses = d3;
         state.weather  = (d4 && d4.weather) || [];
         // 四个模块的计数（列表接口本身已存在，之前漏算导致徽标显示「–」）
         state.counts = {
-          photos:     (d5 && d5.photos || []).length,
-          documents:  (d6 && d6.documents || []).length,
-          packing:    (d7 && d7.packingLists || []).length,
-          journals:   (d8 && d8.journals || []).length
+          photos:     d5 && d5.photos ? d5.photos.length : null,
+          documents:  d6 && d6.documents ? d6.documents.length : null,
+          packing:    d7 && d7.packingLists ? d7.packingLists.length : null,
+          journals:   d8 && d8.journals ? d8.journals.length : null
         };
 
         render();
+        renderJourneyAction();
       } catch (err) {
         showToast(humanError(err));
+      }
+    }
+
+    function renderJourneyAction() {
+      var panel = document.getElementById('journey-preparation');
+      var journey = state.journey;
+      if (!journey || !journey.primary || journey.phase === 'archived') return;
+      var pre = journey.phase === 'pre-trip';
+      document.getElementById('journeyTitle').textContent = pre ? '出发准备' : '下一步';
+      document.getElementById('journeyHint').textContent = journey.message || '';
+      var links = (pre ? [] : [journey.primary]).concat(journey.related || []);
+      document.getElementById('journeyActions').innerHTML = links.map(function (link) {
+        return '<a class="act" href="' + escapeHtml(link.url) + '">' + escapeHtml(link.label) + '</a>';
+      }).join('');
+      panel.hidden = false;
+      if (location.hash === '#journey-preparation' || location.hash === '#recapModule') {
+        var target = document.getElementById(location.hash.slice(1));
+        if (target) target.scrollIntoView({ block: 'center' });
       }
     }
 
@@ -983,8 +1016,8 @@
         +   '<div class="fields">'
         +     '<div class="field"><div class="k">开始日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.startDate) || '日期待定') + '</div></div>'
         +     '<div class="field"><div class="k">结束日期</div><div class="v">' + escapeHtml(fmtMonthDay(t.endDate) || '日期待定') + '</div></div>'
-        +     '<div class="field"><div class="k">预算</div><div class="v">' + escapeHtml(fmtMoney(t.budget || 0)) + '</div></div>'
-        +     '<div class="field"><div class="k">已花费 · CNY</div><div class="v' + (spent > 0 ? ' warn' : '') + '">' + escapeHtml(fmtMoney(spent)) + '</div></div>'
+        +     '<div class="field"><div class="k">预算</div><div class="v">' + escapeHtml(t.budget == null ? '未设置' : fmtMoney(t.budget)) + '</div></div>'
+        +     '<div class="field"><div class="k">已花费 · CNY</div><div class="v' + (spent > 0 ? ' warn' : '') + '">' + escapeHtml(expenseTotals ? fmtMoney(spent) : '暂不可用') + '</div></div>'
         +   '</div>'
         +   '<div class="desc' + (t.description ? '' : ' empty') + '">'
         +     '<span class="k">描述</span>'
@@ -1020,7 +1053,7 @@
         +     '<div class="stub-days">' + (days || '–') + (days ? '<small>天</small>' : '') + '</div>'
         +   '</div>'
         +   '<div class="stub-members">'
-        +     '<div class="k">同行 ' + state.members.length + ' 人</div>'
+        +     '<div class="k">' + (state.membersAvailable ? '同行 ' + state.members.length + ' 人' : '成员暂不可用') + '</div>'
         +     '<div class="avatars">' + av + '</div>'
         +   '</div>'
         + '</div>';
@@ -1033,25 +1066,25 @@
         placesCount += (d.places || []).length;
         bookingsCount += (d.bookings || []).length;
       });
-      var expenseCount = (state.expenses && state.expenses.expenses || []).length;
+      var expenseCount = state.expenses && state.expenses.expenses ? state.expenses.expenses.length : null;
       var c = state.counts || { photos: null, documents: null, packing: null, journals: null };
       function cnt(n, unit) { return n == null ? null : n + ' ' + unit; }
 
       var modules = [
-        { name: '行程安排', hint: '每日安排', badge: placesCount + ' 项', bg: '#E9F2FD', fg: '#2F6FB5', icon: '☰', link: '/itinerary/?trip=' + encodeURIComponent(tripId) },
-        { name: '费用',     hint: '记账结算', badge: expenseCount + ' 笔', bg: '#E9F8EE', fg: '#2A8055', icon: '¥', link: '/expenses/?trip=' + encodeURIComponent(tripId) },
-        { name: '地图',     hint: '地点标记', badge: placesCount + ' 点', bg: '#FDF5E2', fg: '#B8830F', icon: '◉', link: '/map/?trip=' + encodeURIComponent(tripId) },
+        { name: '行程安排', hint: '每日安排', badge: cnt(state.daysAvailable ? placesCount : null, '项'), bg: '#E9F2FD', fg: '#2F6FB5', icon: '☰', link: '/itinerary/?trip=' + encodeURIComponent(tripId) },
+        { name: '费用',     hint: '记账结算', badge: cnt(expenseCount, '笔'), bg: '#E9F8EE', fg: '#2A8055', icon: '¥', link: '/expenses/?trip=' + encodeURIComponent(tripId) },
+        { name: '地图',     hint: '地点标记', badge: cnt(state.daysAvailable ? placesCount : null, '点'), bg: '#FDF5E2', fg: '#B8830F', icon: '◉', link: '/map/?trip=' + encodeURIComponent(tripId) },
         { name: '照片',     hint: '旅途影像', badge: cnt(c.photos, '张'), bg: '#FDEFF2', fg: '#C2566C', icon: '▣', link: '/photos/?trip=' + encodeURIComponent(tripId) },
         { name: '文档',     hint: '证件票据', badge: cnt(c.documents, '份'), bg: '#EFEAFB', fg: '#6B4FC0', icon: '▤', link: '/documents/?trip=' + encodeURIComponent(tripId) },
         { name: '打包清单', hint: '行囊准备', badge: cnt(c.packing, '单'), bg: '#E6F4EC', fg: '#3D8B64', icon: '◫', link: '/packing/?trip=' + encodeURIComponent(tripId) },
-        { name: '预订',     hint: '机票酒店', badge: bookingsCount + ' 单', bg: '#FCECE4', fg: '#C1704A', icon: '▷', link: '/bookings/?trip=' + encodeURIComponent(tripId) },
-        { name: '凭证',     hint: '票面速查', badge: bookingsCount + ' 张', bg: '#F0F5F4', fg: '#4A6B62', icon: '▦', link: '/vouchers/?trip=' + encodeURIComponent(tripId) },
+        { name: '预订',     hint: '机票酒店', badge: cnt(state.daysAvailable ? bookingsCount : null, '单已排期'), bg: '#FCECE4', fg: '#C1704A', icon: '▷', link: '/bookings/?trip=' + encodeURIComponent(tripId) },
+        { name: '凭证',     hint: '票面速查', bg: '#F0F5F4', fg: '#4A6B62', icon: '▦', link: '/vouchers/?trip=' + encodeURIComponent(tripId) },
         { name: '游记',     hint: '记录时刻', badge: cnt(c.journals, '篇'), bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
       ];
 
       /* 行程已结束：显示「AI 行程回顾」一键生成卡片（点击走 recap 接口生成私密草稿游记） */
-      var tripEnded = state.trip && state.trip.endDate && new Date(state.trip.endDate).getTime() < Date.now();
-      if (tripEnded) {
+      var tripEnded = state.journey && ['past', 'archived'].includes(state.journey.phase);
+      if (tripEnded && ['owner', 'admin', 'member'].includes(state.trip.currentUserRole)) {
         modules.unshift({ name: 'AI 行程回顾', hint: '一键生成回顾游记', badge: '✨ 新',
           bg: '#E8F6F5', fg: '#0D6E6E', icon: '✦', recap: true });
       }
@@ -1060,7 +1093,7 @@
       target.innerHTML = modules.map(function (m) {
         var badge = m.badge != null
           ? '<span class="badge">' + escapeHtml(m.badge) + '</span>'
-          : '<span class="badge dim">–</span>';
+          : (m.badge === null ? '<span class="badge dim">暂不可用</span>' : '');
         if (m.recap) {
           return ''
             + '<button class="module" id="recapModule" onclick="generateRecap(this)">'

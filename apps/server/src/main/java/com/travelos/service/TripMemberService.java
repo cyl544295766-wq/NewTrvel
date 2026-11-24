@@ -156,7 +156,7 @@ public class TripMemberService {
 
     Trip trip = tripMapper.selectById(tripId);
     if (trip != null) {
-      notificationService.createMemberInvited(user.getId(), tripId, trip.getTitle(), normalizedRole);
+      notificationService.createMemberInvited(user.getId(), tripId, trip.getTitle(), normalizedRole, member.getId());
     }
     auditService.record(inviterUserId, tripId, "member_invited", "user", user.getId(),
         Map.of("username", user.getUsername(), "role", normalizedRole));

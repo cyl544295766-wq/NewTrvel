@@ -80,7 +80,7 @@ class TripMemberPermissionTest {
     // 互为好友校验保持不变
     verify(friendService).requireMutualFriend(OPERATOR_ID, TARGET_USER_ID);
     verify(notificationService).createMemberInvited(TARGET_USER_ID, TRIP_ID, TRIP_TITLE,
-        TripPermission.MEMBER);
+        TripPermission.MEMBER, captor.getValue().getId());
     verify(auditService).record(eq(OPERATOR_ID), eq(TRIP_ID), eq("member_invited"), eq("user"),
         eq(TARGET_USER_ID), eq(Map.of("username", "bob", "role", TripPermission.MEMBER)));
   }
@@ -99,7 +99,7 @@ class TripMemberPermissionTest {
     assertEquals(TripPermission.VIEWER, captor.getValue().getRole());
     verify(friendService).requireMutualFriend(OPERATOR_ID, TARGET_USER_ID);
     verify(notificationService).createMemberInvited(TARGET_USER_ID, TRIP_ID, TRIP_TITLE,
-        TripPermission.VIEWER);
+        TripPermission.VIEWER, captor.getValue().getId());
   }
 
   // ==================== 场景 3/4：member、viewer 邀请被拒 ====================

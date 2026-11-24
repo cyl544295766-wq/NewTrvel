@@ -33,6 +33,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Service
 public class DashboardService {
@@ -51,12 +53,15 @@ public class DashboardService {
   private final PackingItemMapper packingItemMapper;
   private final NotificationMapper notificationMapper;
   private final TripJournalService tripJournalService;
+  private final UserPreferenceService preferences;
+  private final TripActionService actions;
 
   public DashboardService(TripMapper tripMapper, TripMemberMapper tripMemberMapper,
       UserMapper userMapper, TripExpenseMapper expenseMapper, PhotoMapper photoMapper,
       TravelDocumentMapper documentMapper, TripJournalMapper journalMapper,
       PackingListMapper packingListMapper, PackingItemMapper packingItemMapper,
-      NotificationMapper notificationMapper, TripJournalService tripJournalService) {
+      NotificationMapper notificationMapper, TripJournalService tripJournalService,
+      UserPreferenceService preferences, TripActionService actions) {
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
     this.userMapper = userMapper;
@@ -68,11 +73,19 @@ public class DashboardService {
     this.packingItemMapper = packingItemMapper;
     this.notificationMapper = notificationMapper;
     this.tripJournalService = tripJournalService;
+    this.preferences = preferences;
+    this.actions = actions;
   }
 
   public Map<String, Object> findOne(String userId) {
-    Date today = startOfToday();
-    Date reminderWindowEnd = endOfReminderWindow(today);
+    return findOne(userId, null);
+  }
+
+  public Map<String, Object> findOne(String userId, String selected) {
+    ZoneId zone = preferences.timeZone(userId);
+    LocalDate date = LocalDate.now(zone);
+    Date today = DateUtil.parse(date.toString());
+    Date reminderWindowEnd = Date.from(date.plusDays(31).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().minusMillis(1));
 
     List<TripMember> memberships = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
         .eq(TripMember::getUserId, userId)
@@ -118,14 +131,10 @@ public class DashboardService {
         .map(this::tripResponse)
         .toList();
 
-    List<TripMember> upcoming = tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
-        .eq(TripMember::getUserId, userId)
-        .inSql(TripMember::getTripId,
-            "SELECT id FROM trips WHERE deleted_at IS NULL AND status <> 'archived' AND archived_at IS NULL AND start_date >= '"
-                + localDateKey(today) + "'"));
-    List<Map<String, Object>> upcomingTrips = upcoming.stream()
-        .map(member -> tripMap.get(member.getTripId()))
-        .filter(trip -> trip != null && trip.getStartDate() != null)
+    List<Map<String, Object>> upcomingTrips = tripMap.values().stream()
+        .filter(trip -> trip.getStartDate() != null && trip.getArchivedAt() == null
+            && !"archived".equals(trip.getStatus())
+            && Fmt.dateKey(trip.getStartDate()).compareTo(date.toString()) >= 0)
         .sorted((left, right) -> left.getStartDate().compareTo(right.getStartDate()))
         .limit(3)
         .map(this::tripResponse)
@@ -258,6 +267,7 @@ public class DashboardService {
     body.put("stats", stats);
     body.put("recentTrips", recentTrips);
     body.put("upcomingTrips", upcomingTrips);
+    body.put("journey", actions.home(userId, tripMap.values(), selected, date, zone));
     body.put("recentExpenses", recentExpenses);
     body.put("recentPhotos", recentPhotos);
     body.put("upcomingDocuments", upcomingDocuments);
@@ -365,31 +375,4 @@ public class DashboardService {
     return map;
   }
 
-  private Date startOfToday() {
-    Calendar calendar = Calendar.getInstance();
-    calendar.set(Calendar.HOUR_OF_DAY, 0);
-    calendar.set(Calendar.MINUTE, 0);
-    calendar.set(Calendar.SECOND, 0);
-    calendar.set(Calendar.MILLISECOND, 0);
-    return calendar.getTime();
-  }
-
-  /**
-   * 本地时区下的 yyyy-MM-dd。行程 start_date 按 UTC 零点存储（DateUtil.parse 的约定），
-   * 而“今天”的边界必须取本地日历日期，否则 UTC+8 用户在凌晨会得到前一天，导致“下一段旅程”多算一天。
-   */
-  private static String localDateKey(Date date) {
-    return date.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString();
-  }
-
-  private Date endOfReminderWindow(Date today) {
-    Calendar calendar = Calendar.getInstance();
-    calendar.setTime(today);
-    calendar.add(Calendar.DATE, 30);
-    calendar.set(Calendar.HOUR_OF_DAY, 23);
-    calendar.set(Calendar.MINUTE, 59);
-    calendar.set(Calendar.SECOND, 59);
-    calendar.set(Calendar.MILLISECOND, 999);
-    return calendar.getTime();
-  }
 }

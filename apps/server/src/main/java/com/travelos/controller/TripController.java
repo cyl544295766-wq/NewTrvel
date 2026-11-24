@@ -4,6 +4,7 @@ import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import com.travelos.service.TripMemberService;
 import com.travelos.service.TripService;
+import com.travelos.service.TripActionService;
 import com.travelos.trip.RequireTripRole;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,12 +23,14 @@ import java.util.Map;
 public class TripController {
 
   private final TripService tripService;
+  private final TripActionService tripActionService;
   private final TripMemberService tripMemberService;
   private final com.travelos.service.TripSquareService squareService;
 
-  public TripController(TripService tripService, TripMemberService tripMemberService,
+  public TripController(TripService tripService, TripActionService tripActionService, TripMemberService tripMemberService,
       com.travelos.service.TripSquareService squareService) {
     this.tripService = tripService;
+    this.tripActionService = tripActionService;
     this.tripMemberService = tripMemberService;
     this.squareService = squareService;
   }
@@ -53,6 +56,11 @@ public class TripController {
     return tripService.getRoute(tripId, user.id());
   }
 
+  @GetMapping("/{tripId}/next-action")
+  public Map<String, Object> nextAction(@PathVariable String tripId, @CurrentUser UserContext user) {
+    return tripActionService.detail(tripId, user.id());
+  }
+
   /** TR-03：日期变更预览——返回哪些天会移动/保留/移除，不实际修改。 */
   @GetMapping("/{tripId}/date-change-preview")
   public Map<String, Object> dateChangePreview(@PathVariable String tripId,
@@ -62,12 +70,14 @@ public class TripController {
   }
 
   @PatchMapping("/{tripId}")
+  @RequireTripRole({"owner", "admin", "member"})
   public Map<String, Object> update(@PathVariable String tripId,
       @RequestBody Map<String, Object> dto, @CurrentUser UserContext user) {
     return tripService.update(tripId, dto, user.id());
   }
 
   @PatchMapping("/{tripId}/archive")
+  @RequireTripRole({"owner", "admin", "member"})
   public Map<String, Object> archive(@PathVariable String tripId, @CurrentUser UserContext user) {
     return tripService.archive(tripId, user.id());
   }
@@ -91,6 +101,7 @@ public class TripController {
   }
 
   @DeleteMapping("/{tripId}")
+  @RequireTripRole({"owner", "admin", "member"})
   public Map<String, Object> remove(@PathVariable String tripId, @CurrentUser UserContext user) {
     return tripService.remove(tripId, user.id());
   }

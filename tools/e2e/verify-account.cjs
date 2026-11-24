@@ -153,7 +153,10 @@ async function main() {
   if (enabledSelects !== 6) bail('prefs expected 6 enabled selects, got ' + enabledSelects);
   if (await page.locator('#sec-pref .notice').count()) bail('prefs notice should be gone');
   const nfSw = await page.locator('#sec-pref .sw[data-ns]').count();
-  if (nfSw !== 4) bail('expected 4 notification switches, got ' + nfSw);
+  if (nfSw !== 3) bail('expected 3 notification switches, got ' + nfSw);
+  if (!(await page.locator('#sec-pref').textContent()).includes('每周摘要 · 暂未开放')) {
+    bail('weekly summary availability is missing');
+  }
   if (!(await page.locator('#btnSavePref').isDisabled())) bail('save button should start disabled');
   const prefsApi = await apiFresh.get('/api/auth/preferences');
   const p0 = prefsApi.preferences;
@@ -161,16 +164,19 @@ async function main() {
   if (themeVal !== p0.theme) bail('theme select not populated from API: ' + themeVal + ' vs ' + p0.theme);
   const swOn = await page.locator('#sec-pref .sw[data-ns="notifyTrip"].on').count();
   if (p0.notifyTrip && swOn !== 1) bail('notifyTrip switch should be on');
-  console.log('prefs load OK:', p0.theme, p0.currency, '| switches 4');
-  // edit: theme→dark, unit→mi, summary on
+  const memberSwitch = page.locator('.sw[data-ns="notifyMember"]');
+  const notifyMember = !p0.notifyMember;
+  console.log('prefs load OK:', p0.theme, p0.currency, '| switches 3');
+  // edit: theme→dark, unit→mi, member invitations toggled
   await page.selectOption('#prTheme', 'dark');
   await page.selectOption('#prUnit', 'mi');
-  await page.locator('.sw[data-ns="notifySummary"]').click();
+  await memberSwitch.click();
   if (await page.locator('#btnSavePref').isDisabled()) bail('save should enable after edits');
   await page.click('#btnSavePref');
   await page.waitForTimeout(700);
   const saved = await apiFresh.get('/api/auth/preferences');
-  if (saved.preferences.theme !== 'dark' || saved.preferences.distanceUnit !== 'mi' || saved.preferences.notifySummary !== true) {
+  if (saved.preferences.theme !== 'dark' || saved.preferences.distanceUnit !== 'mi'
+      || saved.preferences.notifyMember !== notifyMember || saved.preferences.notifySummary !== p0.notifySummary) {
     bail('saved prefs wrong: ' + JSON.stringify(saved.preferences));
   }
   // reload → persisted in UI
@@ -178,17 +184,18 @@ async function main() {
   await page.waitForFunction(() => document.getElementById('hpName').textContent !== '…', { timeout: 8000 });
   await page.waitForTimeout(600);
   if ((await page.locator('#prTheme').inputValue()) !== 'dark') bail('theme not persisted in UI after reload');
-  if ((await page.locator('.sw[data-ns="notifySummary"]').getAttribute('class')).includes('on') !== true) {
-    bail('notifySummary not persisted in UI');
+  if ((await memberSwitch.getAttribute('aria-checked')) !== String(notifyMember)) {
+    bail('notifyMember not persisted in UI');
   }
   // restore defaults
   await page.selectOption('#prTheme', p0.theme === 'dark' ? 'system' : p0.theme);
   await page.selectOption('#prUnit', p0.distanceUnit === 'mi' ? 'km' : p0.distanceUnit);
-  await page.locator('.sw[data-ns="notifySummary"]').click();
+  await memberSwitch.click();
   await page.click('#btnSavePref');
   await page.waitForTimeout(700);
   const restored = await apiFresh.get('/api/auth/preferences');
-  if (restored.preferences.theme === 'dark' || restored.preferences.distanceUnit === 'mi' || restored.preferences.notifySummary === true) {
+  if (restored.preferences.theme === 'dark' || restored.preferences.distanceUnit === 'mi'
+      || restored.preferences.notifyMember !== p0.notifyMember || restored.preferences.notifySummary !== p0.notifySummary) {
     bail('restore failed: ' + JSON.stringify(restored.preferences));
   }
   console.log('prefs OK: load/edit/save/persist/restore, now =', restored.preferences.theme, restored.preferences.distanceUnit);

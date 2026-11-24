@@ -1,9 +1,13 @@
 package com.travelos.service;
 
 import com.travelos.entity.TripDay;
+import com.travelos.entity.Trip;
+import com.travelos.common.DateUtil;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
@@ -12,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -43,6 +48,29 @@ class TodayBriefServiceTest {
     assertTrue(summary.contains("另有 1 项时间待定"), summary);
     assertTrue(summary.contains("1 条提醒"), summary);
     assertTrue(summary.contains("2 件物品未打包"), summary);
+  }
+
+  @Test
+  void phaseAndSummaryUseAccountDateAcrossNewYear() {
+    var instant = Instant.parse("2026-12-31T17:30:00Z");
+    var shanghai = ZoneId.of("Asia/Shanghai");
+    var losAngeles = ZoneId.of("America/Los_Angeles");
+    Trip trip = new Trip();
+    trip.setStartDate(DateUtil.parse("2027-01-01"));
+    trip.setEndDate(DateUtil.parse("2027-01-02"));
+    var journey = new TripJourneyService(null, null);
+    assertEquals("pre-trip", journey.phase(trip, instant.atZone(losAngeles).toLocalDate()));
+    assertEquals("today", journey.phase(trip, instant.atZone(shanghai).toLocalDate()));
+    assertEquals("today", journey.phase(trip, LocalDate.parse("2027-01-02")));
+    assertEquals("past", journey.phase(trip, LocalDate.parse("2027-01-03")));
+
+    List<Map<String, Object>> schedule = List.of(Map.of("timed", true, "startTime", Date.from(instant)));
+    assertTrue(TodayBriefService.fallbackSummary("today", new TripDay(), schedule, 0, Map.of(), shanghai)
+        .contains("上午 1 项、下午 0 项"));
+    var newYear = Instant.parse("2027-01-01T01:30:00Z");
+    List<Map<String, Object>> evening = List.of(Map.of("timed", true, "startTime", Date.from(newYear)));
+    assertTrue(TodayBriefService.fallbackSummary("today", new TripDay(), evening, 0, Map.of(), losAngeles)
+        .contains("上午 0 项、下午 1 项"));
   }
 
   @Test

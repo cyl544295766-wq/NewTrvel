@@ -436,6 +436,7 @@
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
+<script src="../assets/js/travel-time.js"></script>
 <script src="../assets/js/vendor/qrcode-generator.js"></script>
 <script src="../assets/js/qr.js"></script>
 <script>
@@ -495,7 +496,7 @@
     }
     var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     var $ = function (id) { return document.getElementById(id); };
-    var state = { trip: null, vouchers: [] };
+    var state = { trip: null, vouchers: [], timeZone: 'Asia/Shanghai' };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -504,21 +505,20 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     function fmtHM(iso) {
-      if (!iso) return '—';
-      var d = new Date(iso);
-      return isNaN(d) ? '—' : ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      return TravelTime.clock(iso, state.timeZone) || '—';
     }
-    function fmtDT(iso) {
-      if (!iso) return '—';
-      var d = new Date(iso);
-      if (isNaN(d)) return '—';
-      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + fmtHM(iso);
+    function fmtDT(iso, originalZone) {
+      var displayed = TravelTime.display(iso, state.timeZone);
+      if (iso && originalZone && originalZone !== state.timeZone) {
+        displayed += ' · 当地 ' + TravelTime.display(iso, originalZone) + ' (' + originalZone + ')';
+      }
+      return displayed;
     }
     function daysUntil(iso) {
       if (!iso) return null;
-      var d = new Date(iso); if (isNaN(d)) return null;
-      var a = new Date(); a.setHours(0, 0, 0, 0); d.setHours(0, 0, 0, 0);
-      return Math.round((d - a) / 86400000);
+      var day = TravelTime.date(iso, state.timeZone);
+      var today = TravelTime.date(new Date(), state.timeZone);
+      return day ? (Date.parse(day) - Date.parse(today)) / 86400000 : null;
     }
     function routeSplit(raw) {
       var parts = String(raw || '').split(/→|->|—|–|to/).map(function (s) { return s.trim(); }).filter(Boolean);
@@ -546,26 +546,26 @@
         var ap = routeSplit(ex.airports);
         if (ap.from || ap.to) out.push({ k: 'ROUTE · 起降', v: (ap.from || '?') + ' → ' + (ap.to || '?') });
         out.push({ k: 'CABIN · 舱位', v: ex.cabin || '—' });
-        out.push({ k: 'DEPART · 起飞', v: fmtDT(v.startTime) });
+        out.push({ k: 'DEPART · 起飞', v: fmtDT(v.startTime, v.startTimezone) });
       } else if (v.type === 'train') {
         out.push({ k: 'TRAIN · 车次', v: ex.trainNo || '—' });
         var st = routeSplit(ex.stations);
         if (st.from || st.to) out.push({ k: 'ROUTE · 发到', v: (st.from || '?') + ' → ' + (st.to || '?') });
         out.push({ k: 'SEAT · 座位', v: ex.seat || '—' });
-        out.push({ k: 'DEPART · 发车', v: fmtDT(v.startTime) });
+        out.push({ k: 'DEPART · 发车', v: fmtDT(v.startTime, v.startTimezone) });
       } else if (v.type === 'hotel') {
-        out.push({ k: 'CHECK-IN · 入住', v: fmtDT(v.startTime) });
-        out.push({ k: 'CHECK-OUT · 退房', v: fmtDT(v.endTime) });
+        out.push({ k: 'CHECK-IN · 入住', v: fmtDT(v.startTime, v.startTimezone) });
+        out.push({ k: 'CHECK-OUT · 退房', v: fmtDT(v.endTime, v.endTimezone) });
         out.push({ k: 'ROOM · 房型', v: ex.roomType || ex.hotelName || '—' });
         if (ex.freeCancelDeadline) out.push({ k: 'CANCEL BY · 免费取消截止', v: fmtDT(ex.freeCancelDeadline), warn: true });
       } else if (v.type === 'ticket') {
         out.push({ k: 'ENTRY · 项目', v: ex.itemName || v.title || '—' });
         out.push({ k: 'SESSION · 场次', v: ex.session || '—' });
-        out.push({ k: 'VALID · 使用时间', v: fmtDT(v.startTime) });
+        out.push({ k: 'VALID · 使用时间', v: fmtDT(v.startTime, v.startTimezone) });
       } else {
         out.push({ k: 'PICK-UP · 取还', v: ex.pickup || v.title || '—' });
-        out.push({ k: 'FROM · 开始', v: fmtDT(v.startTime) });
-        out.push({ k: 'TO · 结束', v: fmtDT(v.endTime) });
+        out.push({ k: 'FROM · 开始', v: fmtDT(v.startTime, v.startTimezone) });
+        out.push({ k: 'TO · 结束', v: fmtDT(v.endTime, v.endTimezone) });
       }
       if (v.confirmCode) out.push({ k: 'CODE · 确认码', v: v.confirmCode, code: true });
       if (v.orderNo) out.push({ k: 'ORDER · 订单号', v: v.orderNo });
@@ -581,6 +581,11 @@
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.vouchers = results[1].status === 'fulfilled' ? (results[1].value.vouchers || []) : [];
+        if (results[1].status === 'rejected') {
+          $('loading').textContent = '凭证暂不可用，或该行程已删除、你已失去访问权限';
+          return;
+        }
+        state.timeZone = results[1].value.timeZone || state.timeZone;
 
         document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
         document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
@@ -598,6 +603,14 @@
       var list = state.vouchers.slice().sort(function (a, b) {
         return new Date(a.startTime || 0) - new Date(b.startTime || 0);
       });
+      var date = qs.get('date');
+      if (date) {
+        list = list.filter(function (voucher) {
+          var start = TravelTime.date(voucher.startTime, state.timeZone);
+          var end = TravelTime.date(voucher.endTime, state.timeZone);
+          return start === date || (voucher.type === 'hotel' && start && end && start <= date && date <= end);
+        });
+      }
 
       var attach = list.filter(function (v) { return v.attachmentUrl; }).length;
       $('ovCount').textContent = list.length;
@@ -605,7 +618,9 @@
       $('overview').hidden = list.length === 0;
 
       var meta = $('pageMeta');
-      meta.innerHTML = '<b>' + escapeHtml((state.trip && state.trip.title) || '') + '</b> · ' + list.length + ' 张凭证';
+      meta.innerHTML = '<b>' + escapeHtml((state.trip && state.trip.title) || '') + '</b> · '
+        + (date ? escapeHtml(date) + ' · ' : '') + list.length + ' 张凭证'
+        + (date ? ' · <a href="/vouchers/?trip=' + encodeURIComponent(tripId) + '">查看全部凭证</a>' : '');
 
       /* banner */
       var bannerBox = $('bannerBox');
@@ -643,9 +658,10 @@
 
       tl.innerHTML = list.map(function (v) {
         var t = typeOf(v.type);
-        var d = v.startTime ? new Date(v.startTime) : null;
-        var dayNum = d && !isNaN(d) ? d.getDate() : '–';
-        var monWd = d && !isNaN(d) ? ((d.getMonth() + 1) + '月 · ' + WD[d.getDay()]) : '日期待定';
+        var localDate = TravelTime.date(v.startTime, state.timeZone);
+        var d = localDate ? new Date(localDate + 'T00:00:00Z') : null;
+        var dayNum = d ? d.getUTCDate() : '–';
+        var monWd = d ? ((d.getUTCMonth() + 1) + '月 · ' + WD[d.getUTCDay()]) : '日期待定';
         var onsite = onsiteOf(v);
         return ''
           + '<div class="v-row" data-vid="' + escapeHtml(v.id) + '" style="--vc:' + t.c + ';--tb:' + t.bg + ';">'

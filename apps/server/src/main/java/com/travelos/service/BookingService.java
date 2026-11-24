@@ -19,6 +19,10 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DateTimeException;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,12 +51,13 @@ public class BookingService {
   private final TripMemberService tripMemberService;
   private final AuditService auditService;
   private final TripExpenseService tripExpenseService;
+  private final UserPreferenceService preferences;
   private final com.travelos.service.FileStorageService fileStorageService;
 
   public BookingService(BookingMapper bookingMapper, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
       AuditService auditService, TripExpenseService tripExpenseService,
-      com.travelos.service.FileStorageService fileStorageService) {
+      com.travelos.service.FileStorageService fileStorageService, UserPreferenceService preferences) {
     this.bookingMapper = bookingMapper;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
@@ -60,6 +65,7 @@ public class BookingService {
     this.auditService = auditService;
     this.tripExpenseService = tripExpenseService;
     this.fileStorageService = fileStorageService;
+    this.preferences = preferences;
   }
 
   @Transactional
@@ -100,6 +106,16 @@ public class BookingService {
     if (dto.containsKey("amount") && booking.getAmount() == null) {
       bookingMapper.update(null, new LambdaUpdateWrapper<Booking>().eq(Booking::getId, bookingId)
           .set(Booking::getAmount, null));
+    }
+    if (dto.containsKey("startTime") || dto.containsKey("endTime")) {
+      var dates = new LambdaUpdateWrapper<Booking>().eq(Booking::getId, bookingId);
+      if (dto.containsKey("startTime")) {
+        dates.set(Booking::getStartTime, booking.getStartTime()).set(Booking::getStartTimezone, booking.getStartTimezone());
+      }
+      if (dto.containsKey("endTime")) {
+        dates.set(Booking::getEndTime, booking.getEndTime()).set(Booking::getEndTimezone, booking.getEndTimezone());
+      }
+      bookingMapper.update(null, dates);
     }
     return Map.of("booking", toResponse(booking, true));
   }
@@ -174,8 +190,7 @@ public class BookingService {
     dto.put("category", TYPE_TO_EXPENSE_CATEGORY.getOrDefault(
         booking.getType() == null ? "other" : booking.getType(), "other"));
     if (booking.getStartTime() != null) {
-      dto.put("spentAt", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
-          .format(booking.getStartTime()));
+      dto.put("spentAt", booking.getStartTime().toInstant().toString());
     }
     String memo = "由预订「" + booking.getTitle() + "」一键核销";
     if (booking.getOrderNo() != null && !booking.getOrderNo().isBlank()) {
@@ -274,7 +289,7 @@ public class BookingService {
     List<Map<String, Object>> bookings = findBookingsByTrip(tripId).stream()
         .map(booking -> toResponse(booking, false))
         .toList();
-    return Map.of("bookings", bookings);
+    return Map.of("bookings", bookings, "timeZone", preferences.timeZone(userId).getId());
   }
 
   /** 凭证速查聚合（设计文档 3.3.2）：按时间正序返回确认码/订单号/附件摘要。 */
@@ -289,6 +304,8 @@ public class BookingService {
           map.put("title", booking.getTitle());
           map.put("startTime", booking.getStartTime());
           map.put("endTime", booking.getEndTime());
+          map.put("startTimezone", booking.getStartTimezone());
+          map.put("endTimezone", booking.getEndTimezone());
           map.put("orderNo", booking.getOrderNo());
           map.put("confirmCode", booking.getConfirmCode());
           map.put("attachmentUrl", booking.getAttachmentUrl());
@@ -296,7 +313,7 @@ public class BookingService {
           return map;
         })
         .toList();
-    return Map.of("vouchers", vouchers);
+    return Map.of("vouchers", vouchers, "timeZone", preferences.timeZone(userId).getId());
   }
 
   /** 提醒列表：各预订的提醒时间与开关状态。 */
@@ -316,7 +333,7 @@ public class BookingService {
           return map;
         })
         .toList();
-    return Map.of("reminders", reminders);
+    return Map.of("reminders", reminders, "timeZone", preferences.timeZone(userId).getId());
   }
 
   /** 行程天角标摘要：关联到某天的预订（供时间轴显示订单角标）。 */
@@ -375,10 +392,18 @@ public class BookingService {
       booking.setTitle(title == null ? null : title.trim());
     }
     if (dto.containsKey("startTime")) {
-      booking.setStartTime(toDateOrNull(dto.get("startTime")));
+      BookingTime time = bookingTime(dto.get("startTime"), dto.get("startTimezone"));
+      booking.setStartTime(time.instant());
+      booking.setStartTimezone(time.zone());
     }
     if (dto.containsKey("endTime")) {
-      booking.setEndTime(toDateOrNull(dto.get("endTime")));
+      BookingTime time = bookingTime(dto.get("endTime"), dto.get("endTimezone"));
+      booking.setEndTime(time.instant());
+      booking.setEndTimezone(time.zone());
+    }
+    if (booking.getStartTime() != null && booking.getEndTime() != null
+        && booking.getEndTime().before(booking.getStartTime())) {
+      throw ApiException.badRequest("结束时间不能早于开始时间");
     }
     if (dto.containsKey("orderNo")) {
       booking.setOrderNo(Payloads.trimmedOrNull(dto.get("orderNo")));
@@ -501,6 +526,8 @@ public class BookingService {
     map.put("title", booking.getTitle());
     map.put("startTime", booking.getStartTime());
     map.put("endTime", booking.getEndTime());
+    map.put("startTimezone", booking.getStartTimezone());
+    map.put("endTimezone", booking.getEndTimezone());
     map.put("orderNo", booking.getOrderNo());
     map.put("confirmCode", booking.getConfirmCode());
     map.put("amount", Fmt.money(booking.getAmount()));
@@ -552,7 +579,32 @@ public class BookingService {
     return BigDecimal.valueOf(TripExpenseService.toCents(text, true), 2);
   }
 
-  private Date toDateOrNull(Object value) {
-    return value == null ? null : DateUtil.parse(value.toString());
+  private record BookingTime(Date instant, String zone) {}
+
+  private BookingTime bookingTime(Object value, Object zoneValue) {
+    String text = Payloads.trimmedOrNull(value);
+    if (text == null) return new BookingTime(null, null);
+    String zoneText = Payloads.trimmedOrNull(zoneValue);
+    try {
+      ZoneId zone = zoneText == null ? null : ZoneId.of(zoneText);
+      if (text.matches(".*(?:Z|[+-]\\d{2}:?\\d{2})$")) {
+        String iso = text.replace(' ', 'T').replaceFirst("([+-]\\d{2})(\\d{2})$", "$1:$2");
+        OffsetDateTime timestamp = OffsetDateTime.parse(iso);
+        return new BookingTime(Date.from(timestamp.toInstant()),
+            zone == null ? timestamp.getOffset().getId() : zone.getId());
+      }
+      if (text.matches("\\d{4}-\\d{2}-\\d{2}") && zone == null) {
+        return new BookingTime(DateUtil.parse(text), null);
+      }
+      zone = zone == null ? UserPreferenceService.DEFAULT_ZONE : zone;
+      LocalDateTime date = LocalDateTime.parse(text.length() == 10 ? text + "T00:00" : text.replace(' ', 'T'));
+      var offsets = zone.getRules().getValidOffsets(date);
+      if (offsets.size() != 1) {
+        throw ApiException.badRequest("该当地时刻受夏令时切换影响，请填写明确的 UTC 偏移或选择其它时刻");
+      }
+      return new BookingTime(Date.from(date.toInstant(offsets.get(0))), zone.getId());
+    } catch (DateTimeException ex) {
+      throw ApiException.badRequest("预订日期或时区格式不正确");
+    }
   }
 }

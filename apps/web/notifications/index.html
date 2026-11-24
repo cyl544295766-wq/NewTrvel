@@ -507,7 +507,7 @@
     }
     /* 旧 Vue 路由 link → 静态站路径 */
     function staticLink(link) {
-      if (!link) return null;
+      if (!link || !String(link).startsWith('/') || String(link).startsWith('//')) return null;
       var m = String(link).match(/^\/trips\/([^\/\?]+)(?:\/([a-zA-Z-]+))?\/?(\?.*)?$/);
       if (!m) return link;
       var id = m[1], seg = m[2];
@@ -517,7 +517,7 @@
         journals: '/journals/', itinerary: '/itinerary/', map: '/map/', stats: '/stats/'
       };
       if (!seg) return '/trip-detail/?id=' + encodeURIComponent(id);
-      if (map[seg]) return map[seg] + '?trip=' + encodeURIComponent(id);
+      if (map[seg]) return map[seg] + '?trip=' + encodeURIComponent(id) + (m[3] ? '&' + m[3].slice(1) : '');
       return '/trip-detail/?id=' + encodeURIComponent(id);
     }
     function dayStart(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); }
@@ -734,8 +734,18 @@
       var n = state.items.find(function (x) { return x.id === id; });
       if (!n) return;
 
-      if (e.target.closest('.go')) {
+      if (e.target.closest('.go,.n-go')) {
+        e.preventDefault();
         var href = staticLink(n.link);
+        var tripId = n.metadata && n.metadata.tripId;
+        if (href && tripId) {
+          try { await apiGet('/trips/' + encodeURIComponent(tripId)); }
+          catch (err) {
+            showToast(err.status === 403 || err.status === 404
+              ? '该行程已删除或你已失去访问权限' : '暂时无法打开对应行程，请稍后重试');
+            return;
+          }
+        }
         if (href) location.href = href;
         return;
       }
@@ -794,10 +804,8 @@
      *    401/403 = 会话失效 → 清登录态跳登录页；网络故障/服务异常 = 有限退避重连；
      *    成功建连（onopen）或收到有效事件即重置计数，长开页面不会累计到永久停连；
      *  - 连接代际 gen：旧连接的错误回调、延迟定时器一律作废，避免并发重连；
-     *  - pagehide 停止并关闭连接；列表查询（boot）与手动刷新不依赖 SSE，
-     *    SSE 失败仅失去实时加速，不阻断普通 API。 */
+     *  - SSE 不可用时通过普通 API 定时更新，恢复后停止轮询。 */
     (function subscribeLive() {
-      if (!window.EventSource) return;
       var RETRY_MAX = 5;                 // 单轮会话重试/流重连上限
       var retries = 0;                   // 流重连计数（建连成功/收到事件时清零）
       var sessionRetries = 0;            // 会话建立重试计数（成功后清零）
@@ -805,6 +813,32 @@
       var es = null;
       var gen = 0;                       // 连接代际：作废旧连接回调与定时器
       var retryTimer = null;
+      var pollTimer = null;
+      var streamReady = false;
+
+      function stopPolling() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      }
+
+      function pollUntilConnected() {
+        if (stopped || streamReady || pollTimer) return;
+        var scheduled = setTimeout(async function () {
+          try {
+            if (!document.hidden && isLoggedIn()) {
+              if (state.page === 1) await loadPage(false);
+              else await refreshUnreadCount();
+            }
+          } catch (_) {
+            // 保留已有列表，下个周期再读。
+          } finally {
+            if (pollTimer === scheduled) {
+              pollTimer = null;
+              pollUntilConnected();
+            }
+          }
+        }, 30000);
+        pollTimer = scheduled;
+      }
 
       function clearTimer() {
         if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
@@ -825,6 +859,8 @@
           var pending = false;
           sse.onopen = function () {
             if (myGen !== gen || stopped) return;
+            streamReady = true;
+            stopPolling();
             retries = 0; // 成功建连 → 重置临时故障计数
           };
           sse.addEventListener('unread', function () {
@@ -843,10 +879,12 @@
           sse.onerror = function () {
             if (myGen !== gen || stopped || errored) return; // 旧连接/重复错误回调作废
             errored = true;
+            streamReady = false;
+            pollUntilConnected();
             closeStream(); // 阻断浏览器默认的静默无限重连
             classifyAndRecover(myGen);
           };
-        } catch (err) { /* 浏览器不支持则忽略 */ }
+        } catch (err) { pollUntilConnected(); }
       }
 
       function scheduleStreamRetry(myGen) {
@@ -900,6 +938,7 @@
       }
 
       (async function start() {
+        if (!window.EventSource) { pollUntilConnected(); return; }
         var ok = await ensureSession();
         if (!ok && isLoggedIn()) {
           // 首次失败：短暂等待后再试一次（快速路径）
@@ -909,13 +948,15 @@
         }
         if (stopped) return;
         if (!isLoggedIn()) { location.replace('/login/'); return; } // 尚未登录/已被清态
-        if (!ok) { scheduleSessionRetry(); return; }                // 会话未就绪：绝不建流
+        if (!ok) { pollUntilConnected(); scheduleSessionRetry(); return; }
+        pollUntilConnected();
         openStream();
       })();
 
       window.addEventListener('pagehide', function () {
         stopped = true;
         gen++;        // 作废所有在途回调与定时器
+        stopPolling();
         clearTimer();
         closeStream();
       });

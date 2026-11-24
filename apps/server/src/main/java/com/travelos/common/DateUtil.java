@@ -73,6 +73,9 @@ public final class DateUtil {
   private static String normalizeMillis(String input) {
     int dotIndex = input.indexOf('.');
     int zIndex = input.indexOf('Z');
+    if (dotIndex < 0) {
+      return input.substring(0, zIndex) + ".000Z";
+    }
     String millis = input.substring(dotIndex + 1, zIndex);
     if (millis.length() == 3) {
       return input;

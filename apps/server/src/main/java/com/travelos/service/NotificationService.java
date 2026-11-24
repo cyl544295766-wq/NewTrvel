@@ -6,6 +6,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.travelos.common.Pagination;
 import com.travelos.common.ApiException;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -18,11 +22,19 @@ public class NotificationService {
 
   private final NotificationMapper notificationMapper;
   private final NotificationStreamService streamService;
+  private final JdbcTemplate jdbc;
 
   public NotificationService(NotificationMapper notificationMapper,
-      NotificationStreamService streamService) {
+      NotificationStreamService streamService, JdbcTemplate jdbc) {
     this.notificationMapper = notificationMapper;
     this.streamService = streamService;
+    this.jdbc = jdbc;
+  }
+
+  private enum Preference {
+    TRIP("notify_trip"), DOCUMENT("notify_document"), MEMBER("notify_member");
+    private final String column;
+    Preference(String column) { this.column = column; }
   }
 
   public Map<String, Object> findAll(String userId, String pageValue, String pageSizeValue) {
@@ -126,37 +138,50 @@ public class NotificationService {
         "/friends/", Map.of("kind", "friend_accepted", "fromUserId", otherUserId), "normal", null);
   }
 
-  public void createMemberInvited(String userId, String tripId, String tripTitle, String role) {
-    create(userId, "member_invited", "你已加入新的旅行",
+  @Transactional
+  public void createMemberInvited(String userId, String tripId, String tripTitle, String role, String memberId) {
+    createReminder(Preference.MEMBER, userId, "member:" + memberId, "member_invited", "你已加入新的旅行",
         "你已被加入旅行「" + tripTitle + "」，角色为" + roleLabel(role) + "。",
-        "/trips/" + tripId, Map.of("tripId", tripId, "role", role), "normal", null);
+        "/trip-detail/?id=" + tripId, Map.of("tripId", tripId, "role", role), "normal");
   }
 
   public void createRoleChanged(String userId, String tripId, String tripTitle, String role) {
     create(userId, "role_changed", "旅行角色已变更",
         "你在旅行「" + tripTitle + "」中的角色已变更为" + roleLabel(role) + "。",
-        "/trips/" + tripId, Map.of("tripId", tripId, "role", role), "normal", null);
+        "/trip-detail/?id=" + tripId, Map.of("tripId", tripId, "role", role), "normal", null);
   }
 
   public void createOwnerTransferred(String userId, String tripId, String tripTitle) {
     create(userId, "role_changed", "你已成为旅行所有者",
         "旅行「" + tripTitle + "」的所有权已转移给你。",
-        "/trips/" + tripId, Map.of("tripId", tripId, "role", "owner"), "normal", null);
+        "/trip-detail/?id=" + tripId, Map.of("tripId", tripId, "role", "owner"), "normal", null);
   }
 
   /** 预订提醒（设计文档 3.3.3），发給行程成员。 */
+  @Transactional
   public void createBookingReminder(String userId, String tripId, String tripTitle,
-      String content) {
-    create(userId, "system", "预订提醒 · " + tripTitle, content,
-        "/trips/" + tripId + "/vouchers", Map.of("tripId", tripId), "high", null);
+      String bookingId, long startsAt, String content) {
+    createReminder(Preference.TRIP, userId, "booking:" + bookingId + ":" + startsAt,
+        "system", "预订提醒 · " + tripTitle, content,
+        "/bookings/?trip=" + tripId + "&booking=" + bookingId,
+        Map.of("tripId", tripId, "bookingId", bookingId, "kind", "booking_reminder"), "high");
+  }
+
+  @Transactional
+  public void createDocumentExpiry(String userId, String tripId, String documentId, String title, String expiry) {
+    createReminder(Preference.DOCUMENT, userId, "document:" + documentId + ":" + expiry,
+        "system", "证件即将到期", "「" + title + "」有效期至 " + expiry + "，请核对出行所需证件。",
+        "/documents/?trip=" + tripId + "&document=" + documentId,
+        Map.of("tripId", tripId, "documentId", documentId, "kind", "document_expiry"), "high");
   }
 
   /** 行前检查清单汇总通知（设计文档 3.3.3），precheckKey 用于同一天幂等去重。 */
+  @Transactional
   public void createTripPrecheck(String userId, String tripId, String precheckKey,
       String content) {
-    create(userId, "system", "行前检查清单", content,
-        "/trips/" + tripId + "/bookings", Map.of("tripId", tripId, "precheckKey", precheckKey),
-        "high", null);
+    createReminder(Preference.TRIP, userId, "precheck:" + precheckKey, "system", "行前检查清单", content,
+        "/trip-detail/?id=" + tripId + "#journey-preparation",
+        Map.of("tripId", tripId, "precheckKey", precheckKey, "kind", "trip_precheck"), "high");
   }
 
   /** 行前检查清单幂等判断：同 key 的通知是否已存在。 */
@@ -187,12 +212,13 @@ public class NotificationService {
   }
 
   /** 天气提醒（调度器主动）：出发倒计时/明日遇雨等，weatherKey 用于幂等去重。 */
+  @Transactional
   public void createWeatherAlert(String userId, String tripId, String tripTitle,
       String content, String weatherKey) {
-    create(userId, "system", "天气提醒 · " + tripTitle, content,
-        "/trips/" + tripId + "/itinerary",
+    createReminder(Preference.TRIP, userId, "weather:" + weatherKey, "system", "天气提醒 · " + tripTitle, content,
+        "/itinerary/?trip=" + tripId,
         Map.of("tripId", tripId, "kind", "weather_alert", "weatherKey", weatherKey),
-        "high", null);
+        "high");
   }
 
   /** 天气提醒幂等判断：同一 user + weatherKey 只发一次。 */
@@ -213,6 +239,16 @@ public class NotificationService {
         "high", null);
   }
 
+  private void createReminder(Preference preference, String userId, String eventKey, String type,
+      String title, String content, String link, Map<String, Object> metadata, String priority) {
+    int claimed = jdbc.update("INSERT INTO notification_event_receipts (user_id, event_key) VALUES (?, ?) "
+        + "ON CONFLICT (user_id, event_key) DO NOTHING", userId, eventKey);
+    if (claimed == 0) return;
+    Boolean enabled = jdbc.queryForObject("SELECT COALESCE((SELECT " + preference.column
+        + " FROM user_preferences WHERE user_id = ?), TRUE)", Boolean.class, userId);
+    if (Boolean.TRUE.equals(enabled)) create(userId, type, title, content, link, metadata, priority, null);
+  }
+
   private void create(String userId, String type, String title, String content, String link,
       Map<String, Object> metadata, String priority, Date expiresAt) {
     Notification notification = new Notification();
@@ -226,7 +262,16 @@ public class NotificationService {
     notification.setPriority(priority);
     notification.setExpiresAt(expiresAt);
     notificationMapper.insert(notification);
-    streamService.notifyUnreadChanged(userId, type); // P3-2：实时推送未读变化
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+          streamService.notifyUnreadChanged(userId, type);
+        }
+      });
+    } else {
+      streamService.notifyUnreadChanged(userId, type);
+    }
   }
 
   private Map<String, Object> toResponse(Notification notification) {

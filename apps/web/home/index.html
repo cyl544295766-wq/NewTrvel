@@ -1111,6 +1111,7 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/amap.js"></script>
 <script src="../assets/js/pet.js"></script>
+<script src="../assets/js/travel-time.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1140,21 +1141,10 @@
     var d = toDate(v);
     return d ? pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()) : '--/--';
   }
-  function startOfDay(v) {
-    var d = toDate(v);
-    if (!d) return null;
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
   function daysBetween(a, b) {
     var s = toDate(a), e = toDate(b);
     if (!s || !e) return 0;
     return Math.round((e - s) / 86400000) + 1;
-  }
-  function daysUntil(v) {
-    var d = startOfDay(v);
-    if (!d) return null;
-    var today = startOfDay(new Date());
-    return Math.round((d - today) / 86400000);
   }
   /* 金额：整数不带小数，否则保留两位；带千分位 */
   function num(v) {
@@ -1282,8 +1272,7 @@
     }, { passive: true });
   })();
 
-  function greeting() {
-    var h = new Date().getHours();
+  function greeting(h) {
     if (h < 6) return '夜深了';
     if (h < 11) return '早上好';
     if (h < 14) return '中午好';
@@ -1297,77 +1286,69 @@
     USER_NAME = u.displayName || u.username || '旅行者';
     $('avatar').textContent = USER_NAME.slice(0, 1).toUpperCase();
     $('who').textContent = USER_NAME;
-    $('greet').textContent = greeting() + '，' + USER_NAME;
-    var now = new Date();
-    $('heroSub').textContent = (now.getMonth() + 1) + '月' + now.getDate() + '日 '
-      + WD[now.getDay()] + ' · 愿你的下一段路风景正好';
+    $('greet').textContent = '你好，' + USER_NAME;
   }
 
-  /* ================= Hero：聚焦「下一趟旅程」 ================= */
+  function calendarSlash(value) {
+    var parts = String(value || '').slice(0, 10).split('-');
+    return parts.length === 3 ? parts[1] + '/' + parts[2] : '日期待定';
+  }
+
+  var selectedTripId = new URLSearchParams(location.search).get('trip');
+  var dashboardRequest = null;
+
+  function selectJourney(id) {
+    var url = new URL(location.href);
+    url.searchParams.set('trip', id);
+    location.assign(url.toString());
+  }
+
   function renderHero(dash) {
-    /* 数据选择：出发日期不早于今天的行程按出发日升序取第一条；
-       倒计时 / 名称 / 日期 / 目的地 / 继续规划入口全部使用同一条行程 */
-    var today = startOfDay(new Date());
-    var next = (dash.upcomingTrips || [])
-      .filter(function (t) {
-        var d = startOfDay(t.startDate);
-        return d && d.getTime() >= today.getTime();
-      })
-      .sort(function (a, b) {
-        return startOfDay(a.startDate).getTime() - startOfDay(b.startDate).getTime();
-      })[0] || null;
-
+    var journey = dash.journey || {};
+    if (journey.dateKey) {
+      var day = new Date(journey.dateKey + 'T00:00:00Z');
+      var hour = Number(TravelTime.clock(new Date(), journey.timeZone).slice(0, 2));
+      $('greet').textContent = greeting(hour) + '，' + USER_NAME;
+      $('heroSub').textContent = (day.getUTCMonth() + 1) + '月' + day.getUTCDate() + '日 '
+        + WD[day.getUTCDay()];
+    }
+    var trip = journey.trip;
     var cd = $('countdown');
-    var nextTrip = $('nextTrip');
-
-    if (!next) {
-      /* 空态：不显示虚假倒计时与目的地 */
-      nextTrip.hidden = true;
-      cd.innerHTML = ''
-        + '<div class="cd-label">下一趟旅程</div>'
-        + '<div class="cd-num"><span style="font-size:24px;line-height:1.35;">还没有即将开始的旅行</span></div>'
-        + '<div class="cd-cta">'
-        + '<a class="cta cta-solid" href="/trip-form/">创建新旅行</a>'
-        + '<a class="cd-ai-link" data-ai-focus="1" href="#aiGenForm">使用 AI 生成</a>'
-        + '</div>';
+    $('nextTrip').hidden = !trip;
+    if (trip) {
+      $('ntTitle').textContent = trip.title || '未命名旅程';
+      $('ntMeta').textContent = (trip.destination || '目的地待定') + ' · ' + calendarSlash(trip.startDate);
+    }
+    var stages = { none: '开始一段旅程', draft: '继续规划', 'pre-trip': '准备出发', today: '旅行进行中',
+      past: '旅后收尾', archived: '已归档', choose: '选择当前行程' };
+    var heading = stages[journey.phase] || '旅行安排';
+    var lines = '<div class="cd-label">' + escapeHtml(heading) + '</div>';
+    if (journey.phase === 'choose') {
+      cd.innerHTML = lines + '<div class="cd-cta">' + (journey.candidates || []).map(function (candidate) {
+        return '<button type="button" class="cta cta-solid" data-journey-pick="' + escapeHtml(candidate.id) + '">'
+          + escapeHtml(candidate.title || '未命名旅程') + '</button>';
+      }).join('') + '</div>';
       return;
     }
-
-    nextTrip.hidden = false;
-    var left = daysUntil(next.startDate);
-    var dest = next.destination || next.title || '未命名旅程';
-    var when = fmtSlash(next.startDate) + ' 出发';
-    var detailUrl = '/trip-detail/?id=' + encodeURIComponent(next.id);
-    /* 主按钮文案：目的地取自同一条行程；过长或缺失时降级为默认文案 */
-    var destName = (next.destination || '').trim();
-    var planLabel = destName && destName.length <= 8
-      ? '继续规划' + destName + '之旅'
-      : '继续规划行程';
-
-    /* 左栏：下一趟旅程名称与目的地（与倒计时同一条行程） */
-    $('ntTitle').textContent = next.title || '未命名旅程';
-    $('ntMeta').innerHTML = escapeHtml(dest) + '<span class="sep">·</span>' + escapeHtml(when);
-
-    /* 右卡：倒计时信息组合（主标题 / 核心数字 / 辅助信息 / 操作入口） */
-    var numHtml;
-    if (left === null) {
-      numHtml = '<span style="font-size:30px;">' + escapeHtml(when) + '</span>';
-    } else if (left > 0) {
-      numHtml = '<small class="cd-pre">距离出发还有</small>'
-        + escapeHtml(String(left)) + ' <small>天</small>';
-    } else {
-      /* 今天出发：不显示 0 天 */
-      numHtml = '<span style="font-size:30px;">今天出发</span>';
-    }
-    cd.innerHTML = ''
-      + '<div class="cd-label">下一趟旅程</div>'
-      + '<div class="cd-num">' + numHtml + '</div>'
-      + '<div class="cd-dest">' + escapeHtml(dest) + '<span class="sep">·</span>' + escapeHtml(when) + '</div>'
-      + '<div class="cd-cta">'
-      + '<a class="cta cta-solid" href="' + detailUrl + '">' + escapeHtml(planLabel) + '</a>'
-      + '<a class="cd-ai-link" data-ai-focus="1" href="#aiGenForm">使用 AI 生成</a>'
+    var primary = journey.primary;
+    var lead = journey.phase === 'pre-trip' ? '距离出发还有 ' + journey.daysUntilStart + ' 天'
+      : journey.message || (trip && trip.title) || '创建行程后即可开始规划';
+    cd.innerHTML = lines + '<div class="cd-num"><span style="font-size:24px;line-height:1.35;">'
+      + escapeHtml(lead) + '</span></div><div class="cd-cta">'
+      + (primary ? '<a class="cta cta-solid" data-journey-primary href="' + escapeHtml(primary.url) + '">'
+        + escapeHtml(primary.label) + '</a>' : '')
+      + (journey.related || []).map(function (action) {
+        return '<a class="cd-ai-link" href="' + escapeHtml(action.url) + '">' + escapeHtml(action.label) + '</a>';
+      }).join('')
+      + (!trip ? '<a class="cd-ai-link" data-ai-focus="1" href="#aiGenForm">使用 AI 生成</a>' : '')
       + '</div>';
   }
+
+  $('countdown').addEventListener('click', function (event) {
+    var pick = event.target.closest('[data-journey-pick]');
+    if (pick) selectJourney(pick.dataset.journeyPick);
+  });
+
 
   /* ===== Hero AI 次要入口：滚动到 AI 生成区并聚焦目的地输入框 ===== */
   document.addEventListener('click', function (e) {
@@ -1638,7 +1619,7 @@
       var st = statusOf(t.status);
       var days = daysBetween(t.startDate, t.endDate);
       var dest = t.destination || '';
-      var sub = fmtSlash(t.startDate) + ' – ' + fmtSlash(t.endDate)
+      var sub = calendarSlash(t.startDate) + ' – ' + calendarSlash(t.endDate)
         + (days > 0 ? ' · ' + days + ' 天' : '')
         + (dest ? ' · ' + dest : '');
       html.push('<div class="trip-row" data-id="' + escapeHtml(t.id) + '" role="link" tabindex="0"'
@@ -1761,33 +1742,28 @@
   }
 
   /* ================= 启动 ================= */
-  function fatal(msg) {
+  function fatal(msg, selectionUnavailable) {
     $('heroSub').textContent = msg;
     /* 接口异常：明确告知是加载失败（不误判为「没有旅行」） */
     $('nextTrip').hidden = true;
+    var retry = selectionUnavailable ? '/home/' : location.pathname + location.search;
     $('countdown').innerHTML = ''
       + '<div class="cd-label">下一趟旅程</div>'
-      + '<div class="cd-num"><span style="font-size:20px;line-height:1.45;">旅程数据暂时读不到，请稍后刷新</span></div>'
-      + '<div class="cd-cta"><a class="cta cta-solid" href="/trip-form/">创建新旅行</a></div>';
+      + '<div class="cd-num"><span style="font-size:20px;line-height:1.45;">' + escapeHtml(msg) + '</span></div>'
+      + '<div class="cd-cta"><a class="cta cta-solid" href="' + escapeHtml(retry) + '">'
+      + (selectionUnavailable ? '查看可访问行程' : '重新加载') + '</a></div>';
     ['tripBody', 'expBody', 'photoBody', 'journalBody'].forEach(function (id) {
       $(id).innerHTML = '<div class="empty"><div class="ill acc"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-alert"></use></svg></div><strong>暂时读不到数据</strong><p>' + escapeHtml(msg) + '</p>'
-        + '<a class="btn-soft" href="javascript:location.reload()">重新加载</a></div>';
+        + '<a class="btn-soft" href="' + escapeHtml(retry) + '">重新加载</a></div>';
     });
     emptyMap('<strong>暂时读不到数据</strong>' + escapeHtml(msg));
   }
 
   if (typeof requireLogin === 'function' && requireLogin('/login/')) {
     initUser();
-    Promise.allSettled([
-      apiGet('/dashboard')
-    ]).then(function (res) {
-      var dash = res[0] && res[0].status === 'fulfilled' ? res[0].value : null;
-
-      if (!dash) {
-        fatal(typeof humanError === 'function' ? humanError(res[0].reason) : '总览数据读取失败');
-        return;
-      }
-      var trip = (dash.upcomingTrips || [])[0] || (dash.recentTrips || [])[0] || null;
+    dashboardRequest = apiGet('/dashboard' + (selectedTripId ? '?tripId=' + encodeURIComponent(selectedTripId) : ''));
+    dashboardRequest.then(function (dash) {
+      var trip = dash.journey && dash.journey.trip;
 
       renderHero(dash);
       renderStats(dash);
@@ -1800,13 +1776,16 @@
       loadSampleTrips();
       var genStart = document.getElementById('aiGenStart');
       if (genStart && !genStart.value) {
-        var t = new Date(Date.now() + 86400000);
-        genStart.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0')
-          + '-' + String(t.getDate()).padStart(2, '0');
+        var t = new Date(dash.journey.dateKey + 'T00:00:00Z');
+        t.setUTCDate(t.getUTCDate() + 1);
+        genStart.value = t.toISOString().slice(0, 10);
         genStart.min = genStart.value;
       }
 
       renderJournals(dash.recentJournals, trip);
+    }).catch(function (err) {
+      var selectionUnavailable = selectedTripId && err.status === 404;
+      fatal(selectionUnavailable ? '所选行程已删除或你已无权访问' : humanError(err), selectionUnavailable);
     });
   }
 
@@ -1941,18 +1920,11 @@
         expenses: '账目', packing: '打包', documents: '证件'
       };
 
-      function dt(v) {
-        if (v == null || v === '') return null;
-        var d = new Date(v);
-        return isNaN(d.getTime()) ? null : d;
-      }
       function hm(v) {
-        var d = dt(v);
-        return d ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) : '';
+        return TravelTime.clock(v, S.data && S.data.timeZone);
       }
       function md(v) {
-        var d = dt(v);
-        return d ? (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日' : '';
+        return v ? calendarSlash(v) : '';
       }
 
       function showSkeleton() { body.innerHTML = skelHtml; }
@@ -1960,7 +1932,7 @@
       function renderError() {
         sub.textContent = '';
         body.innerHTML = '<div class="empty"><strong>简报暂时无法生成</strong>'
-          + '<p>数据加载失败，可稍后重试；首页其他功能不受影响。</p>'
+          + '<p>可用上方入口查看当天安排和凭证，或稍后重试。</p>'
           + '<button type="button" class="btn-soft" data-brief-act="retry">重试</button></div>';
       }
 
@@ -2091,7 +2063,7 @@
         refreshBtn.textContent = '刷新中…';
         if (!S.data) showSkeleton();
         var payload = { refresh: !!refresh };
-        if (tripId) payload.tripId = tripId;
+        if (tripId || S.tripId) payload.tripId = tripId || S.tripId;
         apiPost('/ai/today-brief', payload).then(function (d) {
           S.data = d;
           S.expanded = false;
@@ -2115,11 +2087,19 @@
         } else if (act === 'retry') {
           load(true);
         } else if (act === 'pick') {
-          load(false, t.getAttribute('data-trip'));
+          selectJourney(t.getAttribute('data-trip'));
         }
       });
       refreshBtn.addEventListener('click', function () { load(true); });
-      load(false);
+      if (dashboardRequest) dashboardRequest.then(function (dash) {
+        var journey = dash.journey || {};
+        if (journey.phase === 'choose') {
+          renderChoose({ candidates: journey.candidates });
+          return;
+        }
+        S.tripId = journey.trip && journey.trip.id;
+        load(false);
+      }).catch(renderError);
     } catch (err) {
       /* 简报模块异常不影响首页其他模块 */
     }

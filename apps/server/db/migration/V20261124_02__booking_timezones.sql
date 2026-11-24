@@ -1,0 +1,2 @@
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS start_timezone TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS end_timezone TEXT;

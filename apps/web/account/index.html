@@ -622,10 +622,10 @@
             <div class="ri-main">
               <div class="ri-t">通知偏好</div>
               <div class="notif-grid">
-                <label class="nf"><span class="sw" data-ns="notifyTrip"></span>行前提醒</label>
-                <label class="nf"><span class="sw" data-ns="notifyDocument"></span>文档到期</label>
-                <label class="nf"><span class="sw" data-ns="notifyMember"></span>成员邀请</label>
-                <label class="nf"><span class="sw" data-ns="notifySummary"></span>每周摘要</label>
+                <span class="nf"><button type="button" class="sw" data-ns="notifyTrip" role="switch" aria-label="预订、行前和天气提醒"></button>预订、行前与天气提醒</span>
+                <span class="nf"><button type="button" class="sw" data-ns="notifyDocument" role="switch" aria-label="证件到期提醒"></button>已开启到期提醒的证件</span>
+                <span class="nf"><button type="button" class="sw" data-ns="notifyMember" role="switch" aria-label="加入行程通知"></button>加入行程通知</span>
+                <span class="nf">每周摘要 · 暂未开放</span>
               </div>
             </div>
           </div>
@@ -979,7 +979,7 @@
     });
     PREF_SW.forEach(function (sw) {
       sw.addEventListener('click', function () {
-        sw.classList.toggle('on');
+        sw.setAttribute('aria-checked', String(sw.classList.toggle('on')));
         markPrefDirty();
       });
     });
@@ -989,13 +989,23 @@
         var d = await apiGet('/auth/preferences');
         var p = (d && d.preferences) || {};
         $('prTheme').value = p.theme || 'system';
-        $('prTimezone').value = p.timezone || 'Asia/Shanghai';
+        var zone = p.timezone || 'Asia/Shanghai';
+        var picker = $('prTimezone');
+        var zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+        [zone, 'America/Los_Angeles', 'America/New_York', 'Europe/London'].concat(zones).forEach(function (name) {
+          if (!Array.from(picker.options).some(function (option) { return option.value === name; })) {
+            picker.add(new Option(name, name));
+          }
+        });
+        picker.value = zone;
         $('prUnit').value = p.distanceUnit || 'km';
         $('prCurrency').value = p.currency || 'CNY';
         $('prDateFmt').value = p.dateFormat || 'cn';
         $('prWeekStart').value = p.weekStart || 'mon';
         PREF_SW.forEach(function (sw) {
-          sw.classList.toggle('on', p[sw.getAttribute('data-ns')] !== false);
+          var enabled = p[sw.getAttribute('data-ns')] !== false;
+          sw.classList.toggle('on', enabled);
+          sw.setAttribute('aria-checked', String(enabled));
         });
         prefDirty = false;
         $('btnSavePref').disabled = true;
@@ -1017,8 +1027,7 @@
           weekStart: $('prWeekStart').value,
           notifyTrip: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyTrip'; })[0].classList.contains('on'),
           notifyDocument: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyDocument'; })[0].classList.contains('on'),
-          notifyMember: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyMember'; })[0].classList.contains('on'),
-          notifySummary: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifySummary'; })[0].classList.contains('on')
+          notifyMember: PREF_SW.filter(function (s) { return s.getAttribute('data-ns') === 'notifyMember'; })[0].classList.contains('on')
         });
         prefDirty = false;
         showToast('偏好已保存');

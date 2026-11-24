@@ -919,6 +919,27 @@ test('9c. 自动重连耗尽后，列表手动刷新仍可用且不会重建 SSE
   assert.equal(env.streams.length, 6, '手动刷新不得重建已耗尽的 SSE');
 });
 
+test('9d. SSE 断线时轮询更新未读数，恢复后停止轮询', async () => {
+  let unread = 2;
+  const env = await createEnv({
+    routes: { unreadCount: () => ({ status: 200, body: { count: unread } }) },
+  });
+  env.lastStream().emit('open');
+  env.lastStream().emit('error');
+  await env.flush();
+  const before = env.count('list');
+  unread = 3;
+  await env.tick(30000);
+  assert.equal(env.count('list'), before + 1);
+  assert.equal(Number(env.el('sUnread').textContent), unread);
+
+  env.lastStream().emit('open');
+  const recovered = env.count('list');
+  await env.tick(30000);
+  assert.equal(env.count('list'), recovered);
+  env.pagehide();
+});
+
 
 
 

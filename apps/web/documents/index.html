@@ -704,12 +704,24 @@
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.docs = results[1].status === 'fulfilled' ? (results[1].value.documents || []) : [];
+        if (results[1].status === 'rejected') {
+          $('loading').textContent = '证件暂不可用，或该行程已删除、你已失去访问权限';
+          return;
+        }
 
         document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
         document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
         document.title = '织途 · ' + ((state.trip && state.trip.title) || '') + ' · 证件票据';
         buildFilters();
         render();
+        var target = qs.get('document');
+        if (target) {
+          var card = Array.from(document.querySelectorAll('[data-doc]')).find(function (node) {
+            return node.dataset.doc === target;
+          });
+          if (card) card.scrollIntoView({ block: 'center' });
+          else showToast('所链接的证件已删除或无法访问');
+        }
       } catch (err) {
         showToast(humanError(err));
         document.getElementById('loading').textContent = '加载失败，请刷新重试';

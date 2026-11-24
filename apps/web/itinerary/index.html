@@ -558,7 +558,7 @@
         <h1>行程安排<span class="en">Itinerary Timeline</span></h1>
         <p class="meta" id="pageMeta">正在加载…</p>
       </div>
-      <button class="btn-gen" id="btnGen" title="按行程起止日期批量生成行程天">✦ 按日期生成行程天</button>
+      <button class="btn-gen" id="btnGen" hidden title="按行程起止日期批量生成行程天">✦ 按日期生成行程天</button>
     </div>
 
     <section class="overview" id="overview" hidden>
@@ -663,14 +663,14 @@
       if (!dstr) return '日期待定';
       var d = new Date(dstr);
       if (isNaN(d)) return '日期待定';
-      var m = ('0' + (d.getMonth() + 1)).slice(-2);
-      var day = ('0' + d.getDate()).slice(-2);
+      var m = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+      var day = ('0' + d.getUTCDate()).slice(-2);
       return m + ' / ' + day;
     }
     function weekday(dstr) {
       if (!dstr) return '';
       var d = new Date(dstr);
-      return isNaN(d) ? '' : WD[d.getDay()];
+      return isNaN(d) ? '' : WD[d.getUTCDay()];
     }
     function fmtTime(iso) {
       if (!iso) return null;
@@ -738,11 +738,16 @@
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.days = results[1].status === 'fulfilled' ? (results[1].value.days || []) : [];
+        state.daysFailed = results[1].status === 'rejected';
         state.weather = results[2].status === 'fulfilled' ? (results[2].value.weather || []) : [];
 
-        if (!state.trip) { showToast('找不到该旅程'); setTimeout(function () { location.replace('/trips/'); }, 1000); return; }
+        if (!state.trip) { showToast('该行程已删除、无法访问或暂时无法加载'); setTimeout(function () { location.replace('/trips/'); }, 2400); return; }
 
-        if (!state.days.length && !autoDayGenTried && state.trip.startDate && state.trip.endDate) {
+        state.canEdit = ['owner', 'admin', 'member'].includes(state.trip.currentUserRole);
+        $('btnGen').hidden = !state.canEdit;
+        if (!state.daysFailed && !qs.has('date') && !state.days.length && !autoDayGenTried
+          && state.canEdit
+          && state.trip.startDate && state.trip.endDate) {
           autoDayGenTried = true;
           try {
             var generated = await apiPost('/trips/' + tripId + '/days/generate', {});
@@ -812,13 +817,13 @@
         +     (p.address ? '<div class="p-addr">' + escapeHtml(p.address) + '</div>' : '')
         +     (p.notes ? '<div class="p-notes">' + escapeHtml(p.notes) + '</div>' : '')
         +   '</div>'
-        +   '<div class="p-ops">'
+        +   (state.canEdit ? '<div class="p-ops">'
         +     '<button type="button" class="up" title="上移" ' + (idx === 0 ? 'disabled' : '') + '>↑</button>'
         +     '<button type="button" class="down" title="下移" ' + (idx === total - 1 ? 'disabled' : '') + '>↓</button>'
         +     '<button type="button" class="ed" title="编辑">✎</button>'
         +     '<button type="button" class="del" title="删除">×</button>'
         +   '</div>'
-        +   '<div class="p-check" style="grid-column:4;"><button type="button" class="chk' + (p.isCompleted ? ' on' : '') + '" title="标记完成" aria-pressed="' + (p.isCompleted ? 'true' : 'false') + '"></button></div>'
+        +   '<div class="p-check" style="grid-column:4;"><button type="button" class="chk' + (p.isCompleted ? ' on' : '') + '" title="标记完成" aria-pressed="' + (p.isCompleted ? 'true' : 'false') + '"></button></div>' : '')
         + '</div>';
     }
 
@@ -889,15 +894,15 @@
         +   '</div>'
         +   '<div class="day-main">'
         +     '<div class="day-head">'
-        +       '<input type="text" class="t" data-daytitle="' + escapeHtml(d.id) + '" value="' + escapeHtml(d.title || '') + '" placeholder="第 ' + d.dayIndex + ' 天标题，如：抵达 &amp; 入沙" maxlength="40">'
+        +       '<input type="text" class="t" data-daytitle="' + escapeHtml(d.id) + '" value="' + escapeHtml(d.title || '') + '" placeholder="第 ' + d.dayIndex + ' 天标题，如：抵达 &amp; 入沙" maxlength="40"' + (state.canEdit ? '' : ' readonly') + '>'
         +       (bk.length ? '<span class="bk-badge" title="' + escapeHtml(bk.map(function (b) { return b.title || ''; }).join('、')) + '">🎫 ' + bk.length + ' 项预订</span>' : '')
         +       weatherBadge(d)
         +       '<span class="cnt">' + places.length + ' 个地点 · ' + done + ' 已完成</span>'
         +     '</div>'
         +     '<div class="tl" data-tl="' + escapeHtml(d.id) + '">'
-        +       (rows || '<div class="day-empty">当天还没有安排 · <b>在下方添加第一个地点</b></div>')
+        +       (rows || '<div class="day-empty">当天还没有安排' + (state.canEdit ? ' · <b>在下方添加第一个地点</b>' : '') + '</div>')
         +     '</div>'
-        +     addRowHtml(d)
+        +     (state.canEdit ? addRowHtml(d) : '')
         +   '</div>'
         + '</section>';
     }
@@ -905,12 +910,22 @@
     function render() {
       renderOverview();
       var list = $('dayList');
+      var requestedDate = qs.get('date');
+      var vouchersUrl = '/vouchers/?trip=' + encodeURIComponent(tripId)
+        + (requestedDate ? '&amp;date=' + encodeURIComponent(requestedDate) : '');
+      if (state.daysFailed) {
+        list.innerHTML = '<div class="empty-state"><div class="t">暂时读不到行程安排</div><div class="d"><a href="'
+          + vouchersUrl + '">查看凭证</a> · <a href="">重新加载</a></div></div>';
+        return;
+      }
       if (!state.days.length) {
         list.innerHTML = ''
           + '<div class="empty-state">'
           +   '<div class="ic">🗺</div>'
-          +   '<div class="t">还没有行程天</div>'
-          +   '<div class="d">设置旅程的开始与结束日期后会自动铺出 D1-Dn 的骨架；也可点击右上角 <b>「按日期生成行程天」</b> 手动生成</div>'
+          +   '<div class="t">' + (requestedDate ? '所选日期还没有行程天' : '还没有行程天') + '</div>'
+          +   '<div class="d">' + (state.canEdit
+            ? '设置旅程的开始与结束日期，或点击右上角「按日期生成行程天」'
+            : '行程成员添加安排后会显示在这里') + ' · <a href="' + vouchersUrl + '">查看凭证</a></div>'
           + '</div>';
         return;
       }
@@ -923,15 +938,21 @@
     function focusQueryDay(list) {
       if (dayFocused) return;
       var target = qs.get('day');
-      if (!target) return;
+      var dateKey = qs.get('date');
+      if (!target && dateKey) {
+        var match = state.days.find(function (day) { return String(day.date || '').slice(0, 10) === dateKey; });
+        target = match && match.id;
+      }
+      if (!target && !dateKey) return;
       dayFocused = true;
       var cards = list.querySelectorAll('.day-card');
       for (var i = 0; i < cards.length; i++) {
         if (cards[i].getAttribute('data-day') === target) {
           window.scrollTo(0, cards[i].getBoundingClientRect().top + window.pageYOffset - 80);
-          break;
+          return;
         }
       }
+      if (dateKey) showToast('所选日期没有行程天，已显示其它可用安排');
     }
 
     /* ===== 找天 / 找地点 ===== */

@@ -2,7 +2,6 @@ package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.travelos.ai.LlmGatewayService;
-import com.travelos.auth.UserContext;
 import com.travelos.common.ApiException;
 import com.travelos.common.Fmt;
 import com.travelos.entity.Booking;
@@ -74,6 +73,7 @@ public class TodayBriefService {
   private final TripPlaceMapper tripPlaceMapper;
   private final TripMemberService tripMemberService;
   private final UserPreferenceService userPreferenceService;
+  private final TripJourneyService journey;
   private final WeatherService weatherService;
   private final BookingService bookingService;
   private final TripExpenseService tripExpenseService;
@@ -93,7 +93,7 @@ public class TodayBriefService {
       UserPreferenceService userPreferenceService, WeatherService weatherService,
       BookingService bookingService, TripExpenseService tripExpenseService,
       PackingListService packingListService, TravelDocumentService travelDocumentService,
-      LlmGatewayService llm) {
+      LlmGatewayService llm, TripJourneyService journey) {
     this.tripService = tripService;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
@@ -105,6 +105,7 @@ public class TodayBriefService {
     this.packingListService = packingListService;
     this.travelDocumentService = travelDocumentService;
     this.llm = llm;
+    this.journey = journey;
   }
 
   // ==================== 对外入口 ====================
@@ -119,22 +120,23 @@ public class TodayBriefService {
    */
   public Map<String, Object> brief(String userId, String tripId, String date, boolean refresh,
       boolean llmSummary) {
-    ZoneId zone = userZone(userId);
+    ZoneId zone = userPreferenceService.timeZone(userId);
     LocalDate today = LocalDate.now(zone);
     LocalDate target = parseDateOrToday(date, today);
 
-    Selection selection = selectTrip(userId, tripId, target);
-    if (selection == null) {
+    TripJourneyService.Selection selection = selectTrip(userId, tripId, target);
+    if ((tripId == null || tripId.isBlank()) && List.of("draft", "past", "archived").contains(selection.phase())) {
       return emptyBrief();
     }
-    if (selection.candidates() != null) {
+    if (!selection.candidates().isEmpty()) {
       return chooseBrief(selection.candidates());
     }
+    if (selection.trip() == null) return emptyBrief();
 
     Trip trip = selection.trip();
-    String mode = selection.mode();
+    String mode = "draft".equals(selection.phase()) ? "pre-trip" : selection.phase();
     String dateKey = target.toString();
-    String cacheKey = userId + "|" + trip.getId() + "|" + dateKey + "|" + mode;
+    String cacheKey = userId + "|" + trip.getId() + "|" + dateKey + "|" + mode + "|" + zone + "|" + llmSummary;
     if (!refresh) {
       CacheEntry cached = briefCache.get(cacheKey);
       if (cached != null && System.currentTimeMillis() - cached.cachedAt() < CACHE_TTL_MS) {
@@ -142,6 +144,9 @@ public class TodayBriefService {
       }
     }
     Map<String, Object> brief = buildBrief(userId, trip, mode, target, zone, llmSummary);
+    brief.put("phase", selection.phase());
+    brief.put("dateKey", dateKey);
+    brief.put("timeZone", zone.getId());
     briefCache.put(cacheKey, new CacheEntry(brief, System.currentTimeMillis()));
     if (briefCache.size() > 200) {
       briefCache.clear();
@@ -151,128 +156,26 @@ public class TodayBriefService {
 
   // ==================== 行程选择 ====================
 
-  private record Selection(Trip trip, String mode, List<Trip> candidates) {
-  }
-
-  private Selection selectTrip(String userId, String explicitTripId, LocalDate target) {
-    String dateKey = target.toString();
+  private TripJourneyService.Selection selectTrip(String userId, String explicitTripId, LocalDate target) {
     if (explicitTripId != null && !explicitTripId.isBlank()) {
-      tripMemberService.requireTripMember(explicitTripId.trim(), userId);
-      Trip trip = tripService.findLive(explicitTripId.trim());
-      if (trip == null) {
-        throw ApiException.notFound("旅行不存在");
-      }
-      // 显式指定永远返回该行程本身，不静默切换到其他行程；无日期草稿由 modeOf 判为
-      // pre-trip（其对 startDate==null 有守卫），buildBrief 对 tripStartKey/无天数均空安全
-      // （trip_days.date 为 NOT NULL，日程与摘要路径不会收到空日期）→ 返回该行程的行前简报。
-      return new Selection(trip, modeOf(trip, dateKey), null);
+      String id = explicitTripId.trim();
+      tripMemberService.requireTripMember(id, userId);
+      Trip trip = tripService.findLive(id);
+      if (trip == null) throw ApiException.notFound("旅行不存在");
+      return journey.choose(List.of(trip), id, target);
     }
-
-    List<Trip> mine = new ArrayList<>();
-    try {
-      if (tripService.findAll(userId).get("trips") instanceof List<?> trips) {
-        for (Object item : trips) {
-          if (!(item instanceof Map<?, ?> map) || map.get("id") == null) {
-            continue;
-          }
-          if (map.get("archivedAt") != null) {
-            continue;
-          }
-          Trip trip = tripService.findLive(map.get("id").toString());
-          if (trip != null) {
-            mine.add(trip);
-          }
+    List<Trip> trips = new ArrayList<>();
+    if (tripService.findAll(userId).get("trips") instanceof List<?> accessible) {
+      for (Object item : accessible) {
+        if (item instanceof Map<?, ?> row && row.get("id") != null) {
+          Trip trip = tripService.findLive(row.get("id").toString());
+          if (trip != null) trips.add(trip);
         }
       }
-    } catch (Exception ex) {
-      log.warn("today-brief: 读取用户行程失败 userId={}", userId, ex);
-      return null;
     }
-
-    List<Trip> inProgress = new ArrayList<>();
-    List<Trip> upcoming = new ArrayList<>();
-    for (Trip trip : mine) {
-      String mode = modeOf(trip, dateKey);
-      if ("today".equals(mode)) {
-        inProgress.add(trip);
-      } else if ("pre-trip".equals(mode) && trip.getStartDate() != null) {
-        // start_date 为 NULL 的草稿是合法业务数据，但没有出发日可参与 upcoming 排序
-        // （否则下方 Fmt.dateKey(null) 抛 NPE → 首页简报 500），也绝不能阻断其他有效
-        // 行程的简报：不进入任何候选池 → 仅剩此类草稿时本方法返回 null → 既有
-        // emptyBrief 空态契约（mode=none + “还没有可以生成简报的旅行”）。
-        upcoming.add(trip);
-      }
-    }
-
-    if (!inProgress.isEmpty()) {
-      return pickByArrangement(inProgress, "today", dateKey);
-    }
-    if (!upcoming.isEmpty()) {
-      String nearestStart = upcoming.stream()
-          .map(trip -> Fmt.dateKey(trip.getStartDate()))
-          .min(Comparator.naturalOrder()).orElse(null);
-      List<Trip> nearest = upcoming.stream()
-          .filter(trip -> nearestStart != null
-              && nearestStart.equals(Fmt.dateKey(trip.getStartDate())))
-          .toList();
-      return pickByArrangement(nearest, "pre-trip", dateKey);
-    }
-    return null;
+    return journey.choose(trips, null, target);
   }
 
-  /** 「当天已有安排较多、最近更新」择优；两条打平则不静默猜测，返回候选。 */
-  private Selection pickByArrangement(List<Trip> pool, String mode, String dateKey) {
-    if (pool.size() == 1) {
-      return new Selection(pool.get(0), mode, null);
-    }
-    record Scored(Trip trip, int places, Date updatedAt) {
-    }
-    List<Scored> scored = new ArrayList<>();
-    for (Trip trip : pool) {
-      scored.add(new Scored(trip, countPlacesOn(trip.getId(), mode, dateKey), trip.getUpdatedAt()));
-    }
-    scored.sort((left, right) -> {
-      int byPlaces = Integer.compare(right.places(), left.places());
-      if (byPlaces != 0) {
-        return byPlaces;
-      }
-      long l = left.updatedAt() == null ? 0 : left.updatedAt().getTime();
-      long r = right.updatedAt() == null ? 0 : right.updatedAt().getTime();
-      return Long.compare(r, l);
-    });
-    Scored top = scored.get(0);
-    Scored second = scored.get(1);
-    boolean tied = top.places() == second.places()
-        && (top.updatedAt() == null ? 0 : top.updatedAt().getTime())
-        == (second.updatedAt() == null ? 0 : second.updatedAt().getTime());
-    if (tied) {
-      return new Selection(null, "choose", pool);
-    }
-    return new Selection(top.trip(), mode, null);
-  }
-
-  /** 行前模式数第 1 天安排、今日模式数当天安排。 */
-  private int countPlacesOn(String tripId, String mode, String dateKey) {
-    try {
-      TripDay day = "pre-trip".equals(mode) ? firstDay(tripId) : findDayByDate(tripId, dateKey);
-      return day == null ? 0 : placeCount(day.getId());
-    } catch (Exception ex) {
-      return 0;
-    }
-  }
-
-  /** today=当天在行程日期内；pre-trip=尚未出发；past=显式请求过去的日期（如实标注）。 */
-  private String modeOf(Trip trip, String dateKey) {
-    if (trip.getStartDate() == null) {
-      return "pre-trip";
-    }
-    String startKey = Fmt.dateKey(trip.getStartDate());
-    String endKey = trip.getEndDate() == null ? startKey : Fmt.dateKey(trip.getEndDate());
-    if (dateKey.compareTo(startKey) < 0) {
-      return "pre-trip";
-    }
-    return dateKey.compareTo(endKey) > 0 ? "past" : "today";
-  }
 
   // ==================== 简报构建 ====================
 
@@ -280,7 +183,7 @@ public class TodayBriefService {
       ZoneId zone, boolean llmSummary) {
     String dateKey = target.toString();
     boolean preTrip = "pre-trip".equals(mode);
-    TripDay day = preTrip ? firstDay(trip.getId()) : findDayByDate(trip.getId(), dateKey);
+    TripDay day = journey.dayFor(trip.getId(), mode, target);
     String tripId = trip.getId();
     String tripStartKey = trip.getStartDate() == null ? null : Fmt.dateKey(trip.getStartDate());
 
@@ -308,7 +211,7 @@ public class TodayBriefService {
       dataStatus.put("weather", "unavailable");
     }
     try {
-      bookings = buildBookings(tripId, day, dateKey);
+      bookings = buildBookings(tripId, day, dateKey, zone);
       dataStatus.put("bookings", "ok");
     } catch (Exception ex) {
       log.warn("today-brief: 预订聚合失败 tripId={}", tripId, ex);
@@ -342,7 +245,7 @@ public class TodayBriefService {
     SummaryResult summary = llmSummary
         ? summarizeViaLlm(trip, mode, day, schedule, weather, bookings, packing, documents,
             alerts, zone)
-        : new SummaryResult(fallbackSummary(mode, day, schedule, alerts.size(), packing), "fallback");
+        : new SummaryResult(fallbackSummary(mode, day, schedule, alerts.size(), packing, zone), "fallback");
 
     Map<String, Object> tripMap = new LinkedHashMap<>();
     tripMap.put("id", tripId);
@@ -376,7 +279,7 @@ public class TodayBriefService {
     body.put("packing", packing);
     body.put("documents", documents);
     body.put("alerts", alerts.stream().map(Alert::body).toList());
-    body.put("actions", buildActions(tripId, day, mode, bookings));
+    body.put("actions", buildActions(tripId, day, mode, bookings, dateKey));
     body.put("dataStatus", dataStatus);
     body.put("generatedAt", new Date());
     return body;
@@ -449,7 +352,7 @@ public class TodayBriefService {
   // ---- 模块：预订 ----
 
   /** 当日需要使用的预订：挂在当天、当天开始、或酒店入住区间覆盖当天。 */
-  private List<Map<String, Object>> buildBookings(String tripId, TripDay day, String dateKey) {
+  private List<Map<String, Object>> buildBookings(String tripId, TripDay day, String dateKey, ZoneId zone) {
     List<Map<String, Object>> rows = new ArrayList<>();
     for (Booking booking : bookingService.findBookingsByTrip(tripId)) {
       if (booking.getCancelledAt() != null) {
@@ -457,13 +360,13 @@ public class TodayBriefService {
       }
       boolean used = day != null && day.getId().equals(booking.getTripDayId());
       if (!used && booking.getStartTime() != null
-          && Fmt.dateKey(booking.getStartTime()).equals(dateKey)) {
+          && localDateKey(booking.getStartTime(), zone).equals(dateKey)) {
         used = true;
       }
       if (!used && "hotel".equals(booking.getType()) && booking.getStartTime() != null
           && booking.getEndTime() != null) {
-        String from = Fmt.dateKey(booking.getStartTime());
-        String to = Fmt.dateKey(booking.getEndTime());
+        String from = localDateKey(booking.getStartTime(), zone);
+        String to = localDateKey(booking.getEndTime(), zone);
         used = dateKey.compareTo(from) >= 0 && dateKey.compareTo(to) <= 0;
       }
       if (!used) {
@@ -815,7 +718,7 @@ public class TodayBriefService {
       List<Map<String, Object>> schedule, Map<String, Object> weather,
       List<Map<String, Object>> bookings, Map<String, Object> packing,
       Map<String, Object> documents, List<Alert> alerts, ZoneId zone) {
-    String template = fallbackSummary(mode, day, schedule, alerts.size(), packing);
+    String template = fallbackSummary(mode, day, schedule, alerts.size(), packing, zone);
     if (!llm.isEnabled()) {
       return new SummaryResult(template, "fallback");
     }
@@ -919,6 +822,11 @@ public class TodayBriefService {
   /** 模板降级摘要：LLM 未配置/失败时保证接口仍返回可读摘要（alertCount 为提醒条数）。 */
   static String fallbackSummary(String mode, TripDay day, List<Map<String, Object>> schedule,
       int alertCount, Map<String, Object> packing) {
+    return fallbackSummary(mode, day, schedule, alertCount, packing, DEFAULT_ZONE);
+  }
+
+  static String fallbackSummary(String mode, TripDay day, List<Map<String, Object>> schedule,
+      int alertCount, Map<String, Object> packing, ZoneId zone) {
     int total = schedule.size();
     int am = 0;
     int pm = 0;
@@ -928,7 +836,7 @@ public class TodayBriefService {
         tbd++;
         continue;
       }
-      if (LocalDateTime.ofInstant(start.toInstant(), DEFAULT_ZONE).getHour() < 12) {
+      if (LocalDateTime.ofInstant(start.toInstant(), zone).getHour() < 12) {
         am++;
       } else {
         pm++;
@@ -941,6 +849,8 @@ public class TodayBriefService {
       summary.append("行前简报：");
       summary.append(day == null ? "行程还没有安排"
           : "第 1 天共 " + total + " 项安排");
+    } else if ("past".equals(mode) || "archived".equals(mode)) {
+      summary.append("行程回顾：选定日期共有 ").append(total).append(" 项安排。");
     } else {
       summary.append("今天共有 ").append(total).append(" 项安排，上午 ").append(am)
           .append(" 项、下午 ").append(pm).append(" 项");
@@ -964,13 +874,17 @@ public class TodayBriefService {
   // ==================== 入口动作 / 空态 ====================
 
   private List<Map<String, Object>> buildActions(String tripId, TripDay day, String mode,
-      List<Map<String, Object>> bookings) {
+      List<Map<String, Object>> bookings, String dateKey) {
     List<Map<String, Object>> actions = new ArrayList<>();
+    if ("past".equals(mode) || "archived".equals(mode)) {
+      return List.of(action("查看行程详情", "/trip-detail/?id=" + tripId),
+          action("查看历史安排", itineraryUrl(tripId, day)));
+    }
     actions.add(action("pre-trip".equals(mode) ? "查看第 1 天行程" : "查看今日行程",
-        itineraryUrl(tripId, day)));
+        itineraryUrl(tripId, day) + ("today".equals(mode) ? "&date=" + dateKey : "")));
     actions.add(action("pre-trip".equals(mode) ? "查看路线" : "查看今日路线", mapUrl(tripId, day)));
     if (!bookings.isEmpty()) {
-      actions.add(action("打开今日凭证", "/vouchers/?trip=" + tripId));
+      actions.add(action("打开凭证", "/vouchers/?trip=" + tripId + ("today".equals(mode) ? "&date=" + dateKey : "")));
     } else {
       actions.add(action("快速记账", "/expenses/?trip=" + tripId));
     }
@@ -1033,46 +947,10 @@ public class TodayBriefService {
 
   // ==================== 工具方法 ====================
 
-  private TripDay findDayByDate(String tripId, String dateKey) {
-    for (TripDay day : tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
-        .eq(TripDay::getTripId, tripId))) {
-      if (day.getDate() != null && Fmt.dateKey(day.getDate()).equals(dateKey)) {
-        return day;
-      }
-    }
-    return null;
-  }
-
-  private TripDay firstDay(String tripId) {
-    List<TripDay> days = tripDayMapper.selectList(new LambdaQueryWrapper<TripDay>()
-        .eq(TripDay::getTripId, tripId)
-        .orderByAsc(TripDay::getDayIndex));
-    return days.isEmpty() ? null : days.get(0);
-  }
-
   private int countDays(String tripId) {
     Long count = tripDayMapper.selectCount(new LambdaQueryWrapper<TripDay>()
         .eq(TripDay::getTripId, tripId));
     return count == null ? 0 : count.intValue();
-  }
-
-  private int placeCount(String tripDayId) {
-    Long count = tripPlaceMapper.selectCount(new LambdaQueryWrapper<TripPlace>()
-        .eq(TripPlace::getTripDayId, tripDayId));
-    return count == null ? 0 : count.intValue();
-  }
-
-  private ZoneId userZone(String userId) {
-    try {
-      Map<String, Object> res = userPreferenceService.get(new UserContext(userId, null, null));
-      if (res.get("preferences") instanceof Map<?, ?> preferences
-          && preferences.get("timezone") instanceof String timezone && !timezone.isBlank()) {
-        return ZoneId.of(timezone);
-      }
-    } catch (Exception ex) {
-      log.warn("today-brief: 读取用户时区失败，按默认时区处理 userId={}", userId);
-    }
-    return DEFAULT_ZONE;
   }
 
   private LocalDate parseDateOrToday(String date, LocalDate today) {
@@ -1084,6 +962,10 @@ public class TodayBriefService {
     } catch (DateTimeParseException ex) {
       throw ApiException.badRequest("date 必须是 yyyy-MM-dd 格式");
     }
+  }
+
+  private static String localDateKey(Date instant, ZoneId zone) {
+    return instant.toInstant().atZone(zone).toLocalDate().toString();
   }
 
   private Alert alert(String type, String severity, String title, String detail, String evidence,

@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 
 /**
  * 用户偏好设置：账户页「偏好与显示」的读写。
@@ -20,7 +22,7 @@ import java.util.Set;
 public class UserPreferenceService {
 
   private static final Set<String> THEMES = Set.of("system", "light", "dark");
-  private static final Set<String> TIMEZONES = Set.of("Asia/Shanghai", "Asia/Tokyo", "UTC");
+  static final ZoneId DEFAULT_ZONE = ZoneId.of("Asia/Shanghai");
   private static final Set<String> DISTANCE_UNITS = Set.of("km", "mi");
   private static final Set<String> CURRENCIES = Set.of("CNY", "USD", "EUR");
   private static final Set<String> DATE_FORMATS = Set.of("cn", "slash", "us");
@@ -58,8 +60,14 @@ public class UserPreferenceService {
       pref.setTheme(req.theme());
     }
     if (req.timezone() != null) {
-      require(TIMEZONES, "时区", req.timezone());
-      pref.setTimezone(req.timezone());
+      try {
+        if (!ZoneId.getAvailableZoneIds().contains(req.timezone())) {
+          throw new DateTimeException("invalid timezone");
+        }
+        pref.setTimezone(ZoneId.of(req.timezone()).getId());
+      } catch (DateTimeException ex) {
+        throw ApiException.badRequest("请选择有效的 IANA 时区");
+      }
     }
     if (req.distanceUnit() != null) {
       require(DISTANCE_UNITS, "距离单位", req.distanceUnit());
@@ -102,6 +110,15 @@ public class UserPreferenceService {
   private UserPreference findByUser(String userId) {
     return mapper.selectOne(new LambdaQueryWrapper<UserPreference>()
         .eq(UserPreference::getUserId, userId));
+  }
+
+  public ZoneId timeZone(String userId) {
+    UserPreference pref = findByUser(userId);
+    try {
+      return pref == null || pref.getTimezone() == null ? DEFAULT_ZONE : ZoneId.of(pref.getTimezone());
+    } catch (DateTimeException ex) {
+      return DEFAULT_ZONE;
+    }
   }
 
   private void require(Set<String> allowed, String label, String value) {

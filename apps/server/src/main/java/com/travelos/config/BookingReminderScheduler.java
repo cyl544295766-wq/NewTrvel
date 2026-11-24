@@ -3,6 +3,7 @@ package com.travelos.config;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.Fmt;
+import com.travelos.common.DateUtil;
 import com.travelos.common.TripScopeContext;
 import com.travelos.entity.Booking;
 import com.travelos.entity.Notification;
@@ -24,8 +25,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Calendar;
 import java.util.Date;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import com.travelos.service.UserPreferenceService;
 import java.util.List;
 
 /**
@@ -48,11 +53,12 @@ public class BookingReminderScheduler {
   private final PackingItemMapper packingItemMapper;
   private final TripWeatherMapper tripWeatherMapper;
   private final NotificationService notificationService;
+  private final UserPreferenceService preferences;
 
   public BookingReminderScheduler(BookingMapper bookingMapper, TripMapper tripMapper,
       TripMemberMapper tripMemberMapper, PackingListMapper packingListMapper,
       PackingItemMapper packingItemMapper, TripWeatherMapper tripWeatherMapper,
-      NotificationService notificationService) {
+      NotificationService notificationService, UserPreferenceService preferences) {
     this.bookingMapper = bookingMapper;
     this.tripMapper = tripMapper;
     this.tripMemberMapper = tripMemberMapper;
@@ -60,6 +66,7 @@ public class BookingReminderScheduler {
     this.packingItemMapper = packingItemMapper;
     this.tripWeatherMapper = tripWeatherMapper;
     this.notificationService = notificationService;
+    this.preferences = preferences;
   }
 
   /** 预订提醒扫描：每 10 分钟一轮（首轮启动即跑）。 */
@@ -68,32 +75,34 @@ public class BookingReminderScheduler {
     TripScopeContext.runBypassed(this::scanReminders);
   }
 
-  /** 行前检查清单：每天 09:00。 */
-  @Scheduled(cron = "0 0 9 * * ?")
+  /** 按收件人当地 09:00 发送，覆盖半小时与 45 分钟偏移的时区。 */
+  @Scheduled(cron = "0 */15 * * * *", zone = "UTC")
   public void scheduledPrecheck() {
-    TripScopeContext.runBypassed(this::sendPrecheckSummaries);
+    TripScopeContext.runBypassed(() -> sendPrecheckSummaries(Instant.now(), true));
   }
 
   /** 扫描到点未发送的预订提醒。public 供验收触发。 */
   public void scanReminders() {
+    Instant now = Instant.now();
     List<Booking> dueBookings = bookingMapper.selectList(new LambdaQueryWrapper<Booking>()
         .eq(Booking::getReminderEnabled, true)
         .isNull(Booking::getCancelledAt)
         .isNull(Booking::getReminderSentAt)
         .isNotNull(Booking::getStartTime)
-        .apply("start_time <= now() + make_interval(mins => reminder_minutes)")
+        .apply("start_time <= CAST({0} AS timestamp) + make_interval(mins => COALESCE(reminder_minutes, 0))",
+            java.sql.Timestamp.from(now))
         // 太久远的漏发预订不再补发，避免历史数据轰炸
-        .apply("start_time >= now() - interval '1 day'")
+        .ge(Booking::getStartTime, Date.from(now.minusSeconds(86_400)))
         .last("LIMIT " + SCAN_LIMIT));
     for (Booking booking : dueBookings) {
       Trip trip = tripMapper.selectById(booking.getTripId());
-      if (trip == null) {
+      if (trip == null || trip.getDeletedAt() != null || trip.getArchivedAt() != null || "archived".equals(trip.getStatus())) {
         continue;
       }
       String content = buildReminderContent(trip.getTitle(), booking);
       for (TripMember member : membersOf(booking.getTripId())) {
         notificationService.createBookingReminder(member.getUserId(), booking.getTripId(),
-            trip.getTitle(), content);
+            trip.getTitle(), booking.getId(), booking.getStartTime().getTime(), content);
       }
       // 幂等标记：条件更新（reminder_sent_at 仍为空才更新），重跑/重启/并发不重复发
       int updated = bookingMapper.update(null, new LambdaUpdateWrapper<Booking>()
@@ -108,16 +117,26 @@ public class BookingReminderScheduler {
 
   /** 行前检查清单：出发前一天上午给成员发汇总。public 供验收触发。 */
   public void sendPrecheckSummaries() {
-    Date tomorrow = addDays(startOfDay(new Date()), 1);
-    String dateKey = com.travelos.common.Fmt.dateKey(tomorrow);
+    sendPrecheckSummaries(Instant.now(), false);
+  }
+
+  void sendPrecheckSummaries(Instant now, boolean morningOnly) {
+    LocalDate utcDate = now.atOffset(ZoneOffset.UTC).toLocalDate();
     List<Trip> trips = tripMapper.selectList(new LambdaQueryWrapper<Trip>()
-        .apply("start_date::date = (current_date + interval '1 day')::date")
+        .ge(Trip::getStartDate, DateUtil.parse(utcDate.toString()))
+        .lt(Trip::getStartDate, DateUtil.parse(utcDate.plusDays(3).toString()))
         .isNull(Trip::getDeletedAt)
         .isNull(Trip::getArchivedAt)
-        .last("LIMIT 200"));
+        .ne(Trip::getStatus, "archived"));
     for (Trip trip : trips) {
+      String dateKey = Fmt.dateKey(trip.getStartDate());
       String precheckKey = "trip:" + trip.getId() + ":" + dateKey;
       for (TripMember member : membersOf(trip.getId())) {
+        ZonedDateTime local = now.atZone(preferences.timeZone(member.getUserId()));
+        if ((morningOnly && (local.getHour() != 9 || local.getMinute() != 0))
+            || !dateKey.equals(local.toLocalDate().plusDays(1).toString())) {
+          continue;
+        }
         if (notificationService.precheckAlreadySent(member.getUserId(), precheckKey)) {
           continue; // 同一天同行程不重复发
         }
@@ -144,27 +163,22 @@ public class BookingReminderScheduler {
 
   private String buildPrecheckContent(Trip trip) {
     StringBuilder builder = new StringBuilder("「" + trip.getTitle() + "」明天出发：");
-    boolean first = true;
+    Instant now = Instant.now();
     long upcoming = bookingMapper.selectCount(new LambdaQueryWrapper<Booking>()
         .eq(Booking::getTripId, trip.getId())
-        .ge(Booking::getStartTime, new Date())
-        .le(Booking::getStartTime, addHours(new Date(), 48)));
+        .isNull(Booking::getCancelledAt)
+        .ge(Booking::getStartTime, Date.from(now))
+        .le(Booking::getStartTime, Date.from(now.plusSeconds(48 * 3600L))));
     builder.append("未来 48 小时内有 ").append(upcoming).append(" 项预订");
     long pendingItems = countPendingPackingItems(trip.getId());
     if (pendingItems > 0) {
       builder.append("；行李清单还有 ").append(pendingItems).append(" 件未打包");
-      first = false;
-    } else if (!first) {
-      builder.append("；行李清单已全部打包");
     }
     String weatherTip = weatherTip(trip.getId());
     if (!weatherTip.isEmpty()) {
       builder.append("；").append(weatherTip);
     }
     builder.append("。祝旅途顺利！");
-    if (first) {
-      builder.insert(builder.length() - 6, "。");
-    }
     return builder.toString();
   }
 
@@ -209,27 +223,4 @@ public class BookingReminderScheduler {
         .eq(TripMember::getTripId, tripId));
   }
 
-  private Date startOfDay(Date date) {
-    Calendar calendar = Calendar.getInstance();
-    calendar.setTime(date);
-    calendar.set(Calendar.HOUR_OF_DAY, 0);
-    calendar.set(Calendar.MINUTE, 0);
-    calendar.set(Calendar.SECOND, 0);
-    calendar.set(Calendar.MILLISECOND, 0);
-    return calendar.getTime();
-  }
-
-  private Date addDays(Date date, int days) {
-    Calendar calendar = Calendar.getInstance();
-    calendar.setTime(date);
-    calendar.add(Calendar.DATE, days);
-    return calendar.getTime();
-  }
-
-  private Date addHours(Date date, int hours) {
-    Calendar calendar = Calendar.getInstance();
-    calendar.setTime(date);
-    calendar.add(Calendar.HOUR_OF_DAY, hours);
-    return calendar.getTime();
-  }
 }

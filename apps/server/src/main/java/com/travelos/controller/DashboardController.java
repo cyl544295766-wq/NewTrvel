@@ -5,6 +5,7 @@ import com.travelos.auth.UserContext;
 import com.travelos.service.DashboardService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -20,7 +21,7 @@ public class DashboardController {
   }
 
   @GetMapping
-  public Map<String, Object> findOne(@CurrentUser UserContext user) {
-    return dashboardService.findOne(user.id());
+  public Map<String, Object> findOne(@RequestParam(required = false) String tripId, @CurrentUser UserContext user) {
+    return dashboardService.findOne(user.id(), tripId);
   }
 }

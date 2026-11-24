@@ -61,6 +61,15 @@ class RequirementVerificationTest {
   @Autowired
   JdbcTemplate jdbc;
 
+  @Autowired
+  com.travelos.config.BookingReminderScheduler bookingReminders;
+
+  @Autowired
+  com.travelos.config.DocumentReminderScheduler documentReminders;
+
+  @Autowired
+  FileStorageService fileStorage;
+
   @MockBean
   LlmGatewayService llm;
 
@@ -106,6 +115,8 @@ class RequirementVerificationTest {
       jdbc.update("DELETE FROM trip_legs WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM trip_days WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM photos WHERE trip_id=?", tid);
+      jdbc.queryForList("SELECT url FROM travel_documents WHERE trip_id=? AND url LIKE '/files/%'", String.class, tid)
+          .forEach(fileStorage::deleteIfManaged);
       jdbc.update("DELETE FROM travel_documents WHERE trip_id=?", tid);
       jdbc.update("DELETE FROM packing_items WHERE packing_list_id IN (SELECT id FROM packing_lists WHERE trip_id=?)", tid);
       jdbc.update("DELETE FROM packing_lists WHERE trip_id=?", tid);
@@ -624,6 +635,175 @@ class RequirementVerificationTest {
 
   private Map<String, Object> confirmation(String currency, JsonNode group) {
     return Map.of("currency", currency, "previewToken", group.path("previewToken").asText());
+  }
+
+
+  @Test
+  @Order(50)
+  void tr05And06_shareTripChoiceAndPreserveAppointmentInstants() throws Exception {
+    String owner = register("tr0506" + suffix);
+    apiPut(owner, "/api/auth/preferences", Map.of("timezone", "America/Los_Angeles"));
+    java.time.ZoneId zone = java.time.ZoneId.of("America/Los_Angeles");
+    java.time.LocalDate today = java.time.LocalDate.now(zone);
+    JsonNode empty = apiGet(owner, "/api/dashboard").path("journey");
+    assertEquals("/trip-form/", empty.path("primary").path("url").asText());
+
+    String draft = apiPost(owner, "/api/trips", Map.of("title", "日期待定"))
+        .path("trip").path("id").asText();
+    createdTripIds.add(draft);
+    JsonNode draftContext = apiGet(owner, "/api/dashboard").path("journey");
+    assertEquals("draft", draftContext.path("phase").asText());
+    assertEquals("/trip-form/?id=" + draft, draftContext.path("primary").path("url").asText());
+    assertTrue(draftContext.path("daysUntilStart").isMissingNode());
+
+    String active = apiPost(owner, "/api/trips", Map.of("title", "进行中的行程",
+        "startDate", today.toString(), "endDate", today.plusDays(1).toString()))
+        .path("trip").path("id").asText();
+    createdTripIds.add(active);
+    String trip = "/api/trips/" + active;
+    String dayId = apiPost(owner, trip + "/days/generate", null).path("days").get(0).path("id").asText();
+    JsonNode home = apiGet(owner, "/api/dashboard").path("journey");
+    JsonNode detail = apiGet(owner, trip + "/next-action");
+    JsonNode brief = apiPost(owner, "/api/ai/today-brief", Map.of("refresh", true));
+    assertEquals("today", home.path("phase").asText());
+    assertEquals("America/Los_Angeles", home.path("timeZone").asText());
+    assertEquals(today.toString(), home.path("dateKey").asText());
+    assertEquals(home.path("primary"), detail.path("primary"));
+    assertTrue(home.path("primary").path("url").asText().contains("day=" + dayId));
+    assertEquals(active, brief.path("trip").path("id").asText());
+    assertEquals(dayId, brief.path("day").path("id").asText());
+    assertEquals(today.toString(), brief.path("dateKey").asText());
+
+    JsonNode booking = apiPost(owner, trip + "/bookings", Map.of("title", "跨时区预约", "type", "flight",
+        "startTime", "2026-01-18T09:00", "startTimezone", "America/Los_Angeles",
+        "endTime", "2026-01-19T08:00", "endTimezone", "Asia/Tokyo")).path("booking");
+    assertTrue(booking.path("startTime").asText().startsWith("2026-01-18T17:00"));
+    assertTrue(booking.path("endTime").asText().startsWith("2026-01-18T23:00"));
+    assertEquals("Asia/Tokyo", booking.path("endTimezone").asText());
+    String bookingId = booking.path("id").asText();
+    apiPut(owner, "/api/auth/preferences", Map.of("timezone", "Asia/Tokyo"));
+    JsonNode changedZone = apiGet(owner, trip + "/bookings").path("bookings").get(0);
+    assertEquals(booking.path("startTime"), changedZone.path("startTime"));
+    assertEquals("America/Los_Angeles", changedZone.path("startTimezone").asText());
+    assertEquals(today.toString(), apiGet(owner, trip).path("trip").path("startDate").asText().substring(0, 10));
+    assertEquals(400, httpRequest("PATCH", trip + "/bookings/" + bookingId, owner,
+        Map.of("startTime", "2026-03-08T02:30", "startTimezone", "America/Los_Angeles")).statusCode());
+
+    apiPut(owner, "/api/auth/preferences", Map.of("timezone", zone.getId()));
+    String overlap = apiPost(owner, "/api/trips", Map.of("title", "并行行程",
+        "startDate", today.toString(), "endDate", today.plusDays(1).toString()))
+        .path("trip").path("id").asText();
+    createdTripIds.add(overlap);
+    jdbc.update("UPDATE trips SET updated_at='2026-01-01' WHERE id IN (?, ?)", active, overlap);
+    assertEquals("choose", apiGet(owner, "/api/dashboard").path("journey").path("phase").asText());
+    assertEquals("choose", apiPost(owner, "/api/ai/today-brief", Map.of("refresh", true)).path("mode").asText());
+    assertEquals(overlap, apiGet(owner, "/api/dashboard?tripId=" + overlap).path("journey").path("trip").path("id").asText());
+    assertEquals(overlap, apiPost(owner, "/api/ai/today-brief", Map.of("tripId", overlap))
+        .path("trip").path("id").asText());
+    apiPatch(owner, "/api/trips/" + overlap + "/archive", Map.of());
+    assertEquals("archived", apiGet(owner, "/api/trips/" + overlap + "/next-action").path("phase").asText());
+    assertEquals(active, apiGet(owner, "/api/dashboard").path("journey").path("trip").path("id").asText());
+
+    String upcoming = apiPost(owner, "/api/trips", Map.of("title", "即将出发行程",
+        "startDate", today.plusDays(1).toString(), "endDate", today.plusDays(2).toString()))
+        .path("trip").path("id").asText();
+    createdTripIds.add(upcoming);
+    assertEquals("/trip-detail/?id=" + upcoming + "#journey-preparation",
+        apiGet(owner, "/api/trips/" + upcoming + "/next-action").path("primary").path("url").asText());
+
+    String past = apiPost(owner, "/api/trips", Map.of("title", "已经结束的行程",
+        "startDate", today.minusDays(2).toString(), "endDate", today.minusDays(1).toString()))
+        .path("trip").path("id").asText();
+    createdTripIds.add(past);
+    assertEquals("/trip-detail/?id=" + past + "#recapModule",
+        apiGet(owner, "/api/trips/" + past + "/next-action").path("primary").path("url").asText());
+    apiPost(owner, "/api/trips/" + past + "/expenses", Map.of("title", "旅后补记", "amount", "42", "currency", "CNY"));
+    assertEquals("/expenses/?trip=" + past + "&tab=settlement",
+        apiGet(owner, "/api/trips/" + past + "/next-action").path("primary").path("url").asText());
+  }
+
+  @Test
+  @Order(51)
+  void tr14_notificationsRespectPreferencesAndClaimEachEventOnce() throws Exception {
+    String owner = register("tr14owner" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String guest = register("tr14guest" + suffix);
+    String guestId = createdUserIds.get(createdUserIds.size() - 1);
+    apiPut(guest, "/api/auth/preferences", Map.of("notifyTrip", false, "notifyDocument", false,
+        "notifyMember", false, "notifySummary", false));
+    String tripStart = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).plusDays(1).toString();
+    String tripId = apiPost(owner, "/api/trips", Map.of("title", "提醒偏好验收", "startDate", tripStart,
+        "endDate", tripStart)).path("trip").path("id").asText();
+    createdTripIds.add(tripId);
+    invite(owner, ownerId, guest, "tr14guest" + suffix, tripId);
+    String trip = "/api/trips/" + tripId;
+    assertEquals(tripId, apiGet(guest, trip).path("trip").path("id").asText());
+    assertEquals(0, notificationCount(guestId, tripId, "member_invited"));
+
+    String start = java.time.Instant.now().plusSeconds(900).toString();
+    String expiry = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).plusDays(3).toString();
+    String pdf = "data:application/pdf;base64,JVBERi0xLjQKJSVFT0Y=";
+    String bookingId = apiPost(owner, trip + "/bookings", Map.of("title", "即将出行", "type", "flight",
+        "startTime", start, "reminderEnabled", true, "reminderMinutes", 60)).path("booking").path("id").asText();
+    String document = apiPost(owner, trip + "/documents", Map.of("title", "即将到期", "type", "passport",
+        "url", pdf, "expiredAt", expiry, "isReminder", true))
+        .path("document").path("id").asText();
+    var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+    try {
+      java.util.concurrent.Callable<Void> reminders = () -> {
+        bookingReminders.scanReminders();
+        documentReminders.scan();
+        bookingReminders.sendPrecheckSummaries();
+        return null;
+      };
+      var first = executor.submit(reminders);
+      var second = executor.submit(reminders);
+      first.get(30, java.util.concurrent.TimeUnit.SECONDS);
+      second.get(30, java.util.concurrent.TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+    }
+    assertEquals(1, notificationCount(ownerId, tripId, "booking_reminder"));
+    assertEquals(1, notificationCount(ownerId, tripId, "document_expiry"));
+    assertEquals(1, notificationCount(ownerId, tripId, "trip_precheck"));
+    assertEquals(0, notificationCount(guestId, tripId, "booking_reminder"));
+    assertEquals(0, notificationCount(guestId, tripId, "document_expiry"));
+    assertEquals(0, notificationCount(guestId, tripId, "trip_precheck"));
+    JsonNode notices = apiGet(owner, "/api/notifications?size=50").path("notifications");
+    assertTrue(notices.toString().contains("/bookings/?trip=" + tripId + "&booking=" + bookingId));
+    assertTrue(notices.toString().contains("/documents/?trip=" + tripId + "&document=" + document));
+
+    apiPut(guest, "/api/auth/preferences", Map.of("notifyTrip", true, "notifyDocument", true, "notifyMember", true));
+    bookingReminders.scanReminders();
+    documentReminders.scan();
+    bookingReminders.sendPrecheckSummaries();
+    assertEquals(0, notificationCount(guestId, tripId, "booking_reminder"));
+    assertEquals(0, notificationCount(guestId, tripId, "document_expiry"));
+    assertEquals(0, notificationCount(guestId, tripId, "trip_precheck"));
+    apiPost(owner, trip + "/bookings", Map.of("title", "另一笔即将出行", "type", "flight",
+        "startTime", start, "reminderEnabled", true, "reminderMinutes", 60));
+    apiPost(owner, trip + "/documents", Map.of("title", "另一份证件", "type", "passport",
+        "url", pdf, "expiredAt", expiry, "isReminder", true));
+    bookingReminders.scanReminders();
+    documentReminders.scan();
+    assertEquals(1, notificationCount(guestId, tripId, "booking_reminder"));
+    assertEquals(1, notificationCount(guestId, tripId, "document_expiry"));
+    JsonNode member = java.util.stream.StreamSupport.stream(apiGet(owner, trip + "/members").path("members").spliterator(), false)
+        .filter(row -> guestId.equals(row.path("userId").asText())).findFirst().orElseThrow();
+    String memberId = member.path("id").asText();
+    assertEquals(200, httpRequest("DELETE", trip + "/members/" + memberId, owner, null).statusCode());
+    apiPost(owner, trip + "/members", Map.of("username", "tr14guest" + suffix, "role", "member"));
+    assertEquals(1, notificationCount(guestId, tripId, "member_invited"));
+  }
+
+  private int notificationCount(String userId, String tripId, String kind) {
+    return jdbc.queryForObject("SELECT count(*) FROM notifications WHERE user_id=? AND metadata->>'tripId'=? "
+        + "AND (type::text=? OR metadata->>'kind'=?)", Integer.class, userId, tripId, kind, kind);
+  }
+
+  private void apiPut(String token, String url, Map<String, Object> body) throws Exception {
+    HttpResponse<String> response = httpRequest("PUT", url, token, body);
+    assertEquals(200, response.statusCode(), response.body());
   }
 
 

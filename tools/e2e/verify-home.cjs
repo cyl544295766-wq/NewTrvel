@@ -51,9 +51,11 @@ function envCheck(cond, msg) { if (cond) ok(msg); else { env++; console.error(' 
 function fatal(msg) { throw new Error('[FAIL] ' + msg); }
 function psql(sql) { return execSync(`${PG} "${sql.replace(/"/g, '\\"')}"`, { encoding: 'utf8' }).trim(); }
 function ymd(offsetDays) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const key = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit' }).format();
+  const d = new Date(key + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
 }
 /* 有界等待：条件达成即返回，超时抛错（替代固定 sleep） */
 async function waitFor(desc, fn, timeout = 15000, interval = 200) {
@@ -260,10 +262,10 @@ async function main() {
   const subA = (await page.locator('#heroSub').textContent()).trim();
   check(/月\d+日\s*周/.test(subA), '日期副标：' + subA);
 
-  const cdA = (await page.locator('.cd-num').textContent()).replace(/\s+/g, ' ').trim();
-  check(cdA.includes('还没有即将开始的旅行'), '空态倒计时文案：' + cdA);
+  const cdA = (await page.locator('.cd-label').textContent()).trim();
+  check(cdA === '开始一段旅程', '空态阶段文案：' + cdA);
   check(await page.locator('#nextTrip').isHidden(), '空态不显示「下一趟旅程」登机牌（不造虚假倒计时）');
-  check(await page.locator('.cd-cta a[href="/trip-form/"]').isVisible(), '空态提供「创建新旅行」入口');
+  check(await page.locator('[data-journey-primary][href="/trip-form/"]').isVisible(), '空态提供「创建行程」入口');
 
   check((await page.locator('#tripBody .empty').textContent()).includes('还没有旅行'), '行程区空态');
   check((await page.locator('#expBody .empty').textContent()).includes('还没有记账'), '花费区空态');
@@ -303,14 +305,17 @@ async function main() {
   check(/月\d+日\s*周/.test(sub), '日期副标：' + sub);
   const cdNum = (await page.locator('.cd-num').textContent()).replace(/\s+/g, ' ').trim();
   check(/距离出发还有\s*12\s*天/.test(cdNum), '倒计时（+12 天出发）：' + cdNum);
-  const cdDest = (await page.locator('.cd-dest').textContent()).trim();
-  check(cdDest.includes('阿斯哈图') && cdDest.includes('出发'), '倒计时目的地与出发日：' + cdDest);
+  const preparation = page.locator('[data-journey-primary]');
+  check((await preparation.textContent()).trim() === '查看出发准备'
+    && (await preparation.getAttribute('href')) === '/trip-detail/?id=' + created.tripId + '#journey-preparation',
+    '出发前的主动作定位到该行程的准备区');
   /* 旧版 Hero 微统计 #hrTrips/#hrDays/#hrFarthest（段数/在路上/最远）已随顶栏化改版移除，
      无同位替代；等价数据由统计四联（#stTrips/#stDays）与登机牌左栏覆盖，见下两条。 */
   const ntTitle = (await page.locator('#ntTitle').textContent()).trim();
   check(ntTitle.includes('首页验证行程（临时）'), '登机牌左栏=下一趟旅程名：' + ntTitle);
   const ntMeta = (await page.locator('#ntMeta').textContent()).trim();
-  check(ntMeta.includes('阿斯哈图') && ntMeta.includes('出发'), '登机牌左栏元信息：' + ntMeta);
+  check(ntMeta.includes('阿斯哈图') && ntMeta.includes(ymd(12).slice(5).replace('-', '/')),
+    '登机牌左栏显示目的地和日历出发日：' + ntMeta);
 
   /* ---- 统计四联（与 /api/dashboard 一致） ---- */
   check((await page.locator('#stTrips').textContent()).trim() === expected.trips, '统计·旅行次数 = ' + expected.trips);

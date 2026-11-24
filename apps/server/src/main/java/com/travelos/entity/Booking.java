@@ -36,6 +36,9 @@ public class Booking {
   @TableField("end_time")
   private Date endTime;
 
+  private String startTimezone;
+  private String endTimezone;
+
   @TableField("order_no")
   private String orderNo;
 
@@ -93,6 +96,10 @@ public class Booking {
   public void setStartTime(Date startTime) { this.startTime = startTime; }
   public Date getEndTime() { return endTime; }
   public void setEndTime(Date endTime) { this.endTime = endTime; }
+  public String getStartTimezone() { return startTimezone; }
+  public void setStartTimezone(String startTimezone) { this.startTimezone = startTimezone; }
+  public String getEndTimezone() { return endTimezone; }
+  public void setEndTimezone(String endTimezone) { this.endTimezone = endTimezone; }
   public String getOrderNo() { return orderNo; }
   public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
   public String getConfirmCode() { return confirmCode; }

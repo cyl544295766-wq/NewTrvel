@@ -584,6 +584,7 @@
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
+<script src="../assets/js/travel-time.js"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -673,7 +674,7 @@
       { v: '2880', label: '提前 2 天' }
     ];
     var $ = function (id) { return document.getElementById(id); };
-    var state = { trip: null, bookings: [], reminders: [], filter: 'all', editingId: null, formType: 'flight', pendingFile: null };
+    var state = { trip: null, bookings: [], reminders: [], filter: 'all', editingId: null, formType: 'flight', pendingFile: null, timeZone: 'Asia/Shanghai' };
 
     /* ===== 工具 ===== */
     function escapeHtml(s) {
@@ -688,18 +689,10 @@
       if (t.length === 16) t += ':00';
       return t;
     }
-    function toLocalInput(iso) {
-      if (!iso) return '';
-      var d = new Date(iso);
-      if (isNaN(d)) return '';
-      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2)
-        + 'T' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-    }
-    function fmtDT(iso) {
-      if (!iso) return '—';
-      var d = new Date(iso);
-      if (isNaN(d)) return '—';
-      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    function fmtDT(iso, originalZone) {
+      var account = TravelTime.display(iso, state.timeZone);
+      if (!iso || !originalZone || originalZone === state.timeZone) return account;
+      return account + '（原时区 ' + TravelTime.display(iso, originalZone) + ' ' + escapeHtml(originalZone) + '）';
     }
     function fmtD(iso) {
       if (!iso) return '—';
@@ -733,6 +726,11 @@
         ]);
         if (results[0].status === 'fulfilled') state.trip = results[0].value.trip || null;
         state.bookings = results[1].status === 'fulfilled' ? (results[1].value.bookings || []) : [];
+        if (results[1].status === 'fulfilled') state.timeZone = results[1].value.timeZone || state.timeZone;
+        if (results[1].status === 'rejected') {
+          $('bkGrid').textContent = '预订暂不可用，或该行程已删除、你已失去访问权限';
+          return;
+        }
         state.reminders = results[2].status === 'fulfilled' ? (results[2].value.reminders || []) : [];
         document.getElementById('crumbTrip').textContent = state.trip ? (state.trip.title || '行程详情') : '行程详情';
         document.getElementById('crumbTrip').href = '/trip-detail/?id=' + encodeURIComponent(tripId);
@@ -842,6 +840,7 @@
         return el.dataset.bk === requested;
       });
       if (card) card.scrollIntoView({ block: 'center' });
+      else showToast('所链接的预订已删除或无法访问');
     }
 
     function canManageBooking(booking) {
@@ -888,8 +887,8 @@
           + '<span class="pt" style="text-align:right">' + escapeHtml(r.to || '—') + '</span>'
           + '</div>';
         main += '<div class="bk-times">'
-          + '<span><span class="k">出发</span>' + fmtDT(b.startTime) + '</span>'
-          + '<span><span class="k">到达</span>' + fmtDT(b.endTime) + '</span>'
+          + '<span><span class="k">出发</span>' + fmtDT(b.startTime, b.startTimezone) + '</span>'
+          + '<span><span class="k">到达</span>' + fmtDT(b.endTime, b.endTimezone) + '</span>'
           + (extra.cabin ? '<span><span class="k">舱位</span>' + escapeHtml(extra.cabin) + '</span>' : '')
           + (extra.seat ? '<span><span class="k">座位</span>' + escapeHtml(extra.seat) + '</span>' : '')
           + '</div>';
@@ -909,8 +908,8 @@
           return '<div class="inf"><div class="k">' + row[0] + '</div><div class="v">' + escapeHtml(row[1]) + '</div></div>';
         }).join('') + '</div>';
         main += '<div class="bk-times">'
-          + '<span><span class="k">' + (b.type === 'hotel' ? '入住' : '开始') + '</span>' + fmtDT(b.startTime) + '</span>'
-          + '<span><span class="k">' + (b.type === 'hotel' ? '退房' : '结束') + '</span>' + fmtDT(b.endTime) + '</span>'
+          + '<span><span class="k">' + (b.type === 'hotel' ? '入住' : '开始') + '</span>' + fmtDT(b.startTime, b.startTimezone) + '</span>'
+          + '<span><span class="k">' + (b.type === 'hotel' ? '退房' : '结束') + '</span>' + fmtDT(b.endTime, b.endTimezone) + '</span>'
           + '</div>';
         if (extra.cancelPolicy) main += '<div class="bk-note">' + escapeHtml(extra.cancelPolicy) + '</div>';
       }
@@ -987,7 +986,7 @@
     /* 收集当前表单里的通用 + extra 值（切类型时保留已填内容） */
     function collectFields() {
       var out = { extra: {} };
-      ['fTitle', 'fStart', 'fEnd', 'fOrderNo', 'fConfirm', 'fBookingAmount', 'fBookingCurrency'].forEach(function (id) {
+      ['fTitle', 'fStart', 'fEnd', 'fStartZone', 'fEndZone', 'fOrderNo', 'fConfirm', 'fBookingAmount', 'fBookingCurrency'].forEach(function (id) {
         var el = $(id); if (el) out[id] = el.value;
       });
       document.querySelectorAll('[data-extra]').forEach(function (el) {
@@ -1013,6 +1012,10 @@
         + '<input type="datetime-local" id="fStart" value="' + escapeHtml(p.fStart || '') + '"></div>';
       html += '<div class="fp-field"><label for="fEnd">结束 / 到达</label>'
         + '<input type="datetime-local" id="fEnd" value="' + escapeHtml(p.fEnd || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fStartZone">出发时区</label>'
+        + '<input id="fStartZone" placeholder="如 Asia/Shanghai" value="' + escapeHtml(p.fStartZone || state.timeZone) + '"></div>';
+      html += '<div class="fp-field"><label for="fEndZone">到达时区</label>'
+        + '<input id="fEndZone" placeholder="如 Asia/Tokyo" value="' + escapeHtml(p.fEndZone || state.timeZone) + '"></div>';
       html += '<div class="fp-field"><label for="fConfirm">确认码</label>'
         + '<input type="text" id="fConfirm" maxlength="60" placeholder="选填" value="' + escapeHtml(p.fConfirm || '') + '"></div>';
       html += '<div class="fp-field"><label for="fBookingAmount">预估金额</label>'
@@ -1080,8 +1083,10 @@
       buildFields(bk ? {
         fTitle: bk.title || '',
         fOrderNo: bk.orderNo || '',
-        fStart: toLocalInput(bk.startTime),
-        fEnd: toLocalInput(bk.endTime),
+        fStart: TravelTime.input(bk.startTime, bk.startTimezone || state.timeZone),
+        fEnd: TravelTime.input(bk.endTime, bk.endTimezone || state.timeZone),
+        fStartZone: bk.startTimezone || state.timeZone,
+        fEndZone: bk.endTimezone || state.timeZone,
         fConfirm: bk.confirmCode || '',
         fBookingAmount: bk.amount || '',
         fBookingCurrency: bk.currency || 'CNY',
@@ -1104,7 +1109,6 @@
       var title = $('fTitle').value.trim();
       if (!title) { $('fTitle').focus(); showToast('请先填写标题'); return; }
       var start = $('fStart').value, end = $('fEnd').value;
-      if (start && end && toLocal(end) < toLocal(start)) { showToast('结束时间不能早于开始时间'); return; }
 
       var extra = {};
       document.querySelectorAll('[data-extra]').forEach(function (el) {
@@ -1116,8 +1120,10 @@
       var body = {
         type: state.formType,
         title: title,
-        startTime: toLocal(start),
-        endTime: toLocal(end),
+        startTime: start || null,
+        endTime: end || null,
+        startTimezone: $('fStartZone').value.trim() || state.timeZone,
+        endTimezone: $('fEndZone').value.trim() || state.timeZone,
         orderNo: $('fOrderNo').value.trim() || null,
         confirmCode: $('fConfirm').value.trim() || null,
         amount: $('fBookingAmount').value || null,
@@ -1126,6 +1132,17 @@
         reminderEnabled: $('fRemEnabled').classList.contains('on')
       };
       if (remV) body.reminderMinutes = Number(remV);
+      var original = state.bookings.find(function (item) { return item.id === state.editingId; });
+      if (original) {
+        ['start', 'end'].forEach(function (edge) {
+          var zone = original[edge + 'Timezone'] || state.timeZone;
+          if ((body[edge + 'Time'] || '') === TravelTime.input(original[edge + 'Time'], zone)
+            && body[edge + 'Timezone'] === zone) {
+            delete body[edge + 'Time'];
+            delete body[edge + 'Timezone'];
+          }
+        });
+      }
       if (state.pendingFile) body.attachmentUrl = state.pendingFile.dataUrl;
 
       var b = $('btnSaveBk');

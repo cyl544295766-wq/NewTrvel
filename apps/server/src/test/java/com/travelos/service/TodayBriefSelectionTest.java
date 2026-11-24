@@ -72,16 +72,17 @@ class TodayBriefSelectionTest {
     travelDocumentService = mock(TravelDocumentService.class);
     llm = mock(LlmGatewayService.class);
     when(llm.isEnabled()).thenReturn(false);                  // 摘要走模板降级，不碰真实模型
-    when(userPreferenceService.get(any())).thenReturn(Map.of()); // 无偏好 → DEFAULT_ZONE
+    when(userPreferenceService.timeZone(USER)).thenReturn(ZONE);
     service = new TodayBriefService(tripService, tripDayMapper, tripPlaceMapper,
         tripMemberService, userPreferenceService, weatherService, bookingService,
-        tripExpenseService, packingListService, travelDocumentService, llm);
+        tripExpenseService, packingListService, travelDocumentService, llm,
+        new TripJourneyService(tripDayMapper, tripPlaceMapper));
   }
 
   // ==================== 夹具 ====================
 
   private static Date day(LocalDate d) {
-    return Date.from(d.atStartOfDay(ZONE).toInstant());
+    return Date.from(d.atStartOfDay(java.time.ZoneOffset.UTC).toInstant());
   }
 
   private static Trip trip(String id, String title, Date start, Date end) {
