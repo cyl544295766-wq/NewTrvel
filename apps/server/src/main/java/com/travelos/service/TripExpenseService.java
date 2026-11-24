@@ -25,9 +25,12 @@ import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.mapper.TripSettlementMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -38,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.TreeMap;
 
 @Service
 public class TripExpenseService {
@@ -120,6 +124,17 @@ public class TripExpenseService {
 
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
+    lockLedger(tripId);
+    return Map.of("expense", toExpenseResponse(createExpense(tripId, userId, dto, null, null)));
+  }
+
+  TripExpense createBookingPayment(String tripId, String userId, Map<String, Object> dto,
+      String bookingId, String operationKey) {
+    return createExpense(tripId, userId, dto, bookingId, operationKey);
+  }
+
+  private TripExpense createExpense(String tripId, String userId, Map<String, Object> dto,
+      String bookingId, String operationKey) {
     long amountCents = toCents(Payloads.text(dto.get("amount")), false);
     String payerUserId = Payloads.text(dto.get("payerUserId")) == null
         ? userId
@@ -158,6 +173,8 @@ public class TripExpenseService {
     expense.setReceiptUrl(receiptUrl);
     expense.setSplitType(plan.splitType());
     expense.setTripDayId(tripDayId);
+    expense.setBookingId(bookingId);
+    expense.setBookingOperationKey(operationKey);
     expense.setIsSettled(false);
     expense.setCreatedAt(new Date());
     expense.setUpdatedAt(new Date());
@@ -166,23 +183,25 @@ public class TripExpenseService {
       insertShare(expense.getId(), share.get("userId"), share.get("shareAmount"));
     }
     checkBudgetNotice(tripId, payerUserId);
-    return Map.of("expense", toExpenseResponse(expenseMapper.selectById(expense.getId())));
+    return expenseMapper.selectById(expense.getId());
   }
 
   @Transactional
   public Map<String, Object> update(String tripId, String expenseId, Map<String, Object> dto,
       String userId) {
+    lockLedger(tripId);
     TripExpense expense = expenseMapper.selectById(expenseId);
     if (expense == null || !expense.getTripId().equals(tripId)) {
       throw ApiException.notFound("费用不存在");
     }
+    requireManualExpense(expense);
 
     String payerUserId = Payloads.text(dto.get("payerUserId")) == null
         ? expense.getPayerUserId()
         : dto.get("payerUserId").toString();
     long amountCents = dto.containsKey("amount")
         ? toCents(Payloads.text(dto.get("amount")), false)
-        : Math.round(expense.getAmount().doubleValue() * 100);
+        : toCentsQuiet(expense.getAmount());
     List<Map<String, String>> existingShares = shareMapper
         .selectList(new LambdaQueryWrapper<TripExpenseShare>()
             .eq(TripExpenseShare::getExpenseId, expenseId))
@@ -240,10 +259,12 @@ public class TripExpenseService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String expenseId, String userId) {
+    lockLedger(tripId);
     TripExpense expense = expenseMapper.selectById(expenseId);
     if (expense == null || !expense.getTripId().equals(tripId)) {
       throw ApiException.notFound("费用不存在");
     }
+    requireManualExpense(expense);
     shareMapper.delete(new LambdaQueryWrapper<TripExpenseShare>()
         .eq(TripExpenseShare::getExpenseId, expenseId));
     expenseMapper.deleteById(expenseId);
@@ -251,6 +272,106 @@ public class TripExpenseService {
         Map.of("title", expense.getTitle() == null ? "" : expense.getTitle(),
             "amount", Fmt.money(expense.getAmount()), "currency", normalizeCurrency(expense.getCurrency())));
     return Map.of("success", true);
+  }
+
+  /** All ledger writes and snapshot confirmations take the trip row lock first. */
+  Trip lockLedger(String tripId) {
+    Trip trip = tripMapper.selectOne(new LambdaQueryWrapper<Trip>()
+        .eq(Trip::getId, tripId).isNull(Trip::getDeletedAt).last("FOR UPDATE"));
+    if (trip == null) {
+      throw ApiException.notFound("旅行不存在");
+    }
+    return trip;
+  }
+
+  private void requireManualExpense(TripExpense expense) {
+    if (expense.getBookingId() != null || bookingMapper.selectCount(new LambdaQueryWrapper<Booking>()
+        .eq(Booking::getTripId, expense.getTripId()).eq(Booking::getExpenseId, expense.getId())) > 0) {
+      throw ApiException.conflict("此账目由预订产生，请到预订页处理退款或撤销入账");
+    }
+  }
+
+  TripExpense bookingPayment(Booking booking) {
+    TripExpense expense = booking.getExpenseId() == null ? null : expenseMapper.selectById(booking.getExpenseId());
+    return expense != null && booking.getTripId().equals(expense.getTripId()) ? expense : null;
+  }
+
+  boolean hasBookingEntries(Booking booking) {
+    return booking.getExpenseId() != null || expenseMapper.selectCount(new LambdaQueryWrapper<TripExpense>()
+        .eq(TripExpense::getTripId, booking.getTripId()).eq(TripExpense::getBookingId, booking.getId())) > 0;
+  }
+
+  TripExpense bookingOperation(Booking booking, String operationKey) {
+    return operationKey == null ? null : expenseMapper.selectOne(new LambdaQueryWrapper<TripExpense>()
+        .eq(TripExpense::getTripId, booking.getTripId()).eq(TripExpense::getBookingId, booking.getId())
+        .eq(TripExpense::getBookingOperationKey, operationKey));
+  }
+
+  private List<TripExpense> bookingCredits(TripExpense payment) {
+    return expenseMapper.selectList(new LambdaQueryWrapper<TripExpense>()
+        .eq(TripExpense::getTripId, payment.getTripId()).eq(TripExpense::getBookingPaymentId, payment.getId()));
+  }
+
+  long refundedCents(TripExpense payment) {
+    return bookingCredits(payment).stream().mapToLong(entry -> -toCentsQuiet(entry.getAmount())).sum();
+  }
+
+  TripExpense recordBookingCredit(Booking booking, TripExpense payment, String kind, String key,
+      long requestedCents, Date spentAt) {
+    List<TripExpense> priorCredits = bookingCredits(payment);
+    long remaining = toCentsQuiet(payment.getAmount())
+        + priorCredits.stream().mapToLong(entry -> toCentsQuiet(entry.getAmount())).sum();
+    long amount = "reversal".equals(kind) ? remaining : requestedCents;
+    if (amount <= 0 || amount > remaining) {
+      throw ApiException.badRequest("退款金额必须大于零，且不能超过剩余实付 " + centsToString(remaining));
+    }
+
+    Map<String, Long> remainingShares = new TreeMap<>();
+    for (TripExpenseShare share : sharesOf(payment.getId())) {
+      remainingShares.merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
+    }
+    for (TripExpense credit : priorCredits) {
+      for (TripExpenseShare share : sharesOf(credit.getId())) {
+        remainingShares.merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
+      }
+    }
+    if (remainingShares.values().stream().anyMatch(value -> value < 0)
+        || remainingShares.values().stream().mapToLong(Long::longValue).sum() != remaining) {
+      throw ApiException.conflict("原账目的分摊与实付不一致，请先核对历史账目");
+    }
+    Map<String, Long> allocated = new LinkedHashMap<>();
+    long tail = amount;
+    for (var entry : remainingShares.entrySet()) {
+      long part = BigInteger.valueOf(entry.getValue()).multiply(BigInteger.valueOf(amount))
+          .divide(BigInteger.valueOf(remaining)).longValueExact();
+      allocated.put(entry.getKey(), part);
+      tail -= part;
+    }
+    for (var entry : allocated.entrySet()) {
+      if (tail > 0 && entry.getValue() < remainingShares.get(entry.getKey())) {
+        entry.setValue(entry.getValue() + 1);
+        tail--;
+      }
+    }
+
+    TripExpense credit = new TripExpense();
+    credit.setTripId(payment.getTripId());
+    credit.setTripDayId(payment.getTripDayId());
+    credit.setPayerUserId(payment.getPayerUserId());
+    credit.setTitle(("reversal".equals(kind) ? "撤销入账 · " : "退款 · ") + payment.getTitle());
+    credit.setCategory(payment.getCategory());
+    credit.setCurrency(normalizeCurrency(payment.getCurrency()));
+    credit.setAmount(centsToDecimal(-amount));
+    credit.setSpentAt(spentAt);
+    credit.setSplitType("amount");
+    credit.setIsSettled(false);
+    credit.setBookingId(booking.getId());
+    credit.setBookingPaymentId(payment.getId());
+    credit.setBookingOperationKey(key);
+    credit.setAdjustmentKind(kind);
+    expenseMapper.insert(credit);
+    allocated.forEach((user, cents) -> insertShare(credit.getId(), user, centsToString(-cents)));
+    return credit;
   }
 
   // ==================== 需求 1：类别预算与超支预警 ====================
@@ -306,6 +427,7 @@ public class TripExpenseService {
   }
 
   /** 预算总览：总预算 + 各类别 预算/已花/预估占用/剩余/超支。 */
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Map<String, Object> getBudget(String tripId, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     Trip trip = tripMapper.selectById(tripId);
@@ -345,7 +467,7 @@ public class TripExpenseService {
     }
     for (Booking booking : bookingMapper.selectList(new LambdaQueryWrapper<Booking>()
         .eq(Booking::getTripId, tripId))) {
-      if (booking.getAmount() == null) {
+      if (booking.getAmount() == null || booking.getCancelledAt() != null) {
         continue;
       }
       // P1-1：已核销（转为费用）的预订计入"已花费"，不再计入预估占用，避免双算
@@ -474,169 +596,6 @@ public class TripExpenseService {
           + "，建议调整各项使合计不超过总预算");
     }
     return body;
-  }
-
-  // ==================== 需求 3：多人分摊与结算 ====================
-
-  /** 实时净额 + 最少转账结算方案（净额正负贪心配对）。TR-02：按币种独立计算，不跨币种抵消。 */
-  public Map<String, Object> settlement(String tripId, String userId) {
-    tripMemberService.requireTripMember(tripId, userId);
-    List<TripExpense> expenses = findExpenses(tripId);
-    List<Map<String, Object>> members = getMembers(tripId);
-
-    // TR-02：按币种分组，每币种独立计算垫付/应付/转账
-    // key = currency，value = [paid, owed] per userId
-    Map<String, Map<String, Long>> paidByCur = new LinkedHashMap<>();
-    Map<String, Map<String, Long>> owedByCur = new LinkedHashMap<>();
-    Map<String, Long> totalByCur = new LinkedHashMap<>();
-    for (TripExpense expense : expenses) {
-      String cur = normalizeCurrency(expense.getCurrency());
-      long cents = toCentsQuiet(expense.getAmount());
-      totalByCur.merge(cur, cents, Long::sum);
-      paidByCur.computeIfAbsent(cur, k -> new LinkedHashMap<>())
-          .merge(expense.getPayerUserId(), cents, Long::sum);
-      for (TripExpenseShare share : sharesOf(expense.getId())) {
-        owedByCur.computeIfAbsent(cur, k -> new LinkedHashMap<>())
-            .merge(share.getUserId(), toCentsQuiet(share.getShareAmount()), Long::sum);
-      }
-    }
-
-    // 每币种独立贪心计算转账
-    Map<String, Object> byCurrency = new LinkedHashMap<>();
-    for (String cur : totalByCur.keySet()) {
-      Map<String, Long> paid = paidByCur.getOrDefault(cur, Map.of());
-      Map<String, Long> owed = owedByCur.getOrDefault(cur, Map.of());
-      Map<String, Object> curResult = computeTransfers(members, paid, owed, cur);
-      byCurrency.put(cur, curResult);
-    }
-
-    String primary = totalByCur.isEmpty() ? "CNY" : totalByCur.keySet().iterator().next();
-    Set<String> currencies = totalByCur.keySet();
-    boolean multiCurrency = currencies.size() > 1;
-
-    Map<String, Object> body = new LinkedHashMap<>();
-    // 兼容旧单币种响应：currency/totalAmount/nets/transfers 取主币种
-    @SuppressWarnings("unchecked")
-    Map<String, Object> primaryResult = totalByCur.isEmpty()
-        ? computeTransfers(members, Map.of(), Map.of(), primary)
-        : (Map<String, Object>) byCurrency.get(primary);
-    body.put("currency", primary);
-    body.put("totalAmount", primaryResult.get("totalAmount"));
-    body.put("nets", primaryResult.get("nets"));
-    body.put("transfers", primaryResult.get("transfers"));
-    body.put("canConfirm", !multiCurrency && !((List<?>) primaryResult.get("transfers")).isEmpty());
-    // TR-02：分币种明细
-    body.put("byCurrency", byCurrency);
-    body.put("currencies", currencies);
-    body.put("multiCurrency", multiCurrency);
-    // 混币时明确提示不可确认（分币种确认上线前）
-    if (multiCurrency) {
-      body.put("confirmBlockedReason",
-          "当前行程包含多种币种（" + String.join("、", currencies) + "），分币种结算尚未上线。"
-              + "可查看各币种的独立结算明细，当前无法确认结算。");
-    }
-    body.put("latestSettlement", latestSettlementMap(tripId));
-    return body;
-  }
-
-  /** 单币种净额 + 贪心转账计算。独立于其他币种，不跨币种抵消。 */
-  private Map<String, Object> computeTransfers(List<Map<String, Object>> members,
-      Map<String, Long> paid, Map<String, Long> owed, String currency) {
-    long total = 0;
-    for (Long v : paid.values()) total += v;
-    List<Map<String, Object>> nets = new ArrayList<>();
-    List<long[]> creditors = new ArrayList<>();
-    List<long[]> debtors = new ArrayList<>();
-    for (int index = 0; index < members.size(); index++) {
-      Map<String, Object> member = members.get(index);
-      String memberId = member.get("userId").toString();
-      long net = paid.getOrDefault(memberId, 0L) - owed.getOrDefault(memberId, 0L);
-      Map<String, Object> row = new LinkedHashMap<>();
-      row.put("userId", memberId);
-      row.put("displayName", member.get("displayName"));
-      row.put("paid", centsToString(paid.getOrDefault(memberId, 0L)));
-      row.put("owed", centsToString(owed.getOrDefault(memberId, 0L)));
-      row.put("net", centsToString(net));
-      nets.add(row);
-      if (net > 0) {
-        creditors.add(new long[]{index, net});
-      } else if (net < 0) {
-        debtors.add(new long[]{index, -net});
-      }
-    }
-    creditors.sort((a, b) -> Long.compare(b[1], a[1]));
-    debtors.sort((a, b) -> Long.compare(b[1], a[1]));
-    List<Map<String, Object>> transfers = new ArrayList<>();
-    int ci = 0;
-    int di = 0;
-    while (ci < creditors.size() && di < debtors.size()) {
-      long[] creditor = creditors.get(ci);
-      long[] debtor = debtors.get(di);
-      long amount = Math.min(creditor[1], debtor[1]);
-      if (amount > 0) {
-        Map<String, Object> transfer = new LinkedHashMap<>();
-        transfer.put("fromUserId", members.get((int) debtor[0]).get("userId"));
-        transfer.put("fromDisplayName", members.get((int) debtor[0]).get("displayName"));
-        transfer.put("toUserId", members.get((int) creditor[0]).get("userId"));
-        transfer.put("toDisplayName", members.get((int) creditor[0]).get("displayName"));
-        transfer.put("amount", centsToString(amount));
-        transfer.put("currency", currency);
-        transfers.add(transfer);
-      }
-      creditor[1] -= amount;
-      debtor[1] -= amount;
-      if (creditor[1] == 0) ci++;
-      if (debtor[1] == 0) di++;
-    }
-    Map<String, Object> result = new LinkedHashMap<>();
-    result.put("currency", currency);
-    result.put("totalAmount", centsToString(total));
-    result.put("nets", nets);
-    result.put("transfers", transfers);
-    return result;
-  }
-
-  /** 确认结算（owner/admin）：把当前方案快照存档并通知全部成员。TR-02：混币拦截。 */
-  @Transactional
-  public Map<String, Object> confirmSettlement(String tripId, String confirmedBy) {
-    Map<String, Object> plan = settlement(tripId, confirmedBy);
-    // TR-02：混币确认拦截——分币种确认上线前不隐式换算
-    if (Boolean.TRUE.equals(plan.get("multiCurrency"))) {
-      throw ApiException.badRequest(String.valueOf(plan.get("confirmBlockedReason")));
-    }
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> transfers = (List<Map<String, Object>>) plan.get("transfers");
-    if (transfers.isEmpty()) {
-      throw ApiException.badRequest("当前没有需要结算的账目");
-    }
-    Trip trip = tripMapper.selectById(tripId);
-    String tripTitle = trip == null ? "" : trip.getTitle();
-
-    Map<String, Object> snapshot = new LinkedHashMap<>();
-    snapshot.put("currency", plan.get("currency"));
-    snapshot.put("totalAmount", plan.get("totalAmount"));
-    snapshot.put("nets", plan.get("nets"));
-    snapshot.put("transfers", transfers);
-    snapshot.put("confirmedAt", new Date());
-    snapshot.put("confirmedBy", confirmedBy);
-
-    TripSettlement settlement = new TripSettlement();
-    settlement.setTripId(tripId);
-    settlement.setSnapshot(com.travelos.common.JsonUtil.write(snapshot));
-    settlement.setStatus("confirmed");
-    settlement.setConfirmedBy(confirmedBy);
-    settlement.setCreatedAt(new Date());
-    settlementMapper.insert(settlement);
-
-    // 全员通知「xx 之旅账目已结清」
-    for (TripMember member : tripMemberService.listMembers(tripId)) {
-      notificationService.createSettlementConfirmed(member.getUserId(), tripId, tripTitle,
-          "旅行「" + tripTitle + "」的账目已结清，共 " + transfers.size() + " 笔转账，点击查看结算方案。");
-    }
-    auditService.record(confirmedBy, tripId, "settlement_confirmed", "trip", tripId,
-        Map.of("totalAmount", plan.get("totalAmount"), "currency", plan.get("currency"),
-            "transfers", transfers.size()));
-    return Map.of("settlement", settlementMap(settlement, tripTitle));
   }
 
   // ==================== 需求 4：单次旅行统计报表 ====================
@@ -952,12 +911,12 @@ public class TripExpenseService {
   private Map<String, Object> latestSettlementMap(String tripId) {
     TripSettlement settlement = settlementMapper.selectOne(new LambdaQueryWrapper<TripSettlement>()
         .eq(TripSettlement::getTripId, tripId)
-        .orderByDesc(TripSettlement::getCreatedAt)
+        .orderByDesc(TripSettlement::getCreatedAt, TripSettlement::getId)
         .last("LIMIT 1"));
     return settlement == null ? null : settlementMap(settlement, null);
   }
 
-  private Map<String, Object> settlementMap(TripSettlement settlement, String tripTitle) {
+  Map<String, Object> settlementMap(TripSettlement settlement, String tripTitle) {
     Map<String, Object> map = new LinkedHashMap<>();
     map.put("id", settlement.getId());
     map.put("tripId", settlement.getTripId());
@@ -1077,7 +1036,7 @@ public class TripExpenseService {
     String primaryCur = currencySet.isEmpty() ? "CNY" : currencySet.iterator().next();
     long total = totalByCurrency.getOrDefault(primaryCur, 0L);
     Long budgetCents = budget == null ? null : toCents(budget, true);
-    long remainingBudget = budgetCents == null ? 0 : budgetCents - total;
+    long remainingBudget = budgetCents == null ? 0 : budgetCents - totalByCurrency.getOrDefault("CNY", 0L);
     Map<String, String> displayNameById = new LinkedHashMap<>();
     for (Map<String, Object> member : members) {
       displayNameById.put(member.get("userId").toString(), member.get("displayName").toString());
@@ -1085,6 +1044,7 @@ public class TripExpenseService {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("budget", budget);
+    body.put("budgetCurrency", "CNY");
     body.put("currency", primaryCur);
     body.put("currencies", currencySet);
     body.put("totalExpenseAmount", centsToString(total));
@@ -1126,7 +1086,7 @@ public class TripExpenseService {
     return body;
   }
 
-  private List<Map<String, Object>> getMembers(String tripId) {
+  List<Map<String, Object>> getMembers(String tripId) {
     List<Map<String, Object>> members = new ArrayList<>();
     for (TripMember member : tripMemberService.listMembers(tripId)) {
       User user = userMapper.selectById(member.getUserId());
@@ -1191,12 +1151,12 @@ public class TripExpenseService {
         .orderByDesc(TripExpense::getSpentAt));
   }
 
-  private List<TripExpenseShare> sharesOf(String expenseId) {
+  List<TripExpenseShare> sharesOf(String expenseId) {
     return shareMapper.selectList(new LambdaQueryWrapper<TripExpenseShare>()
         .eq(TripExpenseShare::getExpenseId, expenseId));
   }
 
-  private Map<String, Object> toExpenseResponse(TripExpense expense) {
+  Map<String, Object> toExpenseResponse(TripExpense expense) {
     User payer = userMapper.selectById(expense.getPayerUserId());
     Map<String, Object> payerMap = new LinkedHashMap<>();
     payerMap.put("id", expense.getPayerUserId());
@@ -1222,6 +1182,9 @@ public class TripExpenseService {
     map.put("receiptUrl", expense.getReceiptUrl());
     map.put("splitType", expense.getSplitType());
     map.put("tripDayId", expense.getTripDayId());
+    map.put("bookingId", expense.getBookingId());
+    map.put("bookingPaymentId", expense.getBookingPaymentId());
+    map.put("adjustmentKind", expense.getAdjustmentKind());
     map.put("payer", payerMap);
     map.put("shares", shares);
     return map;
@@ -1237,32 +1200,32 @@ public class TripExpenseService {
     shareMapper.insert(share);
   }
 
-  private long toCents(String amount, boolean allowZero) {
-    double value;
+  static long toCents(String amount, boolean allowZero) {
     try {
-      value = Double.parseDouble(amount);
-    } catch (NumberFormatException ex) {
-      throw ApiException.badRequest("金额不能小于 0");
+      BigDecimal value = new BigDecimal(amount == null ? "" : amount.trim());
+      if (value.signum() < 0) {
+        throw ApiException.badRequest("金额不能小于 0");
+      }
+      long cents = toCentsQuiet(value);
+      if (!allowZero && cents == 0) {
+        throw ApiException.badRequest("金额必须大于 0");
+      }
+      return cents;
+    } catch (NumberFormatException | ArithmeticException ex) {
+      throw ApiException.badRequest("金额格式不正确或超出范围");
     }
-    if (Double.isNaN(value) || Double.isInfinite(value) || value < 0) {
-      throw ApiException.badRequest("金额不能小于 0");
-    }
-    if (!allowZero && value <= 0) {
-      throw ApiException.badRequest("金额必须大于 0");
-    }
-    return Math.round(value * 100);
   }
 
-  private long toCentsQuiet(BigDecimal amount) {
-    return amount == null ? 0 : Math.round(amount.doubleValue() * 100);
+  static long toCentsQuiet(BigDecimal amount) {
+    return amount == null ? 0 : amount.setScale(2, RoundingMode.HALF_UP).movePointRight(2).longValueExact();
   }
 
   private BigDecimal centsToDecimal(long cents) {
     return BigDecimal.valueOf(cents, 2);
   }
 
-  private String centsToString(long cents) {
-    return String.format(java.util.Locale.ROOT, "%.2f", cents / 100.0);
+  static String centsToString(long cents) {
+    return BigDecimal.valueOf(cents, 2).toPlainString();
   }
 
 }

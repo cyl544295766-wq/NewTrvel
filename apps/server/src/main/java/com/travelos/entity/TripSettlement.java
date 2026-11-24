@@ -23,6 +23,8 @@ public class TripSettlement {
   private String status;
 
   private String confirmedBy;
+  private String currency;
+  private String previewToken;
 
   @TableField(value = "created_at", fill = FieldFill.INSERT)
   private Date createdAt;
@@ -37,6 +39,10 @@ public class TripSettlement {
   public void setStatus(String status) { this.status = status; }
   public String getConfirmedBy() { return confirmedBy; }
   public void setConfirmedBy(String confirmedBy) { this.confirmedBy = confirmedBy; }
+  public String getCurrency() { return currency; }
+  public void setCurrency(String currency) { this.currency = currency; }
+  public String getPreviewToken() { return previewToken; }
+  public void setPreviewToken(String previewToken) { this.previewToken = previewToken; }
   public Date getCreatedAt() { return createdAt; }
   public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
 }

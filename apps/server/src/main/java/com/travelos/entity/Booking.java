@@ -66,6 +66,7 @@ public class Booking {
   /** 一键核销：转为费用后记录 trip_expenses.id；非空表示已入账（退出预估占用） */
   @TableField("expense_id")
   private String expenseId;
+  private Date cancelledAt;
 
   @TableField("creator_id")
   private String creatorId;
@@ -112,6 +113,8 @@ public class Booking {
   public void setExtra(String extra) { this.extra = extra; }
   public String getExpenseId() { return expenseId; }
   public void setExpenseId(String expenseId) { this.expenseId = expenseId; }
+  public Date getCancelledAt() { return cancelledAt; }
+  public void setCancelledAt(Date cancelledAt) { this.cancelledAt = cancelledAt; }
   public String getCreatorId() { return creatorId; }
   public void setCreatorId(String creatorId) { this.creatorId = creatorId; }
   public Date getCreatedAt() { return createdAt; }

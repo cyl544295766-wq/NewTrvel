@@ -1,18 +1,21 @@
 package com.travelos.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.common.Payloads;
 import com.travelos.common.ApiException;
 import com.travelos.common.DateUtil;
 import com.travelos.common.Fmt;
 import com.travelos.entity.Booking;
 import com.travelos.entity.TripDay;
+import com.travelos.entity.TripExpense;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.BookingMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -84,6 +87,7 @@ public class BookingService {
   @Transactional
   public Map<String, Object> update(String tripId, String bookingId, Map<String, Object> dto,
       String userId) {
+    tripExpenseService.lockLedger(tripId);
     tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     Booking booking = requireBooking(tripId, bookingId);
     // 数据隔离：仅创建者本人或行程 owner/admin 可修改（NULL 属主为存量兼容）
@@ -93,6 +97,10 @@ public class BookingService {
     applyDefaultReminder(booking, dto);
     booking.setUpdatedAt(new Date());
     bookingMapper.updateById(booking);
+    if (dto.containsKey("amount") && booking.getAmount() == null) {
+      bookingMapper.update(null, new LambdaUpdateWrapper<Booking>().eq(Booking::getId, bookingId)
+          .set(Booking::getAmount, null));
+    }
     return Map.of("booking", toResponse(booking, true));
   }
 
@@ -115,9 +123,13 @@ public class BookingService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String bookingId, String userId) {
+    tripExpenseService.lockLedger(tripId);
     tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     Booking booking = requireBooking(tripId, bookingId);
     tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
+    if (tripExpenseService.hasBookingEntries(booking)) {
+      throw ApiException.conflict("此预订有账目记录，请使用取消预订保留对账历史");
+    }
     bookingMapper.deleteById(bookingId);
     auditService.record(userId, tripId, "booking_deleted", "booking", bookingId,
         Map.of("title", booking.getTitle(), "type", booking.getType()));
@@ -131,23 +143,33 @@ public class BookingService {
    * 成功后在 booking 上记 expense_id，已核销的预订退出预算"预估占用"。
    */
   @Transactional
-  public Map<String, Object> convertToExpense(String tripId, String bookingId, String userId) {
-    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
-    Booking booking = requireBooking(tripId, bookingId);
-    tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
-    if (booking.getExpenseId() != null && !booking.getExpenseId().isBlank()) {
-      throw ApiException.conflict("该预订已转为费用，无需重复操作");
+  public Map<String, Object> convertToExpense(String tripId, String bookingId, String userId,
+      Map<String, Object> input) {
+    Booking booking = lockBookingLedger(tripId, bookingId, userId);
+    String key = operationKey(input, false);
+    TripExpense replay = tripExpenseService.bookingOperation(booking, key);
+    if (replay != null) {
+      if (replay.getAdjustmentKind() != null) {
+        throw ApiException.conflict("操作编号已用于其他账目操作");
+      }
+      return bookingLedgerResponse(booking, replay);
     }
-    if (booking.getAmount() == null || booking.getAmount().signum() <= 0) {
-      throw ApiException.badRequest("该预订未填写金额，请先补全金额再转为费用");
+    TripExpense payment = tripExpenseService.bookingPayment(booking);
+    if (payment != null) {
+      return bookingLedgerResponse(booking, payment);
+    }
+    if (booking.getCancelledAt() != null) {
+      throw ApiException.conflict("预订已取消，无法重新入账");
     }
     List<String> memberIds = tripMemberService.listMembers(tripId).stream()
         .map(com.travelos.entity.TripMember::getUserId)
         .toList();
     Map<String, Object> dto = new LinkedHashMap<>();
     dto.put("title", booking.getTitle());
-    dto.put("amount", booking.getAmount().toPlainString());
-    dto.put("currency", booking.getCurrency());
+    dto.put("amount", input.getOrDefault("amount", booking.getAmount()));
+    dto.put("currency", TripExpenseService.normalizeCurrency(
+        Payloads.text(input.getOrDefault("currency", booking.getCurrency()))));
+    dto.put("payerUserId", input.get("payerUserId"));
     dto.put("tripDayId", booking.getTripDayId());
     dto.put("category", TYPE_TO_EXPENSE_CATEGORY.getOrDefault(
         booking.getType() == null ? "other" : booking.getType(), "other"));
@@ -160,21 +182,93 @@ public class BookingService {
       memo += "（订单号 " + booking.getOrderNo() + "）";
     }
     dto.put("notes", memo);
-    dto.put("shareUserIds", memberIds);
-    Map<String, Object> created = tripExpenseService.create(tripId, userId, dto);
-    @SuppressWarnings("unchecked")
-    Map<String, Object> expense = (Map<String, Object>) created.get("expense");
-    booking.setExpenseId(String.valueOf(expense.get("id")));
+    dto.put("shareUserIds", input.getOrDefault("shareUserIds", memberIds));
+    if (!(dto.get("shareUserIds") instanceof List<?> picked) || picked.isEmpty()) {
+      throw ApiException.badRequest("请至少选择一位分摊成员");
+    }
+    payment = tripExpenseService.createBookingPayment(tripId, userId, dto, bookingId, key);
+    booking.setExpenseId(payment.getId());
     booking.setUpdatedAt(new Date());
     bookingMapper.updateById(booking);
     auditService.record(userId, tripId, "booking_converted", "booking", bookingId,
         Map.of("title", booking.getTitle(),
-            "amount", Fmt.money(booking.getAmount()),
-            "currency", TripExpenseService.normalizeCurrency(booking.getCurrency()),
+            "amount", Fmt.money(payment.getAmount()),
+            "currency", TripExpenseService.normalizeCurrency(payment.getCurrency()),
             "expenseId", booking.getExpenseId()));
-    return Map.of("booking", toResponse(booking, true), "expense", expense);
+    return bookingLedgerResponse(booking, payment);
   }
 
+  @Transactional
+  public Map<String, Object> cancel(String tripId, String bookingId, String userId) {
+    Booking booking = lockBookingLedger(tripId, bookingId, userId);
+    if (booking.getCancelledAt() == null) {
+      booking.setCancelledAt(new Date());
+      booking.setReminderEnabled(false);
+      booking.setUpdatedAt(new Date());
+      bookingMapper.updateById(booking);
+      auditService.record(userId, tripId, "booking_cancelled", "booking", bookingId,
+          Map.of("title", booking.getTitle()));
+    }
+    return Map.of("booking", toResponse(booking, true));
+  }
+
+  @Transactional
+  public Map<String, Object> credit(String tripId, String bookingId, String userId,
+      Map<String, Object> input, boolean reverse) {
+    Booking booking = lockBookingLedger(tripId, bookingId, userId);
+    String kind = reverse ? "reversal" : "refund";
+    String key = operationKey(input, true);
+    long amount = reverse ? 0 : TripExpenseService.toCents(Payloads.text(input.get("amount")), false);
+    TripExpense replay = tripExpenseService.bookingOperation(booking, key);
+    if (replay != null) {
+      if (!kind.equals(replay.getAdjustmentKind())
+          || (!reverse && -TripExpenseService.toCentsQuiet(replay.getAmount()) != amount)) {
+        throw ApiException.conflict("操作编号已用于其他账目操作");
+      }
+      return bookingLedgerResponse(booking, replay);
+    }
+    TripExpense payment = tripExpenseService.bookingPayment(booking);
+    if (payment == null) {
+      throw ApiException.conflict("预订没有可调整的入账记录");
+    }
+    if (reverse && tripExpenseService.refundedCents(payment) > 0) {
+      throw ApiException.conflict("此预订已有实际退款，请按实收继续记录退款");
+    }
+    Date date = input.get("spentAt") == null ? new Date() : DateUtil.parse(input.get("spentAt").toString());
+    TripExpense credit = tripExpenseService.recordBookingCredit(booking, payment, kind, key, amount, date);
+    if (reverse) {
+      booking.setExpenseId(null);
+      bookingMapper.update(null, new LambdaUpdateWrapper<Booking>().eq(Booking::getId, booking.getId())
+          .set(Booking::getExpenseId, null).set(Booking::getUpdatedAt, new Date()));
+    }
+    auditService.record(userId, tripId, "booking_" + kind, "booking", bookingId,
+        Map.of("title", booking.getTitle(), "expenseId", credit.getId(),
+            "amount", Fmt.money(credit.getAmount()),
+            "currency", TripExpenseService.normalizeCurrency(credit.getCurrency())));
+    return bookingLedgerResponse(booking, credit);
+  }
+
+  private Booking lockBookingLedger(String tripId, String bookingId, String userId) {
+    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
+    tripExpenseService.lockLedger(tripId);
+    Booking booking = requireBooking(tripId, bookingId);
+    tripMemberService.requireOwnerOrManager(tripId, booking.getCreatorId(), userId, "预订创建者");
+    return booking;
+  }
+
+  private String operationKey(Map<String, Object> input, boolean required) {
+    String key = Payloads.trimmedOrNull(input.get("operationKey"));
+    if ((key == null && required) || (key != null && !key.matches("[a-zA-Z0-9_-]{1,128}"))) {
+      throw ApiException.badRequest("请提供有效的操作编号");
+    }
+    return key;
+  }
+
+  private Map<String, Object> bookingLedgerResponse(Booking booking, TripExpense entry) {
+    return Map.of("booking", toResponse(booking, true), "expense", tripExpenseService.toExpenseResponse(entry));
+  }
+
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Map<String, Object> findAll(String tripId, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     List<Map<String, Object>> bookings = findBookingsByTrip(tripId).stream()
@@ -187,6 +281,7 @@ public class BookingService {
   public Map<String, Object> vouchers(String tripId, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     List<Map<String, Object>> vouchers = findBookingsByTrip(tripId).stream()
+        .filter(booking -> booking.getCancelledAt() == null)
         .map(booking -> {
           Map<String, Object> map = new LinkedHashMap<>();
           map.put("id", booking.getId());
@@ -208,6 +303,7 @@ public class BookingService {
   public Map<String, Object> reminders(String tripId, String userId) {
     tripMemberService.requireTripMember(tripId, userId);
     List<Map<String, Object>> reminders = findBookingsByTrip(tripId).stream()
+        .filter(booking -> booking.getCancelledAt() == null)
         .map(booking -> {
           Map<String, Object> map = new LinkedHashMap<>();
           map.put("id", booking.getId());
@@ -226,7 +322,7 @@ public class BookingService {
   /** 行程天角标摘要：关联到某天的预订（供时间轴显示订单角标）。 */
   public List<Map<String, Object>> daySummaries(String tripId, String tripDayId) {
     return findBookingsByTrip(tripId).stream()
-        .filter(booking -> tripDayId.equals(booking.getTripDayId()))
+        .filter(booking -> booking.getCancelledAt() == null && tripDayId.equals(booking.getTripDayId()))
         .map(booking -> {
           Map<String, Object> map = new LinkedHashMap<>();
           map.put("id", booking.getId());
@@ -415,6 +511,18 @@ public class BookingService {
     map.put("reminderSentAt", booking.getReminderSentAt());
     map.put("creatorId", booking.getCreatorId());
     map.put("expenseId", booking.getExpenseId());
+    map.put("cancelledAt", booking.getCancelledAt());
+    map.put("hasLedgerEntries", tripExpenseService.hasBookingEntries(booking));
+    TripExpense payment = tripExpenseService.bookingPayment(booking);
+    long paid = payment == null ? 0 : TripExpenseService.toCentsQuiet(payment.getAmount());
+    long refunded = payment == null ? 0 : tripExpenseService.refundedCents(payment);
+    String status = payment == null ? "pending" : refunded == 0 ? "paid"
+        : refunded == paid ? "refunded" : "partial_refund";
+    map.put("paymentStatus", status);
+    map.put("paidAmount", TripExpenseService.centsToString(paid));
+    map.put("paidCurrency", payment == null ? null : payment.getCurrency());
+    map.put("refundedAmount", TripExpenseService.centsToString(refunded));
+    map.put("refundableAmount", TripExpenseService.centsToString(paid - refunded));
     map.put("createdAt", booking.getCreatedAt());
     map.put("updatedAt", booking.getUpdatedAt());
     map.put("extra", parseExtra(booking.getExtra()));
@@ -441,11 +549,7 @@ public class BookingService {
     if (text.isEmpty()) {
       return null;
     }
-    try {
-      return new BigDecimal(text);
-    } catch (NumberFormatException ex) {
-      throw ApiException.badRequest("金额格式不正确");
-    }
+    return BigDecimal.valueOf(TripExpenseService.toCents(text, true), 2);
   }
 
   private Date toDateOrNull(Object value) {

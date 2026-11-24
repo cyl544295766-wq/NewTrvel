@@ -295,17 +295,19 @@ class RequirementVerificationTest {
     assertEquals("100.00", budget.path("totalSpent").asText());
     assertEquals("0.00", budget.path("totalEstimated").asText());
     assertEquals("400.00", budget.path("totalRemaining").asText());
+    assertEquals("400.00", wallet.path("remainingBudget").asText());
     assertEquals("100.00", budget.path("foreignCurrencySpent").path("USD").asText());
     assertEquals("125.43", budget.path("foreignCurrencyEstimated").path("USD").asText());
 
     JsonNode plan = apiGet(owner, expenses + "/settlement");
     assertFalse(plan.path("canConfirm").asBoolean(true));
     assertTrue(plan.path("confirmBlockedReason").asText().contains("多种币种"));
-    for (String currency : List.of("CNY", "USD")) {
-      JsonNode group = plan.path("byCurrency").path(currency);
-      assertEquals("100.00", group.path("totalAmount").asText());
-      assertEquals("50.00", group.path("transfers").get(0).path("amount").asText());
-    }
+    JsonNode cny = plan.path("byCurrency").path("CNY");
+    assertEquals("0.00", cny.path("totalAmount").asText());
+    assertEquals(0, cny.path("transfers").size());
+    JsonNode usd = plan.path("byCurrency").path("USD");
+    assertEquals("100.00", usd.path("totalAmount").asText());
+    assertEquals("50.00", usd.path("transfers").get(0).path("amount").asText());
     assertEquals(snapshot.path("id"), plan.path("latestSettlement").path("id"));
     HttpResponse<String> rejected = httpRequest("POST", confirm, owner, null);
     assertEquals(400, rejected.statusCode());
@@ -469,6 +471,161 @@ class RequirementVerificationTest {
         "previewToken", fill.path("previewToken").asText()));
     assertEquals(3, apiGet(owner, draft + "/days").path("days").size());
   }
+
+  @Test
+  @Order(40)
+  void tr10And11_bookingCreditsAndSettlementDeltas() throws Exception {
+    String owner = register("tr10owner" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String guest = register("tr10guest" + suffix);
+    String guestId = createdUserIds.get(createdUserIds.size() - 1);
+    String tripId = apiPost(owner, "/api/trips", Map.of("title", "预订退款与结算", "budget", 500))
+        .path("trip").path("id").asText();
+    createdTripIds.add(tripId);
+    invite(owner, ownerId, guest, "tr10guest" + suffix, tripId);
+    String path = "/api/trips/" + tripId;
+    String expenses = path + "/expenses";
+    String bookings = path + "/bookings";
+    String confirm = expenses + "/settlement/confirm";
+
+    JsonNode cancelled = apiPost(owner, bookings, Map.of("title", "取消行程", "type", "hotel", "amount", "20",
+        "currency", "USD")).path("booking");
+    assertEquals("20.00", apiGet(owner, expenses + "/budget").path("foreignCurrencyEstimated").path("USD").asText());
+    apiPost(owner, bookings + "/" + cancelled.path("id").asText() + "/cancel", null);
+    assertTrue(apiGet(owner, expenses + "/budget").path("foreignCurrencyEstimated").isEmpty());
+
+    JsonNode booking = apiPost(owner, bookings, Map.of("title", "美元住宿", "type", "hotel", "amount", "120",
+        "currency", "USD")).path("booking");
+    String bookingId = booking.path("id").asText();
+    String entry = bookings + "/" + bookingId;
+    Map<String, Object> payment = Map.of("operationKey", "booking-payment", "amount", "100.03",
+        "currency", "USD", "payerUserId", guestId, "shareUserIds", List.of(ownerId, guestId));
+    java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+    JsonNode booked;
+    try {
+      var barrier = new java.util.concurrent.CyclicBarrier(2);
+      java.util.concurrent.Callable<JsonNode> send = () -> {
+        barrier.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        return apiPost(owner, entry + "/convert-expense", payment);
+      };
+      var first = executor.submit(send);
+      var second = executor.submit(send);
+      booked = first.get(20, java.util.concurrent.TimeUnit.SECONDS);
+      assertEquals(booked.path("expense").path("id"), second.get(20, java.util.concurrent.TimeUnit.SECONDS)
+          .path("expense").path("id"));
+    } finally {
+      executor.shutdownNow();
+    }
+    String paidId = booked.path("expense").path("id").asText();
+    assertEquals(1, apiGet(owner, expenses).path("expenses").size());
+    assertEquals("100.03", booked.path("booking").path("paidAmount").asText());
+    assertTrue(apiGet(owner, expenses + "/budget").path("foreignCurrencyEstimated").isEmpty());
+    assertEquals(409, httpRequest("DELETE", expenses + "/" + paidId, owner, null).statusCode());
+
+    apiPost(owner, expenses, Map.of("amount", "60.00", "currency", "CNY",
+        "shareUserIds", List.of(ownerId, guestId)));
+    JsonNode firstPlan = apiGet(owner, expenses + "/settlement");
+    String usdToken = firstPlan.path("byCurrency").path("USD").path("previewToken").asText();
+    apiPost(owner, entry + "/cancel", null);
+    assertEquals("100.03", apiGet(owner, expenses + "/budget").path("foreignCurrencySpent").path("USD").asText());
+    Map<String, Object> refundBody = Map.of("operationKey", "refund-one", "amount", "10.01");
+    JsonNode refund = apiPost(owner, entry + "/refund", refundBody);
+    assertEquals("partial_refund", refund.path("booking").path("paymentStatus").asText());
+    assertEquals("-10.01", refund.path("expense").path("amount").asText());
+    assertEquals(refund.path("expense").path("id"), apiPost(owner, entry + "/refund", refundBody).path("expense").path("id"));
+    assertEquals(409, httpRequest("POST", entry + "/refund", owner,
+        Map.of("operationKey", "refund-one", "amount", "9")).statusCode());
+    assertEquals(400, httpRequest("POST", entry + "/refund", owner,
+        Map.of("operationKey", "too-much", "amount", "90.03")).statusCode());
+    assertEquals(409, httpRequest("POST", confirm, owner,
+        Map.of("currency", "USD", "previewToken", usdToken)).statusCode());
+
+    JsonNode choices = apiGet(owner, expenses + "/settlement").path("byCurrency");
+    JsonNode cny = apiPost(owner, confirm, confirmation("CNY", choices.path("CNY"))).path("settlement");
+    JsonNode usd = apiPost(owner, confirm, confirmation("USD", choices.path("USD"))).path("settlement");
+    assertEquals("60.00", cny.path("snapshot").path("totalAmount").asText());
+    assertEquals("90.02", usd.path("snapshot").path("totalAmount").asText());
+    assertEquals(usd.path("id"), apiPost(owner, confirm, confirmation("USD", choices.path("USD")))
+        .path("settlement").path("id"));
+
+    String membership = "";
+    for (JsonNode member : apiGet(owner, path + "/members").path("members")) {
+      if (guestId.equals(member.path("userId").asText())) membership = member.path("id").asText();
+    }
+    assertFalse(membership.isEmpty());
+    assertEquals(200, httpRequest("DELETE", path + "/members/" + membership, owner, null).statusCode());
+    assertTrue(httpRequest("GET", expenses + "/settlement", guest, null).statusCode() >= 400);
+    JsonNode lastRefund = apiPost(owner, entry + "/refund", Map.of("operationKey", "refund-two", "amount", "90.02"));
+    assertEquals("refunded", lastRefund.path("booking").path("paymentStatus").asText());
+    assertEquals("0.00", apiGet(owner, expenses + "/budget").path("foreignCurrencySpent").path("USD").asText());
+
+    apiPost(owner, expenses, Map.of("amount", "20.00", "currency", "USD", "shareUserIds", List.of(ownerId)));
+    JsonNode delta = apiGet(owner, expenses + "/settlement").path("byCurrency").path("USD");
+    assertEquals("-70.02", delta.path("totalAmount").asText());
+    assertEquals(usd.path("id").asText(), delta.path("baseSettlementId").asText());
+    boolean formerMemberVisible = false;
+    long paid = 0, owed = 0;
+    for (JsonNode net : delta.path("nets")) {
+      if (guestId.equals(net.path("userId").asText())) formerMemberVisible = net.path("formerMember").asBoolean();
+      paid += new java.math.BigDecimal(net.path("paid").asText()).movePointRight(2).longValueExact();
+      owed += new java.math.BigDecimal(net.path("owed").asText()).movePointRight(2).longValueExact();
+    }
+    assertTrue(formerMemberVisible);
+    assertEquals(paid, owed);
+    assertEquals("-70.02", apiPost(owner, confirm, confirmation("USD", delta)).path("settlement")
+        .path("snapshot").path("totalAmount").asText());
+    JsonNode history = apiGet(owner, expenses + "/settlement").path("history");
+    assertEquals(3, history.size());
+    assertTrue(java.util.stream.StreamSupport.stream(history.spliterator(), false)
+        .anyMatch(row -> row.path("id").equals(usd.path("id")) && row.path("snapshot").equals(usd.path("snapshot"))));
+
+    String reversedBooking = apiPost(owner, bookings, Map.of("title", "误入账", "type", "hotel", "amount", "15"))
+        .path("booking").path("id").asText();
+    String reversePath = bookings + "/" + reversedBooking;
+    apiPost(owner, reversePath + "/convert-expense", Map.of("operationKey", "reversible-payment"));
+    JsonNode reversed = apiPost(owner, reversePath + "/reverse-expense", Map.of("operationKey", "reversal-one"));
+    assertEquals("pending", reversed.path("booking").path("paymentStatus").asText());
+    assertTrue(reversed.path("booking").path("expenseId").isNull());
+    assertEquals("reversal", reversed.path("expense").path("adjustmentKind").asText());
+    assertEquals("15.00", apiGet(owner, expenses + "/budget").path("totalEstimated").asText());
+    assertEquals("60.00", apiGet(owner, expenses + "/budget").path("totalSpent").asText());
+  }
+
+  @Test
+  @Order(41)
+  void tr11_legacyCurrencySnapshotRequiresAcknowledgedBaseline() throws Exception {
+    String owner = register("tr11owner" + suffix);
+    String ownerId = createdUserIds.get(createdUserIds.size() - 1);
+    String guest = register("tr11guest" + suffix);
+    String guestId = createdUserIds.get(createdUserIds.size() - 1);
+    String tripId = apiPost(owner, "/api/trips", Map.of("title", "历史结算兼容"))
+        .path("trip").path("id").asText();
+    createdTripIds.add(tripId);
+    invite(owner, ownerId, guest, "tr11guest" + suffix, tripId);
+    String legacyId = java.util.UUID.randomUUID().toString();
+    Map<String, Object> legacy = Map.of("currency", "CNY", "totalAmount", "100.00", "nets", List.of(
+        Map.of("userId", ownerId, "paid", "100.00", "owed", "50.00"),
+        Map.of("userId", guestId, "paid", "0.00", "owed", "50.00")));
+    jdbc.update("INSERT INTO trip_settlements (id, trip_id, snapshot, status, confirmed_by) VALUES (?, ?, ?::jsonb, 'confirmed', ?)",
+        legacyId, tripId, JSON.writeValueAsString(legacy), ownerId);
+    String expenses = "/api/trips/" + tripId + "/expenses";
+    apiPost(owner, expenses, Map.of("amount", "130.00", "shareUserIds", List.of(ownerId, guestId)));
+    JsonNode plan = apiGet(owner, expenses + "/settlement").path("byCurrency").path("CNY");
+    assertTrue(plan.path("legacyBaseline").asBoolean());
+    assertEquals(legacyId, plan.path("baseSettlementId").asText());
+    assertEquals("30.00", plan.path("totalAmount").asText());
+    String confirm = expenses + "/settlement/confirm";
+    assertEquals(409, httpRequest("POST", confirm, owner, confirmation("CNY", plan)).statusCode());
+    Map<String, Object> acknowledged = new java.util.LinkedHashMap<>(confirmation("CNY", plan));
+    acknowledged.put("acceptLegacyBaseline", true);
+    assertEquals("30.00", apiPost(owner, confirm, acknowledged).path("settlement").path("snapshot").path("totalAmount").asText());
+    assertEquals(2, apiGet(owner, expenses + "/settlement").path("history").size());
+  }
+
+  private Map<String, Object> confirmation(String currency, JsonNode group) {
+    return Map.of("currency", currency, "previewToken", group.path("previewToken").asText());
+  }
+
 
   private void invite(String owner, String ownerId, String member, String username, String tripId)
       throws Exception {

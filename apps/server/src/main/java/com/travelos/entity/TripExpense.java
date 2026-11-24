@@ -46,6 +46,11 @@ public class TripExpense {
   @TableField("trip_day_id")
   private String tripDayId;
 
+  private String bookingId;
+  private String bookingPaymentId;
+  private String bookingOperationKey;
+  private String adjustmentKind;
+
   @TableField("is_settled")
   private Boolean isSettled;
 
@@ -82,6 +87,14 @@ public class TripExpense {
   public void setSplitType(String splitType) { this.splitType = splitType; }
   public String getTripDayId() { return tripDayId; }
   public void setTripDayId(String tripDayId) { this.tripDayId = tripDayId; }
+  public String getBookingId() { return bookingId; }
+  public void setBookingId(String bookingId) { this.bookingId = bookingId; }
+  public String getBookingPaymentId() { return bookingPaymentId; }
+  public void setBookingPaymentId(String bookingPaymentId) { this.bookingPaymentId = bookingPaymentId; }
+  public String getBookingOperationKey() { return bookingOperationKey; }
+  public void setBookingOperationKey(String bookingOperationKey) { this.bookingOperationKey = bookingOperationKey; }
+  public String getAdjustmentKind() { return adjustmentKind; }
+  public void setAdjustmentKind(String adjustmentKind) { this.adjustmentKind = adjustmentKind; }
   public Boolean getIsSettled() { return isSettled; }
   public void setIsSettled(Boolean isSettled) { this.isSettled = isSettled; }
   public Date getSettledAt() { return settledAt; }

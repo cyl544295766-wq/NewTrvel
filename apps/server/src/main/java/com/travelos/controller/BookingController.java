@@ -67,11 +67,32 @@ public class BookingController {
     return bookingService.delete(tripId, bookingId, user.id());
   }
 
-  /** P1-1 一键核销：预订金额转为费用（等分给全部成员），booking 记 expense_id 并退出预估占用。 */
   @RequireTripRole({"owner", "admin", "member"})
   @PostMapping("/{bookingId}/convert-expense")
   public Map<String, Object> convertExpense(@PathVariable String tripId,
+      @PathVariable String bookingId, @RequestBody(required = false) Map<String, Object> body,
+      @CurrentUser UserContext user) {
+    return bookingService.convertToExpense(tripId, bookingId, user.id(), body == null ? Map.of() : body);
+  }
+
+  @RequireTripRole({"owner", "admin", "member"})
+  @PostMapping("/{bookingId}/cancel")
+  public Map<String, Object> cancel(@PathVariable String tripId,
       @PathVariable String bookingId, @CurrentUser UserContext user) {
-    return bookingService.convertToExpense(tripId, bookingId, user.id());
+    return bookingService.cancel(tripId, bookingId, user.id());
+  }
+
+  @RequireTripRole({"owner", "admin", "member"})
+  @PostMapping("/{bookingId}/refund")
+  public Map<String, Object> refund(@PathVariable String tripId, @PathVariable String bookingId,
+      @RequestBody Map<String, Object> body, @CurrentUser UserContext user) {
+    return bookingService.credit(tripId, bookingId, user.id(), body, false);
+  }
+
+  @RequireTripRole({"owner", "admin", "member"})
+  @PostMapping("/{bookingId}/reverse-expense")
+  public Map<String, Object> reverseExpense(@PathVariable String tripId, @PathVariable String bookingId,
+      @RequestBody Map<String, Object> body, @CurrentUser UserContext user) {
+    return bookingService.credit(tripId, bookingId, user.id(), body, true);
   }
 }

@@ -569,6 +569,18 @@
   </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog id="bookingLedgerDialog" aria-labelledby="bookingLedgerTitle" style="width:min(36rem, calc(100% - 2rem)); max-height:85vh; border:1px solid #394650; border-radius:14px; color:#eff5f6; background:#161a23;">
+  <form id="bookingLedgerForm">
+    <h2 id="bookingLedgerTitle"></h2>
+    <p id="bookingLedgerNote"></p>
+    <div id="bookingLedgerFields" class="fp-grid"></div>
+    <p id="bookingLedgerError" role="alert"></p>
+    <div class="fp-actions">
+      <button type="button" class="btn-plain" id="closeBookingLedger">返回</button>
+      <button type="submit" class="btn-primary-sm" id="submitBookingLedger">确认</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js"></script>
@@ -728,6 +740,7 @@
         buildFilters();
         renderReminders();
         render();
+        scrollToBooking();
       } catch (err) {
         showToast(humanError(err));
         $('loading').textContent = '加载失败，请刷新重试';
@@ -822,6 +835,42 @@
     }
 
     /* ===== 渲染票卡 ===== */
+    function scrollToBooking() {
+      var requested = qs.get('booking');
+      if (!requested) return;
+      var card = Array.from($('bkGrid').querySelectorAll('[data-bk]')).find(function (el) {
+        return el.dataset.bk === requested;
+      });
+      if (card) card.scrollIntoView({ block: 'center' });
+    }
+
+    function canManageBooking(booking) {
+      var role = state.trip && state.trip.currentUserRole;
+      return role === 'owner' || role === 'admin'
+        || (role === 'member' && (!booking.creatorId || booking.creatorId === user.id));
+    }
+
+    function ledgerActions(b) {
+      var labels = { pending: '待入账', paid: '已入账', partial_refund: '部分退款', refunded: '已退款' };
+      var ledger = b.expenseId
+        ? '<a href="/expenses/?trip=' + encodeURIComponent(tripId) + '&expense=' + encodeURIComponent(b.expenseId) + '">查看关联账目</a>'
+          + ' · 实付 ' + escapeHtml(b.paidAmount + ' ' + b.paidCurrency)
+          + (Number(b.refundedAmount) > 0 ? ' · 已退款 ' + escapeHtml(b.refundedAmount + ' ' + b.paidCurrency) : '')
+        : (b.amount ? '预估 ' + escapeHtml(b.amount + ' ' + (b.currency || 'CNY')) : '');
+      function button(action, label) {
+        return '<button class="btn-plain" type="button" data-ledger="' + action + '">' + label + '</button>';
+      }
+      var actions = '';
+      if (canManageBooking(b)) {
+        if (!b.cancelledAt && !b.expenseId) actions += '<button class="btn-plain cv" type="button" data-ledger="convert-expense">确认入账</button>';
+        if (!b.cancelledAt) actions += button('cancel', '取消预订');
+        if (Number(b.refundableAmount) > 0) actions += button('refund', '记录退款');
+        if (b.paymentStatus === 'paid') actions += button('reverse-expense', '撤销入账');
+      }
+      return '<div class="bk-note"><strong>' + (b.cancelledAt ? '已取消 · ' : '') + (labels[b.paymentStatus] || '待入账')
+        + '</strong>' + (ledger ? '<div>' + ledger + '</div>' : '') + '<div>' + actions + '</div></div>';
+    }
+
     function cardHtml(b) {
       var t = typeOf(b.type);
       var extra = b.extra || {};
@@ -872,15 +921,14 @@
         +     '<div class="bk-type-line">'
         +       '<span class="bk-ic">' + t.ic + '</span>'
         +       '<span class="bk-type-nm">' + t.label + '</span>'
-        +       (b.expenseId ? '<span class="bk-paid" title="金额已转入费用页，不再计入预算预估占用">已入账</span>' : '')
         +       '<span class="bk-ops">'
-        +         (!b.expenseId ? '<button type="button" class="cv" title="转为费用（等分给全部成员）">¥</button>' : '')
-        +         '<button type="button" class="ed" title="编辑">✎</button>'
-        +         '<button type="button" class="del" title="删除">×</button>'
+        +         (canManageBooking(b) && !b.cancelledAt ? '<button type="button" class="ed" title="编辑">✎</button>' : '')
+        +         (canManageBooking(b) && !b.hasLedgerEntries ? '<button type="button" class="del" title="删除">×</button>' : '')
         +       '</span>'
         +     '</div>'
         +     '<div class="bk-title">' + escapeHtml(b.title || t.label) + '</div>'
         +     main
+        +     ledgerActions(b)
         +   '</div>'
         +   '<div class="bk-stub">'
         +     '<span class="stamp ' + st.cls + '">' + st.txt + '</span>'
@@ -888,10 +936,10 @@
         +     (b.confirmCode ? '<span class="stub-lab">确认码</span><span class="stub-code">' + escapeHtml(b.confirmCode) + '</span>' : '')
         +     (b.orderNo ? '<span class="stub-lab">订单号</span><span class="stub-code">' + escapeHtml(b.orderNo) + '</span>' : '')
         +     '<span class="stub-foot">'
-        +       '<span class="stub-rem" data-rem="' + escapeHtml(b.id) + '" title="点击切换提醒">'
+        +       '<span class="stub-rem"' + (!b.cancelledAt && canManageBooking(b) ? ' data-rem="' + escapeHtml(b.id) + '"' : '') + '>'
         +         '<span class="sw' + (b.reminderEnabled ? ' on' : '') + '"></span>' + (b.reminderEnabled ? '提醒开' : '提醒关')
         +       '</span>'
-        +       '<button type="button" class="stub-del" data-del="' + escapeHtml(b.id) + '">删除</button>'
+        +       (canManageBooking(b) && !b.hasLedgerEntries ? '<button type="button" class="stub-del" data-del="' + escapeHtml(b.id) + '">删除</button>' : '')
         +     '</span>'
         +   '</div>'
         + '</article>';
@@ -933,13 +981,13 @@
       $('typeTabs').querySelectorAll('button').forEach(function (x) {
         x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
       });
-      if (!state.editingId) buildFields(null); else buildFields(collectFields());
+      buildFields(collectFields());
     });
 
     /* 收集当前表单里的通用 + extra 值（切类型时保留已填内容） */
     function collectFields() {
       var out = { extra: {} };
-      ['fTitle', 'fStart', 'fEnd', 'fOrderNo', 'fConfirm'].forEach(function (id) {
+      ['fTitle', 'fStart', 'fEnd', 'fOrderNo', 'fConfirm', 'fBookingAmount', 'fBookingCurrency'].forEach(function (id) {
         var el = $(id); if (el) out[id] = el.value;
       });
       document.querySelectorAll('[data-extra]').forEach(function (el) {
@@ -967,6 +1015,10 @@
         + '<input type="datetime-local" id="fEnd" value="' + escapeHtml(p.fEnd || '') + '"></div>';
       html += '<div class="fp-field"><label for="fConfirm">确认码</label>'
         + '<input type="text" id="fConfirm" maxlength="60" placeholder="选填" value="' + escapeHtml(p.fConfirm || '') + '"></div>';
+      html += '<div class="fp-field"><label for="fBookingAmount">预估金额</label>'
+        + '<input type="number" id="fBookingAmount" min="0" step="0.01" value="' + escapeHtml(p.fBookingAmount || '') + '"></div>'
+        + '<div class="fp-field"><label for="fBookingCurrency">预估币种</label>'
+        + '<input id="fBookingCurrency" maxlength="16" value="' + escapeHtml(p.fBookingCurrency || 'CNY') + '"></div>';
 
       html += '<div class="sec-lab">' + t.label + '信息</div>';
       t.fields.forEach(function (f) {
@@ -1031,6 +1083,8 @@
         fStart: toLocalInput(bk.startTime),
         fEnd: toLocalInput(bk.endTime),
         fConfirm: bk.confirmCode || '',
+        fBookingAmount: bk.amount || '',
+        fBookingCurrency: bk.currency || 'CNY',
         extra: bk.extra || {},
         remind: bk.reminderMinutes != null ? String(bk.reminderMinutes) : '',
         remEnabled: bk.reminderEnabled !== false
@@ -1066,6 +1120,8 @@
         endTime: toLocal(end),
         orderNo: $('fOrderNo').value.trim() || null,
         confirmCode: $('fConfirm').value.trim() || null,
+        amount: $('fBookingAmount').value || null,
+        currency: $('fBookingCurrency').value.trim() || 'CNY',
         extra: extra,
         reminderEnabled: $('fRemEnabled').classList.contains('on')
       };
@@ -1089,6 +1145,79 @@
     });
 
     /* ===== 卡片操作 ===== */
+    var ledgerDraft = null;
+    var ledgerDialog = $('bookingLedgerDialog');
+
+    $('closeBookingLedger').addEventListener('click', function () { ledgerDialog.close(); });
+
+    async function openLedger(booking, action) {
+      var fields = $('bookingLedgerFields');
+      var title = { 'convert-expense': '确认预订入账', cancel: '取消预订', refund: '记录实际到账退款', 'reverse-expense': '撤销入账' };
+      var notes = {
+        cancel: booking.expenseId ? '取消后保留已付账目。退款到账后可在这里登记。' : '取消后释放预计预算占用并关闭提醒。',
+        refund: '本次退款沿用付款原币及原分摊。剩余可退 ' + booking.refundableAmount + ' ' + booking.paidCurrency + '。',
+        'reverse-expense': '将写入一笔等额调整并保留原账目。'
+      };
+      fields.innerHTML = '';
+      if (action === 'convert-expense') {
+        var response = await apiGet('/trips/' + tripId + '/members');
+        var members = response.members || [];
+        fields.innerHTML = '<div class="fp-field"><label for="ledgerAmount">实付金额</label><input id="ledgerAmount" name="amount" type="number" min="0.01" step="0.01" required value="' + escapeHtml(booking.amount || '') + '"></div>'
+          + '<div class="fp-field"><label for="ledgerCurrency">原币</label><input id="ledgerCurrency" name="currency" required maxlength="16" value="' + escapeHtml(booking.currency || 'CNY') + '"></div>'
+          + '<div class="fp-field wide"><label for="ledgerPayer">付款人</label><select id="ledgerPayer" name="payerUserId" required>'
+          + members.map(function (m) { return '<option value="' + escapeHtml(m.userId) + '"' + (m.userId === user.id ? ' selected' : '') + '>' + escapeHtml(m.displayName || m.username || '成员') + '</option>'; }).join('')
+          + '</select></div><fieldset class="fp-field wide"><legend>参与均分的人</legend>'
+          + members.map(function (m) { return '<label><input type="checkbox" name="shareUserId" value="' + escapeHtml(m.userId) + '" checked> ' + escapeHtml(m.displayName || m.username || '成员') + '</label>'; }).join('')
+          + '</fieldset>';
+      } else if (action === 'refund') {
+        fields.innerHTML = '<div class="fp-field"><label for="ledgerAmount">实际到账金额</label><input id="ledgerAmount" name="amount" type="number" min="0.01" step="0.01" max="' + escapeHtml(booking.refundableAmount) + '" required></div>'
+          + '<div class="fp-field"><label for="ledgerDate">到账日期</label><input id="ledgerDate" name="spentAt" type="date"></div>';
+      }
+      ledgerDraft = { id: booking.id, action: action,
+        key: Array.from(crypto.getRandomValues(new Uint8Array(16)), function (b) { return b.toString(16).padStart(2, '0'); }).join('') };
+      $('bookingLedgerTitle').textContent = title[action];
+      $('bookingLedgerNote').textContent = notes[action] || booking.title;
+      $('bookingLedgerError').textContent = '';
+      $('submitBookingLedger').textContent = title[action];
+      ledgerDialog.showModal();
+    }
+
+    $('bookingLedgerForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var pending = ledgerDraft;
+      var form = new FormData(e.currentTarget);
+      var body = { operationKey: pending.key };
+      if (form.has('amount')) body.amount = form.get('amount');
+      if (form.get('spentAt')) body.spentAt = form.get('spentAt');
+      if (pending.action === 'convert-expense') {
+        body.currency = form.get('currency').trim();
+        body.payerUserId = form.get('payerUserId');
+        body.shareUserIds = form.getAll('shareUserId');
+        if (!body.currency || !body.shareUserIds.length) {
+          $('bookingLedgerError').textContent = '请填写币种并选择分摊成员';
+          return;
+        }
+      }
+      var button = $('submitBookingLedger');
+      button.disabled = true;
+      $('closeBookingLedger').disabled = true;
+      $('bookingLedgerError').textContent = '';
+      try {
+        await apiPost('/trips/' + tripId + '/bookings/' + encodeURIComponent(pending.id) + '/' + pending.action, body);
+        showToast('预订账目已更新');
+        ledgerDialog.close();
+        await load();
+      } catch (err) {
+        $('bookingLedgerError').textContent = humanError(err);
+      } finally {
+        button.disabled = false;
+        $('closeBookingLedger').disabled = false;
+      }
+    });
+    ledgerDialog.addEventListener('cancel', function (event) {
+      if ($('submitBookingLedger').disabled) event.preventDefault();
+    });
+
     $('bkGrid').addEventListener('click', async function (e) {
       var card = e.target.closest('.bk-card');
       if (!card) return;
@@ -1112,23 +1241,13 @@
       /* 编辑 */
       if (e.target.closest('.bk-ops .ed')) { openForm(bk); return; }
 
-      /* 转为费用（P1-1 一键核销） */
-      if (e.target.closest('.bk-ops .cv')) {
-        if (!confirm('将预订「' + (bk.title || typeOf(bk.type).label) + '」的金额'
-          + (bk.amount ? ' ' + bk.amount + ' ' + (bk.currency || 'CNY') : '')
-          + ' 转为一笔费用？分摊默认等分给全部成员，可在账目页修改。')) return;
+      var ledgerButton = e.target.closest('[data-ledger]');
+      if (ledgerButton) {
+        ledgerButton.disabled = true;
         try {
-          var cvd = await apiPost('/trips/' + tripId + '/bookings/' + id + '/convert-expense', {});
-          if (cvd && cvd.booking) {
-            Object.assign(bk, cvd.booking);
-          } else {
-            bk.expenseId = '1'; // 触发徽标，待下次 load 校准
-          }
-          buildFilters();
-          render();
-          refreshReminders();
-          showToast('已转为费用，可在「账目」页查看明细');
+          await openLedger(bk, ledgerButton.dataset.ledger);
         } catch (err) { showToast(humanError(err)); }
+        finally { ledgerButton.disabled = false; }
         return;
       }
 

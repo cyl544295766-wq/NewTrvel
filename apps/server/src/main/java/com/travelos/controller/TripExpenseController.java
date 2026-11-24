@@ -4,6 +4,7 @@ import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import com.travelos.trip.RequireTripRole;
 import com.travelos.service.TripExpenseService;
+import com.travelos.service.TripSettlementService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -20,9 +21,11 @@ import java.util.Map;
 public class TripExpenseController {
 
   private final TripExpenseService tripExpenseService;
+  private final TripSettlementService tripSettlementService;
 
-  public TripExpenseController(TripExpenseService tripExpenseService) {
+  public TripExpenseController(TripExpenseService tripExpenseService, TripSettlementService tripSettlementService) {
     this.tripExpenseService = tripExpenseService;
+    this.tripSettlementService = tripSettlementService;
   }
 
   @GetMapping
@@ -45,15 +48,15 @@ public class TripExpenseController {
   @GetMapping("/settlement")
   public Map<String, Object> settlement(@PathVariable String tripId,
       @CurrentUser UserContext user) {
-    return tripExpenseService.settlement(tripId, user.id());
+    return tripSettlementService.preview(tripId, user.id());
   }
 
   /** 结算确认：仅 owner/admin。 */
   @RequireTripRole({"owner", "admin"})
   @PostMapping("/settlement/confirm")
   public Map<String, Object> confirmSettlement(@PathVariable String tripId,
-      @CurrentUser UserContext user) {
-    return tripExpenseService.confirmSettlement(tripId, user.id());
+      @RequestBody(required = false) Map<String, Object> dto, @CurrentUser UserContext user) {
+    return tripSettlementService.confirm(tripId, user.id(), dto == null ? Map.of() : dto);
   }
 
   @GetMapping("/report")

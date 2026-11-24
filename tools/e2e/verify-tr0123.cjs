@@ -112,8 +112,8 @@ async function verifyJournalsAndExpenses(browser, owner, member, ownerApi, membe
   assert.deepEqual((await page.locator('#stlTransfers h3').allTextContents()).sort(), ['CNY', 'USD']);
   assert.match(await page.locator('#stlTransfers').textContent(), /USD 50/);
   assert.match(await page.locator('#stlTransfers').textContent(), /¥ 50/);
-  assert.equal(await page.locator('#btnConfirmStl').isDisabled(), true);
-  assert.match(await page.locator('#stlHint').textContent(), /多种币种/);
+  assert.deepEqual((await page.locator('[data-confirm-currency]').allTextContents()).sort(),
+    ['确认 CNY 账单', '确认 USD 账单']);
   console.log('TR-02 PASS · 首页简报、费用明细、报表、结算预览及预算均保留原币');
   return page;
 }

@@ -778,18 +778,15 @@
     <section class="pane" id="pane-stl" role="tabpanel" aria-labelledby="tab-stl" hidden>
       <div class="stl-grid">
         <div class="stl-card">
-          <div class="t">成员结算 · 谁该收钱、谁该付钱</div>
+          <div class="t">本期成员差额</div>
           <div id="stlNets"></div>
         </div>
         <div class="stl-card">
-          <div class="t">转账方案 · 最少转账次数</div>
+          <div class="t">本期转账建议</div>
           <div id="stlTransfers"></div>
-          <div class="foot" id="stlHistory"></div>
-          <div class="stl-foot">
-            <span class="hint" id="stlHint"></span>
-            <span style="flex:1"></span>
-            <button type="button" class="btn-primary-sm" id="btnConfirmStl" aria-describedby="stlHint" disabled>确认结算</button>
-          </div>
+          <div class="foot" id="stlHint" role="status"></div>
+          <h3>已确认账单</h3>
+          <div id="stlHistory"></div>
         </div>
       </div>
     </section>
@@ -930,6 +927,13 @@
       renderReport();
       renderSettlement();
       buildFormMembers();
+      var requestedExpense = qs.get('expense');
+      if (requestedExpense) {
+        var entry = Array.from($('expList').querySelectorAll('[data-eid]')).find(function (el) {
+          return el.dataset.eid === requestedExpense;
+        });
+        if (entry) entry.scrollIntoView({ block: 'center' });
+      }
     }
 
     /* ===== 汇总卡 ===== */
@@ -941,7 +945,7 @@
       var est = Number(bud.totalEstimated || 0);
 
       $('wSpent').innerHTML = money(total) + ' <small id="wBudgetLab">/ ' + (budget ? money(budget) : '未设预算') + '</small>';
-      var pct = budget > 0 ? Math.min(100, Math.round(total / budget * 100)) : 0;
+      var pct = budget > 0 ? Math.max(0, Math.min(100, Math.round(total / budget * 100))) : 0;
       var estPct = budget > 0 ? Math.min(100 - pct, Math.round(est / budget * 100)) : 0;
       $('meterSpent').style.width = pct + '%';
       $('meterEst').style.width = estPct + '%';
@@ -1004,20 +1008,21 @@
           +     '<div class="exp-title">' + escapeHtml(e.title || c.label) + '</div>'
           +     '<div class="exp-sub">'
           +       '<span class="tag">' + c.label + '</span>'
-          +       '<span>' + escapeHtml((e.payer && e.payer.displayName) || '—') + ' 垫付</span>'
+          +       '<span>' + escapeHtml((e.payer && e.payer.displayName) || '—') + (e.adjustmentKind ? ' · 账目调整' : ' 垫付') + '</span>'
           +       '<span class="sep">·</span>'
           +       '<span>' + fmtDate(e.spentAt) + '</span>'
           +       '<span class="sep">·</span>'
           +       '<span>' + splitLabel(e) + '</span>'
           +       (e.notes ? '<span class="sep">·</span><span>' + escapeHtml(e.notes) + '</span>' : '')
+          +       (e.bookingId ? '<a href="/bookings/?trip=' + encodeURIComponent(tripId) + '&booking=' + encodeURIComponent(e.bookingId) + '">查看原预订</a>' : '')
           +     '</div>'
           +     (sharesHtml ? '<div class="exp-shares">' + sharesHtml + '</div>' : '')
           +   '</div>'
           +   '<div class="exp-side">'
-          +     '<div class="exp-ops">'
+          +     (e.bookingId ? '' : '<div class="exp-ops">'
           +       '<button type="button" class="ed" title="编辑">✎</button>'
           +       '<button type="button" class="del" title="删除">×</button>'
-          +     '</div>'
+          +     '</div>')
           +     '<div class="exp-amt">' + moneyHtml(e.amount, e.currency) + '<small>' + escapeHtml(e.splitType === 'equal' ? '均摊' : e.splitType === 'ratio' ? '按比例' : '按金额') + '</small></div>'
           +   '</div>'
           + '</article>';
@@ -1041,6 +1046,7 @@
         $(id).hidden = id !== b.getAttribute('aria-controls');
       });
     });
+    if (qs.get('tab') === 'settlement') $('tab-stl').click();
 
     // 类别预算：切换查看 / 编辑
     var btnBudgetEl = $('btnBudget');
@@ -1099,10 +1105,10 @@
       if (!byDay.length) {
         dayBox.innerHTML = '<div class="rp-empty">记账后这里会出现每日柱状</div>';
       } else {
-        var maxDay = Math.max.apply(null, byDay.map(function (x) { return Number(x.amount); }));
+        var maxDay = Math.max.apply(null, byDay.map(function (x) { return Math.abs(Number(x.amount)); }));
         dayBox.innerHTML = '<div style="display:flex;align-items:flex-end;justify-content:center;gap:12px;height:150px;padding:8px 4px 0;">'
           + byDay.map(function (x) {
-            var h = maxDay > 0 ? Math.max(6, Math.round(Number(x.amount) / maxDay * 120)) : 6;
+            var h = maxDay > 0 ? Math.max(6, Math.round(Math.abs(Number(x.amount)) / maxDay * 120)) : 6;
             /* 列宽设上限：只有一天时柱子才不会撑满整幅 */
             return '<div style="flex:1;max-width:88px;text-align:center;" title="' + escapeHtml(x.label || x.day || '') + '">'
               + '<div style="font-size:10px;color:var(--mute);margin-bottom:4px;">' + moneyHtml(x.amount, currency) + '</div>'
@@ -1252,71 +1258,100 @@
     }
 
     /* ===== 结算 ===== */
-    function renderSettlement() {
-      var stl = state.settlement;
-      var netsBox = $('stlNets'), trBox = $('stlTransfers');
-      var confirm = $('btnConfirmStl');
-      confirm.disabled = !stl || !stl.canConfirm;
-      $('stlHint').textContent = !stl ? '' : stl.confirmBlockedReason
-        || (stl.canConfirm ? '' : '当前没有需要结算的账目');
-      var last = stl && stl.latestSettlement;
-      var snapshot = last && last.snapshot;
-      $('stlHistory').textContent = snapshot
-        ? '最近确认快照 · ' + fmtDate(last.createdAt) + ' · '
-          + (snapshot.currency ? money(snapshot.totalAmount, snapshot.currency) : '币种未记录')
-        : '';
-      if (!stl) {
-        netsBox.innerHTML = '<div class="rp-empty">结算数据加载失败</div>';
-        trBox.innerHTML = '';
-        return;
-      }
-      var groups = Object.entries(stl.byCurrency || {});
-      if (!groups.length) groups = [[currencyCode(stl.currency), stl]];
-      function groupHeading(currency) {
-        return '<h3>' + escapeHtml(currency) + '</h3>';
-      }
-      netsBox.innerHTML = groups.map(function (entry) {
-        var currency = entry[0];
-        var nets = entry[1].nets || [];
-        return groupHeading(currency) + (nets.length ? nets.map(function (n) {
-        var net = Number(n.net);
-        var cls = net > 0.004 ? 'pos' : net < -0.004 ? 'neg' : 'mut';
-        var lab = net > 0.004 ? '应收' : net < -0.004 ? '应付' : '已结清';
-        return '<div class="net-row">'
-          + '<span class="av">' + escapeHtml((n.displayName || '?').charAt(0)) + '</span>'
-          + '<div><div class="nm">' + escapeHtml(n.displayName) + '</div>'
-          + '<div class="d">垫付 ' + moneyHtml(n.paid, currency) + ' · 应付 ' + moneyHtml(n.owed, currency) + '</div></div>'
-          + '<div class="amt"><span class="' + cls + '">' + moneyHtml(Math.abs(net), currency) + '</span>'
-          + '<div class="mut">' + lab + '</div></div>'
-          + '</div>';
-        }).join('') : '<div class="rp-empty">暂无成员</div>');
-      }).join('');
-
-      trBox.innerHTML = groups.map(function (entry) {
-        var currency = entry[0];
-        var transfers = entry[1].transfers || [];
-        return groupHeading(currency) + (transfers.length ? transfers.map(function (t) {
+    function transferRows(transfers, currency) {
+      return (transfers || []).map(function (t) {
         return '<div class="transfer-row">'
           + '<span class="who">' + escapeHtml(t.fromDisplayName || t.fromUserId) + '</span>'
           + '<span class="flow"><span class="ln"></span><span class="arrow">➜</span><span class="ln"></span></span>'
           + '<span class="who">' + escapeHtml(t.toDisplayName || t.toUserId) + '</span>'
           + '<span class="amt">' + moneyHtml(t.amount, currency) + '</span>'
           + '</div>';
-        }).join('') : '<div class="rp-empty" style="padding:22px 0;">账目已两清，无需转账</div>');
-      }).join('');
+      }).join('') || '<p class="rp-empty">本期无转账建议</p>';
     }
 
-    $('btnConfirmStl').addEventListener('click', async function () {
-      var b = $('btnConfirmStl');
-      if (!state.settlement || !state.settlement.canConfirm) return;
-      b.disabled = true;
+    function settlementMembers(nets, currency) {
+      return (nets || []).map(function (n) {
+        var net = Number(n.net);
+        var cls = net > 0 ? 'pos' : net < 0 ? 'neg' : 'mut';
+        var lab = net > 0 ? '应收' : net < 0 ? '应付' : '本期无差额';
+        return '<div class="net-row">'
+          + '<span class="av">' + escapeHtml((n.displayName || '?').charAt(0)) + '</span>'
+          + '<div><div class="nm">' + escapeHtml(n.displayName) + (n.formerMember ? ' · 已离队' : '') + '</div>'
+          + '<div class="d">垫付 ' + moneyHtml(n.paid, currency) + ' · 分摊 ' + moneyHtml(n.owed, currency) + '</div></div>'
+          + '<div class="amt"><span class="' + cls + '">' + moneyHtml(Math.abs(net), currency) + '</span>'
+          + '<div class="mut">' + lab + '</div></div></div>';
+      }).join('') || '<p class="rp-empty">暂无成员</p>';
+    }
+
+    function shortDate(value) {
+      if (!value) return '';
+      if (typeof value === 'number') {
+        var date = new Date(value);
+        return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+      }
+      return String(value).slice(0, 10);
+    }
+
+    function renderSettlement() {
+      var stl = state.settlement;
+      var manager = ['owner', 'admin'].includes(state.trip.currentUserRole);
+      var groups = Object.entries((stl && stl.byCurrency) || {});
+      var heading = function (currency) { return '<h3>' + escapeHtml(currency) + '</h3>'; };
+      $('stlHint').textContent = stl ? '' : '结算数据暂时不可用';
+      $('stlNets').innerHTML = groups.map(function (entry) {
+        return heading(entry[0]) + settlementMembers(entry[1].nets, entry[0]);
+      }).join('') || '<p class="rp-empty">暂无待结算账目</p>';
+      $('stlTransfers').innerHTML = groups.map(function (entry) {
+        var currency = entry[0], group = entry[1];
+        var status = group.confirmBlockedReason || (group.canConfirm ? '本期差额 ' + money(group.totalAmount, currency) : '本期暂无新增差额');
+        var period = group.periodStart ? shortDate(group.periodStart) + ' 至 ' + shortDate(group.periodEnd) : '';
+        return heading(currency) + '<p>' + escapeHtml(status + (period ? ' · 账本范围 ' + period : '')) + '</p>'
+          + (group.legacyBaseline ? '<p>本期以该币种最近一次旧账单的成员金额为起点，确认前请核对历史。</p>' : '')
+          + transferRows(group.transfers, currency)
+          + (manager && group.canConfirm ? '<button type="button" class="btn-primary-sm" data-confirm-currency="' + escapeHtml(currency) + '">确认 ' + escapeHtml(currency) + ' 账单</button>' : '');
+      }).join('');
+      $('stlHistory').innerHTML = ((stl && stl.history) || []).map(function (bill) {
+        var snapshot = bill.snapshot || {};
+        var currency = snapshot.currency || '';
+        var confirmer = state.members.find(function (m) { return (m.userId || m.id) === bill.confirmedBy; });
+        var name = confirmer && (confirmer.displayName || confirmer.username || confirmer.userId);
+        var period = snapshot.periodStart ? shortDate(snapshot.periodStart) + ' 至 ' + shortDate(snapshot.periodEnd) : '';
+        return '<details class="foot"><summary>' + escapeHtml(shortDate(bill.createdAt) + ' · '
+          + (currency ? currency + ' · ' + money(snapshot.totalAmount, currency) : '币种待核对')) + '</summary>'
+          + '<p>' + escapeHtml([period ? '账本范围 ' + period : '历史账单', '确认人 ' + (name || bill.confirmedBy),
+            '账单已确认 · 请按实际转账核对付款'].join(' · ')) + '</p>'
+          + settlementMembers(snapshot.nets, currency || undefined)
+          + transferRows(snapshot.transfers, currency || undefined) + '</details>';
+      }).join('') || '<p class="rp-empty">暂无已确认账单</p>';
+    }
+
+    $('stlTransfers').addEventListener('click', async function (event) {
+      var button = event.target.closest('[data-confirm-currency]');
+      if (!button) return;
+      var currency = button.dataset.confirmCurrency;
+      var group = state.settlement.byCurrency[currency];
+      if (!group || !group.canConfirm) return;
+      var note = group.legacyBaseline ? '已核对旧账单并以其成员金额为起点。' : '';
+      if (!confirm('确认 ' + currency + ' 本期账单？' + note + '确认后可查看本期转账建议。')) return;
+      button.disabled = true;
       try {
-        await apiPost('/trips/' + tripId + '/expenses/settlement/confirm', {});
-        showToast('结算已确认，快照已存档并通知成员');
+        await apiPost('/trips/' + tripId + '/expenses/settlement/confirm', {
+          currency: currency, previewToken: group.previewToken, acceptLegacyBaseline: group.legacyBaseline
+        });
+        showToast(currency + ' 账单已确认');
         await loadAll();
-      } catch (err) { showToast(humanError(err)); }
-      b.disabled = !state.settlement || !state.settlement.canConfirm;
+      } catch (err) {
+        if (err.status === 409) {
+          await loadAll();
+          $('stlHint').textContent = humanError(err);
+        } else {
+          showToast(humanError(err));
+        }
+      } finally {
+        button.disabled = false;
+      }
     });
+
 
     /* ===== 记账表单 ===== */
     var CHIPS = $('catChips');

@@ -78,6 +78,7 @@ public class BookingReminderScheduler {
   public void scanReminders() {
     List<Booking> dueBookings = bookingMapper.selectList(new LambdaQueryWrapper<Booking>()
         .eq(Booking::getReminderEnabled, true)
+        .isNull(Booking::getCancelledAt)
         .isNull(Booking::getReminderSentAt)
         .isNotNull(Booking::getStartTime)
         .apply("start_time <= now() + make_interval(mins => reminder_minutes)")

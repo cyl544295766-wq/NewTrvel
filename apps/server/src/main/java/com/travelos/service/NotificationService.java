@@ -171,8 +171,8 @@ public class NotificationService {
   /** 结算确认通知（设计文档 3.4.3），发给全部行程成员。 */
   public void createSettlementConfirmed(String userId, String tripId, String tripTitle,
       String content) {
-    create(userId, "system", "账目已结清 · " + tripTitle, content,
-        "/trips/" + tripId + "/expenses", Map.of("tripId", tripId, "kind", "settlement_confirmed"),
+    create(userId, "system", "账单已确认 · " + tripTitle, content,
+        "/expenses/?trip=" + tripId + "&tab=settlement", Map.of("tripId", tripId, "kind", "settlement_confirmed"),
         "normal", null);
   }
 

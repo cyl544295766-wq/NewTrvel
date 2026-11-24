@@ -452,6 +452,9 @@ public class TodayBriefService {
   private List<Map<String, Object>> buildBookings(String tripId, TripDay day, String dateKey) {
     List<Map<String, Object>> rows = new ArrayList<>();
     for (Booking booking : bookingService.findBookingsByTrip(tripId)) {
+      if (booking.getCancelledAt() != null) {
+        continue;
+      }
       boolean used = day != null && day.getId().equals(booking.getTripDayId());
       if (!used && booking.getStartTime() != null
           && Fmt.dateKey(booking.getStartTime()).equals(dateKey)) {
