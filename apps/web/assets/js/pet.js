@@ -13,9 +13,13 @@
   if (global.TravelOSAi && global.TravelOSAi.__loaded) return;
 
   var base = '../assets/js/';
+  var version = '';
   try {
     if (document.currentScript && document.currentScript.src) {
-      base = document.currentScript.src.replace(/[^/]*$/, '');
+      var loaderUrl = new URL(document.currentScript.src);
+      base = new URL('.', loaderUrl).href;
+      var assetVersion = loaderUrl.searchParams.get('v');
+      if (assetVersion) version = '?v=' + encodeURIComponent(assetVersion);
     }
   } catch (e) { /* ignore */ }
 
@@ -23,14 +27,14 @@
   if (document.readyState === 'loading') {
     /* 解析期同步注入：保持脚本顺序 */
     document.write('<script src="' + base + 'ai-send-policy.js"><\/script>');
-    document.write('<script src="' + base + 'ai-assistant.js"><\/script>');
+    document.write('<script src="' + base + 'ai-assistant.js' + version + '"><\/script>');
   } else {
     var policy = document.createElement('script');
     policy.src = base + 'ai-send-policy.js';
     policy.async = false;
     document.head.appendChild(policy);
     var s = document.createElement('script');
-    s.src = base + 'ai-assistant.js';
+    s.src = base + 'ai-assistant.js' + version;
     s.async = false; // 保证策略先于组件执行
     document.head.appendChild(s);
   }
