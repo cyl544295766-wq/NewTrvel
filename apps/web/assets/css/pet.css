@@ -103,6 +103,7 @@
 
 /* ===== 对话气泡 ===== */
 .pet-bubble {
+  color-scheme: light;
   position: fixed;
   z-index: 57;
   width: 480px;

@@ -19,7 +19,7 @@
  *
  * 公开 API（window.TravelOSAi）：
  *   TravelOSAi.init(options)   初始化（幂等，重复调用只刷新配置）
- *       options: { name, role, tripId, chips, zIndex, pad, mountEl }
+ *       options: { name, role, tripId, chips, zIndex, pad, mountEl, inlineLauncher }
  *   TravelOSAi.open()          打开对话气泡（等价 showBubble）
  *   TravelOSAi.close()         收起气泡
  *   TravelOSAi.setTrip(id)     切换行程上下文并重载会话
@@ -458,10 +458,11 @@
     if (S.expanded || S.mobile) return;   /* 抽屉 / sheet 走 CSS 定位 */
     var bw = S.bubble.offsetWidth || 480;
     var bh = S.bubble.offsetHeight || 420;
-    var centerX = S.x + S.pet.offsetWidth / 2;
+    var anchor = S.opt.inlineLauncher ? S.pet.getBoundingClientRect() : null;
+    var centerX = (anchor ? anchor.left : S.x) + S.pet.offsetWidth / 2;
     var left = Math.min(Math.max(centerX - bw / 2, 10), window.innerWidth - bw - 10);
     S.bubble.style.left = Math.round(left) + 'px';
-    var top = S.y - bh - 16;
+    var top = (anchor ? anchor.top : S.y) - bh - 16;
     S.bubble.style.top = Math.round(Math.max(10, top)) + 'px';
     var tailX = Math.round(centerX - left - 6);
     S.bubble.style.setProperty('--tail-x', Math.min(Math.max(tailX, 14), bw - 20) + 'px');
@@ -1048,38 +1049,47 @@
       (mount || document.body).appendChild(S.host);
     }
     if (!S.pet) {
-      S.pet = document.createElement('div');
+      var inline = S.opt.inlineLauncher === true;
+      S.pet = document.createElement(inline ? 'button' : 'div');
       S.pet.className = 'pet';
       S.pet.setAttribute('data-state', 'idle');
       S.pet.setAttribute('data-facing', 'right');
-      S.pet.setAttribute('role', 'button');
-      S.pet.setAttribute('tabindex', '0');
       S.pet.setAttribute('aria-label', 'AI 旅行助手');
       S.pet.setAttribute('aria-haspopup', 'dialog');
       S.pet.setAttribute('aria-expanded', 'false');
-      S.pet.innerHTML = ''
-        + '<div class="shadow" aria-hidden="true"></div>'
-        + '<div class="body-wrap" aria-hidden="true"></div>'
-        + '<span class="name-chip" aria-hidden="true">' + escapeHtml(S.opt.name) + ' · 点击聊聊</span>';
+      if (inline) {
+        S.pet.type = 'button';
+        S.pet.innerHTML = '<span class="body-wrap" aria-hidden="true"></span><span>AI 旅行助手</span>';
+        S.pet.addEventListener('click', showBubble);
+      } else {
+        S.pet.setAttribute('role', 'button');
+        S.pet.setAttribute('tabindex', '0');
+        S.pet.innerHTML = ''
+          + '<div class="shadow" aria-hidden="true"></div>'
+          + '<div class="body-wrap" aria-hidden="true"></div>'
+          + '<span class="name-chip" aria-hidden="true">' + escapeHtml(S.opt.name) + ' · 点击聊聊</span>';
+        S.pet.addEventListener('pointerdown', onPointerDown);
+        S.pet.addEventListener('pointermove', onPointerMove);
+        S.pet.addEventListener('pointerup', onPointerUp);
+        S.pet.addEventListener('pointercancel', onPointerUp);
+        S.pet.addEventListener('mouseenter', function () {
+          if (S.snapped && !S.bubbleOpen) showFull(240);
+        });
+        S.pet.addEventListener('mouseleave', function () {
+          if (S.snapped && !S.bubbleOpen) snapTo(S.snapped, 240);
+        });
+        S.pet.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showBubble(); }
+        });
+      }
       S.host.appendChild(S.pet);
-      S.pet.addEventListener('pointerdown', onPointerDown);
-      S.pet.addEventListener('pointermove', onPointerMove);
-      S.pet.addEventListener('pointerup', onPointerUp);
-      S.pet.addEventListener('pointercancel', onPointerUp);
-      S.pet.addEventListener('mouseenter', function () {
-        if (S.snapped && !S.bubbleOpen) showFull(240);
-      });
-      S.pet.addEventListener('mouseleave', function () {
-        if (S.snapped && !S.bubbleOpen) snapTo(S.snapped, 240);
-      });
-      S.pet.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showBubble(); }
-      });
       window.addEventListener('resize', function () {
         if (!S.pet) return;
         syncMobile();
-        if (S.snapped) snapTo(S.snapped, 0);
-        else { clampPos(); moveTo(S.x, S.y, 0); }
+        if (!inline) {
+          if (S.snapped) snapTo(S.snapped, 0);
+          else { clampPos(); moveTo(S.x, S.y, 0); }
+        }
         placeBubble();
       });
       window.addEventListener('scroll', function () { placeBubble(); }, { passive: true });
@@ -1117,11 +1127,13 @@
     S.tripBound = !!tripId;
     S.mobile = isMobile();
     ensureDom();
-    var b = bounds();
-    S.x = b.maxX - 8;
-    S.y = b.maxY - 6;
-    clampPos();
-    moveTo(S.x, S.y, 0);
+    if (!S.opt.inlineLauncher) {
+      var b = bounds();
+      S.x = b.maxX - 8;
+      S.y = b.maxY - 6;
+      clampPos();
+      moveTo(S.x, S.y, 0);
+    }
     setState('idle', 'right');
   }
 
