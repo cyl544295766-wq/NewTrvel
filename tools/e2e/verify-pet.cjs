@@ -138,7 +138,7 @@ async function main() {
   const openedFull = await readPos();
   check(openedFull.x === 1000 - petSize.width, '点按吸附宠物：恢复完整显示（x = ' + openedFull.x + '）');
   check(await page.locator('.pet-bubble.open').count() === 1, '点按后气泡打开');
-  await page.locator('.pb-head .x').click();
+  await page.getByRole('button', { name: '关闭对话' }).click();
   await waitX(1000 - petSize.width);
   const backHalf = await readPos();
   check(backHalf.x === 1000 - petSize.width, '对话关闭后回到吸附位（x = ' + backHalf.x + '）');
@@ -201,10 +201,10 @@ async function main() {
   await page.screenshot({ path: path.join(SHOTS, 'bubble.png'), fullPage: false, timeout: 60000 }).catch((e) => console.log('  (skip) bubble 截图失败：' + e.message.split('\n')[0]));
 
   /* ---- 10. 二次打开：历史从后端恢复 ---- */
-  await page.locator('.pb-head .x').click();
+  await page.getByRole('button', { name: '关闭对话' }).click();
   await page.waitForTimeout(400);
   const openAfterClose = await page.locator('.pet-bubble.open').count();
-  check(openAfterClose === 0, '点击 ✕ 气泡收起');
+  check(openAfterClose === 0, '点击「关闭」后气泡关闭');
   await page.locator('.pet').click();
   await page.waitForSelector('.pet-bubble.open', { timeout: 5000 });
   await page.waitForFunction(() => document.querySelectorAll('#petMsgs .pet-msg').length >= 4, { timeout: 15000 })

@@ -4,9 +4,7 @@
    集成：任意页面引本文件 + assets/js/pet.js，然后 TravelOSPet.init()
    ============================================================ */
 
-/* ===== 宿主层：fixed，不拦截页面点击 =====
-   z-index 55：高于普通页面内容（≤10），低于全站所有浮层
-   （trip-detail AI 抽屉 60+、journals 抽屉 92、photos/documents 预览 90/95/99、toast 99） */
+/* 悬浮入口位于固定顶栏下方，打开面板后使用单独的层级。 */
 .pet-host {
   position: fixed;
   inset: 0;
@@ -105,7 +103,8 @@
 .pet-bubble {
   color-scheme: light;
   position: fixed;
-  z-index: 57;
+  /* 高于固定顶栏（60），低于编辑和预览等业务弹窗（90+）。 */
+  z-index: 62;
   width: 480px;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
@@ -150,17 +149,18 @@
 .pet-bubble .pb-head .nm { font-weight: 700; font-size: 14px; line-height: 1.35; }
 .pet-bubble .pb-head .role { font-size: 11px; color: #D5ECE8; }
 .pet-bubble .pb-head .x {
-  margin-left: auto;
-  width: 36px; height: 36px;
-  border: none;
+  flex: none;
+  min-width: 44px; min-height: 44px; padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
   transition: background .15s;
 }
 .pet-bubble .pb-head .x:hover { background: rgba(255, 255, 255, 0.28); }
+.pet-bubble .pb-head .x:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 .pet-bubble .pb-msgs {
   max-height: min(560px, calc(100vh - 190px));
@@ -430,7 +430,7 @@
 .pet-mask {
   position: fixed;
   inset: 0;
-  z-index: 56;
+  z-index: 61;
   background: rgba(18, 58, 60, 0.42);
   opacity: 0;
   pointer-events: none;
@@ -446,7 +446,6 @@
   cursor: pointer; font-size: 13px; transition: background .15s;
 }
 .pet-bubble .pb-head .ex:hover { background: rgba(255, 255, 255, 0.28); }
-.pet-bubble .pb-head .x { margin-left: 6px; }
 
 /* 会话切换条（仅抽屉/sheet 显示） */
 .pet-bubble .pb-bar {
@@ -519,6 +518,5 @@
   .pet-bubble::after { display: none; }
   .pet-bubble .pb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .pet-bubble .pb-msgs { flex: 1; min-height: 0; max-height: none; }
-  .pet-bubble .pb-head .x { width: 44px; height: 44px; }
   .pet-mask.show { background: rgba(18, 58, 60, 0.5); }
 }

@@ -345,6 +345,7 @@
     if (S.mask) return;
     var b = document.createElement('div');
     b.className = 'pet-bubble';
+    b.inert = true;
     b.setAttribute('role', 'dialog');
     b.setAttribute('aria-label', S.opt.name + ' · AI 助手');
     b.innerHTML = ''
@@ -353,7 +354,7 @@
       +   '<div class="who"><div class="nm">' + escapeHtml(S.opt.name) + '</div>'
       +   '<div class="role">' + escapeHtml(S.opt.role) + '</div></div>'
       +   '<button type="button" class="ex" title="展开 / 收起对话面板" aria-label="展开对话面板" aria-expanded="false">⤢</button>'
-      +   '<button type="button" class="x" title="收起" aria-label="收起对话">✕</button>'
+      +   '<button type="button" class="x" aria-label="关闭对话">关闭</button>'
       + '</div>'
       + '<div class="pb-bar" hidden>'
       +   '<select class="conv" aria-label="选择会话"></select>'
@@ -372,7 +373,8 @@
     S.el.inputRow = b.querySelector('.pb-input');
     S.el.input = b.querySelector('#petInput');
     S.el.send = b.querySelector('#petSend');
-    b.querySelector('.x').addEventListener('click', hideBubble);
+    S.el.close = b.querySelector('.pb-head .x');
+    S.el.close.addEventListener('click', hideBubble);
     b.querySelector('.ex').addEventListener('click', function () { setExpanded(!S.expanded); });
     b.querySelector('.pb-bar .conv').addEventListener('change', function () { selectConv(this.value); });
     b.querySelector('.pb-bar .new').addEventListener('click', newConv);
@@ -406,6 +408,7 @@
     if (!S.bubble || !S.mask) return;
     var modal = modalActive();
     S.bubble.classList.toggle('expanded', !!S.expanded && !S.mobile);
+    S.bubble.inert = !S.bubbleOpen;
     S.mask.hidden = !modal;
     S.mask.classList.toggle('show', modal);
     S.bubble.setAttribute('aria-modal', modal ? 'true' : 'false');
@@ -436,7 +439,7 @@
     if (on && !S.mobile) {
       loadConversations();
       if (S.el.input && !S.el.inputRow.hidden) S.el.input.focus();
-      else if (S.bubbleOpen) S.bubble.querySelector('.x').focus();
+      else if (S.bubbleOpen) S.el.close.focus();
     } else {
       placeBubble();
       if (S.pet) S.pet.focus();
@@ -1018,7 +1021,7 @@
     if (modalActive()) loadConversations(); else placeBubble();
     if (!isLoggedIn()) {
       renderLogin();
-      S.bubble.querySelector('.x').focus();
+      S.el.close.focus();
       return;
     }
     S.el.inputRow.hidden = false;
@@ -1028,15 +1031,14 @@
   }
 
   function hideBubble() {
-    if (!S.bubble) return;
-    var wasModal = modalActive();
+    if (!S.bubbleOpen) return;
     S.expanded = false;
     S.bubble.classList.remove('open');
     S.bubbleOpen = false;
     S.pet.classList.remove('bubble-open');
     applyLayout();
     if (S.snapped) snapTo(S.snapped, 260);
-    if (wasModal && S.pet) S.pet.focus();
+    if (S.pet) S.pet.focus();
   }
 
   /* ---------- 初始化 ---------- */
