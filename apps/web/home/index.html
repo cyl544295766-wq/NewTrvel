@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
 <link rel="stylesheet" href="../assets/css/theme.css?v=appearance">
-<link rel="stylesheet" href="../assets/css/pet.css?v=assistant-close">
+<link rel="stylesheet" href="../assets/css/pet.css?v=ai-planning">
 <style>
   :root {
     /* 三档视觉层级（圆角 / 阴影语义变量） */
@@ -1038,6 +1038,7 @@
         </div>
         <div class="ag-foot">
           <button type="button" class="ag-example" id="aiGenExample">试试：成都 · 5 天 · 美食与 Citywalk</button>
+          <button type="button" class="ag-example" id="aiGenReset" hidden>重新填写</button>
           <span class="ag-hint" id="aiGenHint" role="status" aria-live="polite"></span>
         </div>
       </form>
@@ -1157,7 +1158,8 @@
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/amap.js"></script>
-<script src="../assets/js/pet.js?v=assistant-close"></script>
+<script src="../assets/js/ai-planning.js?v=1"></script>
+<script src="../assets/js/pet.js?v=ai-planning"></script>
 <script src="../assets/js/travel-time.js"></script>
 <script>
 (function () {
@@ -1849,38 +1851,85 @@
     return false;
   }
 
-  window.aiGenTrip = function (ev) {
+  var submittingPlan = false;
+  var planFields = ['aiGenDest', 'aiGenStart', 'aiGenDays'].map(function (id) { return document.getElementById(id); });
+  var planButton = document.getElementById('aiGenBtn');
+  var planReset = document.getElementById('aiGenReset');
+  var planHint = document.getElementById('aiGenHint');
+  var exampleBtn = document.getElementById('aiGenExample');
+
+  function restorePlan() {
+    if (submittingPlan) return;
+    var plan = TravelOSPlanning.read();
+    if (plan) {
+      [plan.destination, plan.start, plan.days].forEach(function (value, index) { planFields[index].value = value; });
+    }
+    planFields.forEach(function (input) { input.disabled = !!plan; });
+    exampleBtn.hidden = !!plan;
+    exampleBtn.disabled = false;
+    planButton.disabled = false;
+    planButton.textContent = !plan ? '生成行程方案' : plan.stage === 'done' ? '查看已生成行程' : '继续 AI 规划';
+    planReset.hidden = !plan;
+    planReset.disabled = false;
+    planHint.textContent = plan ? (plan.error || (plan.stage === 'done' ? '上次规划已生成草稿。' : '上次规划仍可继续。')) : '';
+  }
+
+  planReset.addEventListener('click', function () {
+    TravelOSPlanning.clear();
+    restorePlan();
+    planFields[0].focus();
+  });
+  window.addEventListener('pageshow', restorePlan);
+  restorePlan();
+
+  window.aiGenTrip = async function (ev) {
     if (ev) ev.preventDefault();
-    var dest = document.getElementById('aiGenDest').value.trim();
-    var start = document.getElementById('aiGenStart').value;
-    var days = parseInt(document.getElementById('aiGenDays').value, 10) || 5;
-    var btn = document.getElementById('aiGenBtn');
-    document.getElementById('errDest').textContent = '';
-    document.getElementById('errStart').textContent = '';
-    if (!dest) return showAgErr('aiGenDest', 'errDest', '请填写目的地');
-    if (!start) return showAgErr('aiGenStart', 'errStart', '请选择出发日期');
-    var endMs = new Date(start + 'T00:00:00Z').getTime() + (days - 1) * 86400000;
-    var endStr = new Date(endMs).toISOString().slice(0, 10);
-    btn.disabled = true; btn.textContent = '正在生成…';
-    apiPost('/trips', { title: dest + '之旅', destination: dest, startDate: start, endDate: endStr })
-      .then(function (r) {
-        var trip = r.trip || {};
-        return apiPost('/trips/' + encodeURIComponent(trip.id) + '/days/generate', {})
-          .then(function () { return trip; });
-      })
-      .then(function (trip) {
-        try {
-          sessionStorage.setItem('travelos.ai.autoMsg',
-            '请帮我规划这次' + dest + '之旅的整趟行程（' + start + ' 至 ' + endStr + '，共 ' + days + ' 天）。'
-            + '请结合天气预报，把每天的景点、用餐与住宿安排好（最后一天也安排住宿），先给出逐天概览。');
-        } catch (e) { /* ignore */ }
-        location.href = '/trip-detail/?id=' + encodeURIComponent(trip.id) + '&aiAuto=1';
-      })
-      .catch(function (err) {
-        btn.disabled = false; btn.textContent = '生成行程方案';
-        notify(typeof humanError === 'function' ? humanError(err) : '创建失败，请稍后再试');
-      });
-    return false;
+    if (submittingPlan) return;
+    var plan = TravelOSPlanning.read();
+    if (!plan) {
+      var dest = planFields[0].value.trim();
+      var start = planFields[1].value;
+      var days = Number(planFields[2].value);
+      document.getElementById('errDest').textContent = '';
+      document.getElementById('errStart').textContent = '';
+      if (!dest) return showAgErr('aiGenDest', 'errDest', '请填写目的地');
+      if (!start) return showAgErr('aiGenStart', 'errStart', '请选择出发日期');
+      var end = new Date(Date.parse(start + 'T00:00:00Z') + (days - 1) * 86400000).toISOString().slice(0, 10);
+      var requestId = TravelOSSendPolicy.newRequestId();
+      plan = { requestId: requestId, turnId: requestId, destination: dest, start: start, end: end, days: days, stage: 'create' };
+    }
+    submittingPlan = true;
+    planButton.disabled = planReset.disabled = exampleBtn.disabled = true;
+    planFields.forEach(function (input) { input.disabled = true; });
+    delete plan.error;
+    try {
+      TravelOSPlanning.save(plan);
+      if (plan.stage === 'create') {
+        planHint.textContent = '正在创建行程…';
+        var created = await apiPost('/trips/ai-plan', {
+          requestId: plan.requestId, destination: plan.destination,
+          startDate: plan.start, endDate: plan.end
+        });
+        plan.tripId = created.tripId;
+        plan.conversationId = created.conversationId;
+        plan.stage = 'days';
+        TravelOSPlanning.save(plan);
+      }
+      if (plan.stage === 'days') {
+        planHint.textContent = '行程已创建，正在生成行程天…';
+        await apiPost('/trips/' + encodeURIComponent(plan.tripId) + '/days/generate', {});
+        plan.stage = 'ready';
+        TravelOSPlanning.save(plan);
+      }
+      submittingPlan = false;
+      location.href = '/trip-detail/?id=' + encodeURIComponent(plan.tripId) + (plan.stage === 'done' ? '' : '&aiAuto=1');
+    } catch (err) {
+      plan.error = (plan.stage === 'days' ? '行程已创建，行程天生成失败。' : '启动规划失败。') + humanError(err);
+      submittingPlan = false;
+      try { TravelOSPlanning.save(plan); } catch (storageError) { plan.error = storageError.message; }
+      restorePlan();
+      planHint.textContent = plan.error;
+    }
   };
 
   /* 字段报错随输入清除 */
@@ -1894,7 +1943,6 @@
   });
 
   /* 轻量示例：只填充表单不提交；偏好提示仅展示，不向接口传参 */
-  var exampleBtn = document.getElementById('aiGenExample');
   if (exampleBtn) {
     exampleBtn.addEventListener('click', function () {
       document.getElementById('aiGenDest').value = '成都';

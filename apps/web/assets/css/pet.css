@@ -447,6 +447,16 @@
 }
 .pet-bubble .pb-head .ex:hover { background: rgba(255, 255, 255, 0.28); }
 
+.pet-bubble .pb-plan {
+  flex: none; padding: 10px 14px; font-size: 13px;
+  background: #edf7f4; color: #184c49; border-bottom: 1px solid #d4e7e1;
+}
+.pet-bubble .pb-plan[hidden] { display: none; }
+.pet-bubble .pb-plan button {
+  margin-inline-start: 8px; padding: 3px 8px; color: inherit;
+  border: 1px solid #9abfb6; border-radius: 7px; background: #fff; cursor: pointer;
+}
+
 /* 会话切换条（仅抽屉/sheet 显示） */
 .pet-bubble .pb-bar {
   flex: none; display: flex; align-items: center; gap: 8px;

@@ -113,6 +113,7 @@
     bubbleOpen: false,
     convId: null,
     sending: false,
+    planning: false,
     streamAbort: null,   /* 当前流式请求的 AbortController（用户主动停止用） */
     expanded: false,    /* 桌面使用右侧抽屉，窄屏使用底部面板 */
     mobile: false,      /* ≤720px：气泡即底部 sheet */
@@ -361,6 +362,8 @@
       +   '<button type="button" class="new" title="开始新对话">＋ 新对话</button>'
       +   '<button type="button" class="del" title="删除当前会话">删除</button>'
       + '</div>'
+      + '<div class="pb-plan" hidden><span role="status"></span>'
+      +   '<button type="button" hidden>重试规划</button></div>'
       + '<div class="pb-body"></div>'
       + '<div class="pb-input" hidden>'
       +   '<input type="text" id="petInput" maxlength="200" placeholder="和' + escapeHtml(S.opt.name) + '聊聊旅行…">'
@@ -373,6 +376,9 @@
     S.el.inputRow = b.querySelector('.pb-input');
     S.el.input = b.querySelector('#petInput');
     S.el.send = b.querySelector('#petSend');
+    S.el.plan = b.querySelector('.pb-plan');
+    S.el.planRetry = S.el.plan.querySelector('button');
+    S.el.planRetry.addEventListener('click', function () { runPlan(true); });
     S.el.close = b.querySelector('.pb-head .x');
     S.el.close.addEventListener('click', hideBubble);
     b.querySelector('.ex').addEventListener('click', function () { setExpanded(!S.expanded); });
@@ -500,32 +506,36 @@
     var sel = S.bubble.querySelector('.pb-bar .conv');
     if (!sel) return;
     var del = S.bubble.querySelector('.pb-bar .del');
+    S.bubble.querySelector('.pb-bar .new').disabled = S.planning;
     if (!S.convs.length) {
       sel.innerHTML = '<option value="">（还没有会话）</option>';
       sel.disabled = true;
       if (del) del.disabled = true;
       return;
     }
-    sel.disabled = false;
-    if (del) del.disabled = false;
+    sel.disabled = S.planning;
+    if (del) del.disabled = S.planning;
     sel.innerHTML = S.convs.map(function (c) {
       return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.title || '未命名会话') + '</option>';
     }).join('');
     if (S.convId) sel.value = S.convId;
   }
   function selectConv(id) {
+    if (S.planning) { renderBar(); return; }
     if (!id || id === S.convId) return;
     S.convId = id;
     saveConvId(id);
     loadHistory();
   }
   function newConv() {
+    if (S.planning) return;
     S.convId = null;
     clearConvId();
     renderEmpty();
     if (S.el.input && !S.el.inputRow.hidden) S.el.input.focus();
   }
   async function delConv() {
+    if (S.planning) return;
     if (!S.convId) return;
     if (!global.confirm('删除该会话？对话记录将不可恢复。')) return;
     try {
@@ -778,8 +788,8 @@
     return S.convId;
   }
 
-  function fetchMessages() {
-    return apiGet('/ai/conversations/' + encodeURIComponent(S.convId)
+  function fetchMessages(conversationId) {
+    return apiGet('/ai/conversations/' + encodeURIComponent(conversationId || S.convId)
       + '/messages?page=1&pageSize=30&latest=true');
   }
 
@@ -870,6 +880,7 @@
       } catch (e) {
         fetchFailed = true; // 请求可能已被服务端接受：禁止直接重发
       }
+      if (controller && controller.signal.aborted) return { cancelled: true };
 
       decision = policy.decideStreamFallback({
         streamSupported: true,
@@ -902,6 +913,8 @@
       var buf = '';
       var decoder = new TextDecoder();
       var reader = res.body.getReader();
+      var eventName = '';
+      var result;
       try {
         for (;;) {
           var step = await reader.read();
@@ -911,6 +924,7 @@
           buf = parts.pop();
           for (var i = 0; i < parts.length; i++) {
             var line = parts[i].trim();
+            if (line.slice(0, 6) === 'event:') { eventName = line.slice(6).trim(); continue; }
             if (line.slice(0, 5) !== 'data:') continue;
             var payload = line.slice(5).trim();
             if (!payload) continue;
@@ -920,17 +934,21 @@
               acc += obj.text;
               streamEl.innerHTML = mdText(acc);
               box.scrollTop = box.scrollHeight;
+            } else if (obj && ['done', 'error', 'inprogress', 'cancelled'].includes(eventName)) {
+              result = Object.assign({ streamEvent: eventName }, obj);
             }
+            eventName = '';
           }
         }
       } catch (e) {
         // 中途失败：区分「用户主动停止」与「意外中断」——
         // 停止 = 绝不恢复/重发（服务端已取消任务，且再次发送必须是新 ID）；
         // 意外中断 = 只对齐权威状态，不盲目重发（可能已部分生成）。
-        if (controller && controller.signal.aborted) return;
+        if (controller && controller.signal.aborted) return { cancelled: true };
         return await alignOrFallback(text, requestId);
       }
       // 正常/服务端 error 事件结束：由 send() 拉取权威消息列表渲染
+      return result;
     } finally {
       S.streamAbort = null;
     }
@@ -960,12 +978,12 @@
     }
   }
 
-  async function send(preset) {
-    if (S.sending) return;
+  async function send(preset, plan) {
+    if (S.sending || (S.planning && !plan)) return;
     var text = String(preset != null ? preset : S.el.input.value).trim();
     if (!text) return;
     /* 每次发送生成稳定 clientRequestId（普通/流式共享幂等键；停止后的新发送必然是新 ID） */
-    var clientRequestId = policy.newRequestId();
+    var clientRequestId = plan ? plan.turnId : policy.newRequestId();
     S.sending = true;
     var sendBtn = S.el.send;
     var sendLabel = sendBtn ? sendBtn.textContent : '';
@@ -982,8 +1000,8 @@
     box.scrollTop = box.scrollHeight;
     appendTyping();
     try {
-      await ensureConversation(text);
-      await streamMessage(text, box, clientRequestId);
+      if (!plan) await ensureConversation(text);
+      var result = await streamMessage(text, box, clientRequestId);
       /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配，
        * 同时也是流式中断/停止后的权威对齐——不会再次发送同一条消息） */
       var d = await fetchMessages();
@@ -991,21 +1009,24 @@
       removeTyping();
       renderMessages(items);
       var last = items[items.length - 1];
-      if (last && last.role === 'assistant' && last.navigation && last.navigation.url) {
+      if (!plan && last && last.role === 'assistant' && last.navigation && last.navigation.url) {
         setTimeout(function () { window.location.href = last.navigation.url; }, 1200);
       }
+      return { messages: items, result: result };
     } catch (err) {
       removeTyping();
       box.insertAdjacentHTML('beforeend',
         '<div class="pet-msg ai"><div class="txt">' + escapeHtml(humanError(err)) + '</div></div>');
       box.scrollTop = box.scrollHeight;
+      if (plan) throw err;
+    } finally {
+      S.sending = false;
+      if (sendBtn) sendBtn.textContent = sendLabel;
+      if (S.bubbleOpen) S.el.input.focus();
     }
-    S.sending = false;
-    if (sendBtn) sendBtn.textContent = sendLabel;
-    S.el.input.focus();
   }
 
-  async function showBubble() {
+  async function showBubble(knownMessages) {
     if (S.bubbleOpen) {
       if (!S.mobile) setExpanded(true);
       return;
@@ -1026,8 +1047,88 @@
     }
     S.el.inputRow.hidden = false;
     S.el.input.focus();
+    if (Array.isArray(knownMessages)) {
+      if (knownMessages.length) renderMessages(knownMessages); else renderEmpty();
+      return;
+    }
     S.el.body.innerHTML = '<div class="pet-msg ai"><div class="txt"><span class="pet-typing"><i></i><i></i><i></i></span></div></div>';
     await loadHistory();
+  }
+
+  function planStatus(message, retry) {
+    S.el.plan.hidden = false;
+    S.el.plan.querySelector('[role="status"]').textContent = message;
+    S.el.planRetry.hidden = !retry;
+  }
+
+  function planHasDraft(messages, tripId) {
+    return messages.some(function (message) {
+      return message.draft && message.draft.type === 'itinerary_change' && message.draft.tripId === tripId;
+    });
+  }
+
+  async function runPlan(retry) {
+    if (S.planning || S.sending || !isLoggedIn() || !global.TravelOSPlanning) return;
+    var params = new URLSearchParams(global.location.search);
+    if (currentPath() !== '/trip-detail/' || params.get('aiAuto') !== '1') return;
+    var plan = TravelOSPlanning.read();
+    if (!plan || plan.tripId !== params.get('id') || !plan.conversationId ||
+        !['ready', 'sending', 'retry'].includes(plan.stage)) return;
+
+    S.planning = true;
+    try {
+      await showBubble([]);
+      planStatus('正在核对本行程的规划进度…', false);
+      var history = await fetchMessages(plan.conversationId);
+      if (!history.conversation || history.conversation.id !== plan.conversationId ||
+          history.conversation.tripId !== plan.tripId || S.tripId !== plan.tripId) {
+        throw new Error('规划会话与当前行程不一致，请返回首页查看本次规划。');
+      }
+      S.convId = plan.conversationId;
+      S.tripBound = true;
+      saveConvId(S.convId);
+      renderBar();
+      var messages = history.messages || [];
+      if (messages.length) renderMessages(messages);
+      if (!planHasDraft(messages, plan.tripId) && (retry || plan.stage === 'ready')) {
+        plan.stage = 'sending';
+        TravelOSPlanning.save(plan);
+        planStatus('正在生成行程草稿…', false);
+        var text = '请为这次' + plan.destination + '之旅规划行程（' + plan.start + ' 至 ' + plan.end
+          + '，共 ' + plan.days + ' 天）。结合可用的天气和地点资料规划每日景点、用餐及住宿，'
+          + '并在本轮生成行程变更草稿供我确认。';
+        var outcome = await send(text, plan);
+        messages = outcome.messages;
+        var result = outcome.result || {};
+        if (!planHasDraft(messages, plan.tripId)) {
+          // 已完成但未产出草稿，或上次已取消时，用户下一次重试应发起新一轮。
+          if (result.userMessage || result.streamEvent === 'done' || result.cancelled || result.streamEvent === 'cancelled') {
+            plan.turnId = policy.newRequestId();
+          }
+          if (result.inProgress || result.streamEvent === 'inprogress') {
+            throw new Error('上一轮规划仍在运行，请稍后查看结果。');
+          }
+          throw new Error(result.message || '暂未生成草稿，可以重试或在对话中补充要求。');
+        }
+      }
+      if (planHasDraft(messages, plan.tripId)) {
+        plan.stage = 'done';
+        delete plan.error;
+        TravelOSPlanning.save(plan);
+        params.delete('aiAuto');
+        global.history.replaceState(global.history.state, '', global.location.pathname + '?' + params + global.location.hash);
+        planStatus('行程草稿已生成，请预览后应用。', false);
+      } else {
+        planStatus('上次规划未完成。重试会继续使用当前行程。', true);
+      }
+    } catch (err) {
+      plan.stage = 'retry';
+      try { TravelOSPlanning.save(plan); } catch (storageError) { err = storageError; }
+      planStatus(humanError(err), true);
+    } finally {
+      S.planning = false;
+      renderBar();
+    }
   }
 
   function hideBubble() {
@@ -1188,25 +1289,11 @@
   /* ---- 解析期：先按最近行程补齐行程子页 URL 参数，再让页面脚本读取 location ---- */
   injectTripParam();
 
-  /* ---- 自动初始化：引本文件即生效 ----
-   * 需要禁用的页面在引脚本前设置：window.TravelOSPetAuto = false;
-   * 跨页自动发消息：跳转前在 sessionStorage 写入 travelos.ai.autoMsg（如首页「AI 一键生成行程」），
-   * 初始化后自动打开抽屉并发送该消息，用完即清除。
-   */
+  /* 自动初始化。只有匹配当前行程的一键规划请求可以自动发送。 */
   function autoInit() {
     if (global.TravelOSPetAuto === false) return;
     init({ tripId: resolvePageTripId() });
-    var autoMsg = '';
-    try { autoMsg = global.sessionStorage.getItem('travelos.ai.autoMsg') || ''; } catch (e) { /* ignore */ }
-    if (autoMsg) {
-      try { global.sessionStorage.removeItem('travelos.ai.autoMsg'); } catch (e) { /* ignore */ }
-      setTimeout(function () {
-        try {
-          open();
-          send(autoMsg);
-        } catch (e) { /* ignore */ }
-      }, 700);
-    }
+    runPlan(false);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoInit);

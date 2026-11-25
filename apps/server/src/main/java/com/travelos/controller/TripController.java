@@ -3,6 +3,7 @@ package com.travelos.controller;
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import com.travelos.service.TripMemberService;
+import com.travelos.service.TripPlanningService;
 import com.travelos.service.TripService;
 import com.travelos.service.TripActionService;
 import com.travelos.trip.RequireTripRole;
@@ -25,20 +26,28 @@ public class TripController {
   private final TripService tripService;
   private final TripActionService tripActionService;
   private final TripMemberService tripMemberService;
+  private final TripPlanningService tripPlanningService;
   private final com.travelos.service.TripSquareService squareService;
 
   public TripController(TripService tripService, TripActionService tripActionService, TripMemberService tripMemberService,
-      com.travelos.service.TripSquareService squareService) {
+      com.travelos.service.TripSquareService squareService, TripPlanningService tripPlanningService) {
     this.tripService = tripService;
     this.tripActionService = tripActionService;
     this.tripMemberService = tripMemberService;
     this.squareService = squareService;
+    this.tripPlanningService = tripPlanningService;
   }
 
   @PostMapping
   public Map<String, Object> create(@RequestBody Map<String, Object> dto,
       @CurrentUser UserContext user) {
     return tripService.create(dto, user.id());
+  }
+
+  @PostMapping("/ai-plan")
+  public Map<String, Object> startAiPlan(@RequestBody Map<String, Object> dto,
+      @CurrentUser UserContext user) {
+    return tripPlanningService.start(user.id(), dto);
   }
 
   @GetMapping
