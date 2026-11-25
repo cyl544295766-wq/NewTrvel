@@ -86,7 +86,7 @@
   ];
 
   var DRAFT_KIND = { expense: '变更预览 · 记一笔账', itinerary_change: '变更预览 · 行程调整',
-    booking: '变更预览 · 登记预订' };
+    booking: '变更预览 · 登记预订', packing: '打包清单草稿', receipt_review: '票据核对' };
 
   var DEFAULTS = {
     name: '游游',
@@ -113,6 +113,8 @@
     bubbleOpen: false,
     convId: null,
     sending: false,
+    receiptBusy: false,
+    receiptImage: null,
     planning: false,
     streamAbort: null,   /* 当前流式请求的 AbortController（用户主动停止用） */
     expanded: false,    /* 桌面使用右侧抽屉，窄屏使用底部面板 */
@@ -366,6 +368,8 @@
       +   '<button type="button" hidden>重试规划</button></div>'
       + '<div class="pb-body"></div>'
       + '<div class="pb-input" hidden>'
+      +   '<button type="button" id="petReceipt" title="识别票据图片" hidden>票据</button>'
+      +   '<input type="file" id="petReceiptFile" accept="image/jpeg,image/png" hidden>'
       +   '<input type="text" id="petInput" maxlength="200" placeholder="和' + escapeHtml(S.opt.name) + '聊聊旅行…">'
       +   '<button type="button" id="petSend" title="发送">➤</button>'
       + '</div>'
@@ -376,6 +380,14 @@
     S.el.inputRow = b.querySelector('.pb-input');
     S.el.input = b.querySelector('#petInput');
     S.el.send = b.querySelector('#petSend');
+    S.el.receipt = b.querySelector('#petReceipt');
+    var receiptFile = b.querySelector('#petReceiptFile');
+    S.el.receipt.addEventListener('click', function () { receiptFile.click(); });
+    receiptFile.addEventListener('change', function () {
+      var file = this.files[0];
+      this.value = '';
+      if (file) sendReceipt(file);
+    });
     S.el.plan = b.querySelector('.pb-plan');
     S.el.planRetry = S.el.plan.querySelector('button');
     S.el.planRetry.addEventListener('click', function () { runPlan(true); });
@@ -405,7 +417,21 @@
     /* 消息区内的事件委托：草稿「应用/放弃」 */
     S.el.body.addEventListener('click', function (e) {
       var btn = e.target.closest && e.target.closest('button[data-draft]');
-      if (btn) pdAction(btn.getAttribute('data-draft'), btn.getAttribute('data-mid'), btn);
+      if (!btn) return;
+      var action = btn.getAttribute('data-draft');
+      if (action === 'confirm-receipt') confirmReceipt(btn);
+      else pdAction(action, btn.getAttribute('data-mid'), btn);
+    });
+    S.el.body.addEventListener('change', function (e) {
+      var form = e.target.closest && e.target.closest('.pd-packing-form');
+      if (form) syncPackingChoices(form);
+      var receipt = e.target.closest && e.target.closest('.pd-receipt');
+      if (receipt) {
+        syncReceiptControls(receipt);
+        if (!e.target.closest('.pd-receipt-duplicate')) {
+          receipt.querySelector('.pd-receipt-duplicate input').checked = false;
+        }
+      }
     });
   }
 
@@ -592,6 +618,308 @@
       + '📍 打开「' + escapeHtml(nav.label || '页面') + '」→</a>';
   }
 
+  function routeLocalTime(value, onDate) {
+    if (!value) return '时间未填';
+    var stamp = String(value);
+    return (stamp.slice(0, 10) === onDate ? '' : stamp.slice(0, 10) + ' ') + stamp.slice(11, 16);
+  }
+
+  function routePlaceLabel(place, date, showCoordinates) {
+    if (!place) return '—';
+    var details = [place.name, routeLocalTime(place.start, date) + '–' + routeLocalTime(place.end, date),
+      place.address, place.notes];
+    if (showCoordinates && place.latitude != null && place.longitude != null) {
+      details.push(place.latitude + ', ' + place.longitude);
+    }
+    return details.filter(Boolean).join(' · ');
+  }
+
+  function routePreviewHtml(preview) {
+    var report = preview.report || {};
+    var modes = { driving: '驾车估时', walking: '步行估时', transit: '公共交通估时' };
+    var states = { checked: '已核对可用数据', partial: '部分数据待核实', conflict: '仍有时间冲突' };
+    var actions = { add: '新增', update: '调整', remove: '移除' };
+    var html = '<div class="pd-route"><p>' + escapeHtml(preview.tripTitle + ' · ' + preview.date + ' · ' + preview.timezone)
+      + '</p><p>' + escapeHtml(preview.reason || '') + '</p>';
+    html += '<ul class="pd-list">' + (preview.differences || []).map(function (item) {
+      var before = item.before;
+      var after = item.after;
+      var showCoordinates = before && after &&
+        (before.latitude !== after.latitude || before.longitude !== after.longitude);
+      var changedType = before && after && before.type !== after.type;
+      return '<li><span class="op">' + escapeHtml(actions[item.action] || '变更') + '</span><div>'
+        + (before ? '<div><b>原安排</b> ' + escapeHtml(routePlaceLabel(before, preview.date, showCoordinates)
+          + (changedType ? ' · ' + before.type : '')) + '</div>' : '')
+        + (after ? '<div><b>调整后</b> ' + escapeHtml(routePlaceLabel(after, preview.date, showCoordinates)
+          + (changedType ? ' · ' + after.type : '')) + '</div>' : '') + '</div></li>';
+    }).join('') + '</ul>';
+    var locked = (preview.bookings || []).map(function (booking) {
+      return booking.title + ' ' + routeLocalTime(booking.start, preview.date)
+        + (booking.end ? ' → ' + routeLocalTime(booking.end, preview.date) : '');
+    }).concat(preview.lockedPlaces || []);
+    if (locked.length) {
+      html += '<p><b>保留</b> ' + escapeHtml(locked.join('；')) + '</p>';
+    }
+    var heading = [modes[report.mode], states[report.status]].filter(Boolean).join(' · ');
+    html += '<details open><summary>' + escapeHtml(heading || '路线校验') + '</summary><ul>';
+    var legs = report.legs || [];
+    legs.forEach(function (leg) {
+      var duration = leg.durationSeconds == null ? '耗时待核实'
+        : (leg.durationSeconds === 0 ? '同一位置' : '约 ' + Math.ceil(leg.durationSeconds / 60) + ' 分钟');
+      var gap = leg.availableSeconds == null ? '' : ' · 空档 ' + Math.floor(leg.availableSeconds / 60) + ' 分钟';
+      var buffer = leg.arrivalBufferMinutes ? ' · 已预留到站 ' + leg.arrivalBufferMinutes + ' 分钟' : '';
+      html += '<li>' + escapeHtml(leg.from + ' → ' + leg.to + ' · ' + duration + gap + buffer) + '</li>';
+    });
+    (report.issues || []).forEach(function (issue) {
+      html += '<li>' + escapeHtml(issue.message) + '</li>';
+    });
+    if (preview.weatherNote) {
+      html += '<li>' + escapeHtml(preview.weatherNote) + '</li>';
+    }
+    return html + '</ul></details></div>';
+  }
+
+  function packingPreviewHtml(preview, done, result) {
+    var html = '<div class="pd-packing"><p>' + escapeHtml(preview.tripTitle + ' · ' + preview.days + ' 天') + '</p>';
+    if (result) {
+      html += '<p>已加入「' + escapeHtml(result.listName) + '」的物品</p><ul class="pd-list">';
+      html += (result.items || []).map(function (item) {
+        return '<li>' + escapeHtml(item.name + ' × ' + item.quantity) + '</li>';
+      }).join('');
+      html += '</ul>';
+      if (!(result.items || []).length) html += '<p>这次没有新增物品</p>';
+      if ((result.skipped || []).length) html += '<p>确认时跳过已有物品：' + escapeHtml(result.skipped.join('、')) + '</p>';
+      return html + '</div>';
+    }
+    html += '<p>' + escapeHtml(preview.weatherNote) + '</p>';
+    if ((preview.duplicateSuggestions || []).length) {
+      html += '<p>已合并重复建议：' + escapeHtml(preview.duplicateSuggestions.join('、')) + '</p>';
+    }
+    if (done) {
+      return html + '<ul class="pd-list">' + (preview.items || []).map(function (item) {
+        return '<li>' + escapeHtml(item.name + ' × ' + item.quantity) + '</li>';
+      }).join('') + '</ul></div>';
+    }
+    html += '<div class="pd-packing-form"><label>目标清单<select class="pd-packing-target">'
+      + '<option value="" disabled' + (preview.defaultTarget ? '' : ' selected') + '>请选择目标清单</option>'
+      + (preview.targets || []).map(function (target) {
+        return '<option value="' + escapeHtml(target.id) + '" data-duplicates="'
+          + escapeHtml(JSON.stringify(target.duplicateIds || [])) + '"'
+          + (target.id === preview.defaultTarget ? ' selected' : '') + '>'
+          + escapeHtml(target.name + ' · ' + target.itemCount + ' 项') + '</option>';
+      }).join('')
+      + '<option value="new"' + (preview.defaultTarget === 'new' ? ' selected' : '') + '>创建新清单</option></select></label>'
+      + '<label class="pd-packing-new" hidden>新清单名称<input type="text" maxlength="100" required value="'
+      + escapeHtml(preview.newListName) + '"></label><ul class="pd-list">';
+    html += (preview.items || []).map(function (item) {
+      return '<li data-packing-item="' + escapeHtml(item.id) + '"><label><input type="checkbox" checked>'
+        + '<span>' + escapeHtml(item.name) + '</span></label>'
+        + '<input type="number" aria-label="' + escapeHtml(item.name + '数量') + '" min="1" max="999" step="1" required value="'
+        + escapeHtml(item.quantity) + '"><span class="pd-packing-existing" hidden>已有，跳过</span></li>';
+    }).join('');
+    return html + '</ul><p class="pd-packing-status" role="status"></p></div></div>';
+  }
+
+  function syncPackingChoices(form) {
+    var target = form.querySelector('.pd-packing-target');
+    var existing = JSON.parse(target.selectedOptions[0].getAttribute('data-duplicates') || '[]');
+    var create = target.value === 'new';
+    form.querySelector('.pd-packing-new').hidden = !create;
+    var selected = 0;
+    form.querySelectorAll('[data-packing-item]').forEach(function (row) {
+      var duplicate = existing.includes(row.getAttribute('data-packing-item'));
+      var checkbox = row.querySelector('[type="checkbox"]');
+      checkbox.disabled = duplicate;
+      row.querySelector('[type="number"]').disabled = duplicate || !checkbox.checked;
+      row.querySelector('.pd-packing-existing').hidden = !duplicate;
+      if (checkbox.checked && !duplicate) selected++;
+    });
+    form.querySelector('.pd-packing-status').textContent = target.value
+      ? '已选 ' + selected + ' 项' + (existing.length ? ' · 跳过 ' + existing.length + ' 项已有物品' : '')
+      : '请选择已有清单或创建新清单';
+    var apply = form.closest('.pet-draft').querySelector('.pd-btn.apply');
+    apply.disabled = !target.value || !selected || form.dataset.busy === 'true';
+    apply.textContent = create ? '创建并添加' : '添加所选物品';
+  }
+
+  function packingChoices(form) {
+    var targetId = form.querySelector('.pd-packing-target').value;
+    var items = [];
+    for (var row of form.querySelectorAll('[data-packing-item]')) {
+      var number = row.querySelector('[type="number"]');
+      if (number.disabled) continue;
+      if (!number.reportValidity()) return null;
+      items.push({ id: row.getAttribute('data-packing-item'), quantity: number.valueAsNumber });
+    }
+    if (!targetId || !items.length) return null;
+    var choices = { targetId: targetId, items: items };
+    if (targetId === 'new') {
+      var name = form.querySelector('.pd-packing-new input');
+      name.value = name.value.trim();
+      if (!name.reportValidity()) return null;
+      choices.newListName = name.value;
+    }
+    return choices;
+  }
+
+  var RECEIPT_KINDS = { expense: '消费小票', flight: '机票', hotel: '酒店预订', train: '火车票',
+    ticket: '门票', other: '其他预订' };
+
+  function receiptReviewHtml(review, canEdit, messageId) {
+    if (!canEdit) return '<div class="pd-receipt">已放弃票据核对</div>';
+    var fields = review.fields || {};
+    var uncertain = review.uncertain || [];
+    function field(key, label, attrs, fallback) {
+      return '<label>' + label + (uncertain.includes(key) ? ' <span>待核对</span>' : '')
+        + '<input data-receipt-field="' + key + '" value="' + escapeHtml(fields[key] || fallback || '') + '" ' + attrs + '></label>';
+    }
+    var people = review.members || [];
+    var html = '<div class="pd-receipt"><p>' + escapeHtml(review.tripTitle + ' · ' + review.timezone)
+      + '</p><p>' + (review.recognition === 'manual' ? '没有可用的识别结果，可以对照图片手动填写。'
+        : '请对照原图核对类别、日期和金额。') + '</p>';
+    if (S.receiptImage && S.receiptImage.id === messageId) {
+      html += '<details class="pd-receipt-image"><summary>查看所选图片</summary><img alt="所选票据图片" src="'
+        + escapeHtml(S.receiptImage.url) + '"></details>';
+    }
+    html += '<label>票据类别<select data-receipt-field="kind"><option value="">请选择</option>'
+      + Object.keys(RECEIPT_KINDS).map(function (key) {
+        return '<option value="' + key + '"' + (key === fields.kind ? ' selected' : '') + '>' + RECEIPT_KINDS[key] + '</option>';
+      }).join('') + '</select></label>'
+      + field('title', '商户或服务名称', 'maxlength="120"')
+      + '<div class="pd-receipt-expense">'
+      + field('date', '消费日期', 'type="date"')
+      + '<label>费用类别<select data-receipt-field="category"><option value="other">其他</option><option value="food">餐饮</option>'
+      + '<option value="transport">交通</option><option value="hotel">住宿</option><option value="ticket">门票</option>'
+      + '<option value="shopping">购物</option></select></label></div>'
+      + '<div class="pd-receipt-booking">'
+      + field('startTime', '开始日期或时间', 'placeholder="YYYY-MM-DD 或 YYYY-MM-DD HH:mm"')
+      + field('startTimezone', '开始时区', 'maxlength="60"', review.timezone)
+      + field('endTime', '结束日期或时间（选填）', 'placeholder="YYYY-MM-DD 或 YYYY-MM-DD HH:mm"')
+      + field('endTimezone', '结束时区（选填）', 'maxlength="60" placeholder="默认与开始时区相同"')
+      + '</div>'
+      + field('amount', '实付金额', 'inputmode="decimal"')
+      + field('currency', '原币代码', 'maxlength="3" placeholder="如 CNY、USD、JPY"');
+    var totals = [fields.subtotal != null ? '小计 ' + fields.subtotal : '',
+      fields.tax != null ? '税额 ' + fields.tax : ''].filter(Boolean);
+    if (totals.length) html += '<p class="pd-receipt-totals">' + escapeHtml(totals.join(' · ')) + ' · 仅供核对</p>';
+    html += '<div class="pd-receipt-expense"><label>付款和分摊<select class="pd-receipt-split">'
+      + '<option value="">请选择</option><option value="default">本人付款、全员均分</option>'
+      + '<option value="equal">指定成员均分</option><option value="ratio">按比例</option><option value="amount">按金额</option>'
+      + '</select></label><div class="pd-receipt-custom" hidden><label>付款人<select data-receipt-field="payer">'
+      + '<option value="">请选择付款人</option>'
+      + people.map(function (person) {
+        return '<option value="' + escapeHtml(person.userId) + '">' + escapeHtml(receiptMemberLabel(person)) + '</option>';
+      }).join('') + '</select></label><ul class="pd-list">'
+      + people.map(function (person) {
+        var name = receiptMemberLabel(person);
+        return '<li class="pd-receipt-person"><label><input type="checkbox" value="' + escapeHtml(person.userId) + '">'
+          + escapeHtml(name) + '</label><input type="text" inputmode="decimal" aria-label="'
+          + escapeHtml(name + '分摊值') + '" placeholder="份额" hidden></li>';
+      }).join('') + '</ul></div></div>'
+      + '<label class="pd-receipt-duplicate" hidden><input type="checkbox"> 已核对疑似重复项，仍生成草稿</label></div>';
+    return html;
+  }
+
+  function receiptMemberLabel(person) {
+    return person.displayName && person.username && person.displayName !== person.username
+      ? person.displayName + '（' + person.username + '）' : (person.displayName || person.username || '行程成员');
+  }
+
+  function syncReceiptControls(form) {
+    var kind = form.querySelector('[data-receipt-field="kind"]').value;
+    var split = form.querySelector('.pd-receipt-split').value;
+    form.querySelectorAll('.pd-receipt-expense').forEach(function (node) { node.hidden = kind !== 'expense'; });
+    form.querySelector('.pd-receipt-booking').hidden = !kind || kind === 'expense';
+    form.querySelector('.pd-receipt-custom').hidden = !split || split === 'default';
+    form.querySelectorAll('.pd-receipt-person input[type="text"]').forEach(function (node) {
+      node.hidden = split !== 'ratio' && split !== 'amount';
+    });
+  }
+
+  async function confirmReceipt(button) {
+    var form = button.closest('.pet-draft').querySelector('.pd-receipt');
+    var data = {};
+    form.querySelectorAll('[data-receipt-field]').forEach(function (field) {
+      data[field.getAttribute('data-receipt-field')] = field.value.trim();
+    });
+    if (data.kind === 'expense') {
+      var split = form.querySelector('.pd-receipt-split').value;
+      if (!split) { toast('请选择付款人和分摊方式'); return; }
+      if (split === 'default') data.useDefaultSplit = true;
+      else {
+        data.splitType = split;
+        data.participants = Array.from(form.querySelectorAll('.pd-receipt-person input:checked'), function (check) {
+          var participant = { member: check.value };
+          var value = check.closest('li').querySelector('input[type="text"]').value.trim();
+          if (split === 'ratio') participant.ratio = value;
+          if (split === 'amount') participant.shareAmount = value;
+          return participant;
+        });
+      }
+    }
+    data.acknowledgeDuplicate = form.querySelector('.pd-receipt-duplicate input').checked;
+    button.disabled = true;
+    var conversation = S.convId;
+    try {
+      var messageId = button.getAttribute('data-mid');
+      await apiPost('/ai/conversations/' + encodeURIComponent(conversation) + '/receipts/'
+        + encodeURIComponent(messageId) + '/confirm', data);
+      if (S.receiptImage && S.receiptImage.id === messageId) clearReceiptImage();
+      if (S.convId === conversation) await refresh();
+    } catch (err) {
+      if (err.status === 409 && humanError(err).includes('疑似重复')) {
+        form.querySelector('.pd-receipt-duplicate').hidden = false;
+        form.querySelector('.pd-receipt-duplicate input').checked = false;
+      }
+      toast(humanError(err));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function clearReceiptImage() {
+    if (!S.receiptImage) return;
+    URL.revokeObjectURL(S.receiptImage.url);
+    S.receiptImage = null;
+  }
+
+  async function sendReceipt(file) {
+    if (S.receiptBusy || !S.tripBound || !S.tripId || !paramTripId()) return;
+    if (file.size > 4 * 1024 * 1024 || !['image/jpeg', 'image/png'].includes(file.type)) {
+      toast('请选择 4 MB 以内的 JPEG 或 PNG 图片');
+      return;
+    }
+    S.receiptBusy = true;
+    S.el.receipt.disabled = true;
+    S.el.receipt.textContent = '识别中';
+    try {
+      var tripId = S.tripId;
+      var conversation = await ensureConversation('核对票据截图', true);
+      var image = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(new Error('图片读取失败，请重新选择')); };
+        reader.readAsDataURL(file);
+      });
+      var result = await apiPost('/ai/conversations/' + encodeURIComponent(conversation) + '/receipts',
+        { image: image, tripId: tripId });
+      if (S.convId === conversation) {
+        clearReceiptImage();
+        if (S.bubbleOpen && result.status === 'pending') {
+          S.receiptImage = { id: result.messageId, url: URL.createObjectURL(file) };
+        }
+        await refresh();
+        if (result.status === 'discarded') toast('这张图片的核对草稿已放弃');
+      }
+    } catch (err) {
+      toast(humanError(err));
+    } finally {
+      S.receiptBusy = false;
+      S.el.receipt.disabled = false;
+      S.el.receipt.textContent = '票据';
+    }
+  }
+
   /* 草稿卡片：与行程详情抽屉一致的视觉与字段（含 时间/票价/营业时间） */
   function draftHtml(m) {
     var d = m.draft || {};
@@ -600,9 +928,16 @@
     var html = '<div class="pet-draft' + (done ? ' done' : '') + '">';
     html += '<div class="pd-h">' + escapeHtml(DRAFT_KIND[d.type] || '变更预览') + '</div>';
     html += '<div class="pd-b">';
-    html += '<div class="pd-s">' + escapeHtml(d.summary || m.content || '') + '</div>';
+    if (d.type === 'packing' && d.packingPreview) {
+      html += packingPreviewHtml(d.packingPreview, done, m.packingResult);
+    } else if (d.type === 'receipt_review' && d.receiptReview) {
+      html += receiptReviewHtml(d.receiptReview, !done, m.id);
+    } else {
+      html += '<div class="pd-s">' + escapeHtml(d.summary || m.content || '') + '</div>';
+    }
     if (d.type === 'expense' && d.expense) {
       var e = d.expense;
+      if (e.spentAt) html += '<div class="pd-s">消费日期 ' + escapeHtml(String(e.spentAt).slice(0, 10)) + '</div>';
       var p = d.expensePreview;
       if (p) {
         var names = p.memberLabels || {};
@@ -631,7 +966,7 @@
       var bkLabels = { flight: '机票', hotel: '酒店', train: '火车票', ticket: '门票', other: '预订' };
       var bkBits = [];
       if (b.startTime) bkBits.push(String(b.startTime) + (b.endTime ? ' ~ ' + String(b.endTime) : ''));
-      if (b.amount != null && b.amount !== '') bkBits.push('¥' + String(b.amount));
+      if (b.amount != null && b.amount !== '') bkBits.push((b.currency ? b.currency + ' ' : '¥') + String(b.amount));
       if (b.orderNo) bkBits.push('订单号 ' + String(b.orderNo));
       if (b.confirmCode) bkBits.push('确认码 ' + String(b.confirmCode));
       if (b.dayIndex != null) bkBits.push('第 ' + b.dayIndex + ' 天');
@@ -640,7 +975,9 @@
         + (bkBits.length ? '<span class="dmeta">' + escapeHtml(bkBits.join(' · ')) + '</span>' : '')
         + '</li></ul>';
     }
-    if (d.type === 'itinerary_change' && Array.isArray(d.changes)) {
+    if (d.routeAdjustment && d.routeAdjustment.preview) {
+      html += routePreviewHtml(d.routeAdjustment.preview);
+    } else if (d.type === 'itinerary_change' && Array.isArray(d.changes)) {
       html += '<ul class="pd-list">' + d.changes.slice(0, 12).map(function (c) {
         var op = c.action === 'update' ? '修改' : (c.action === 'remove' || c.action === 'delete' ? '删除' : '新增');
         var txt = (c.name || c.placeId || '');
@@ -678,7 +1015,8 @@
         + (status === 'applied' ? '✓ 已应用' : '已放弃') + '</div>';
     } else {
       html += '<div class="pd-acts">'
-        + '<button type="button" class="pd-btn apply" data-draft="apply" data-mid="' + escapeHtml(m.id) + '">应用</button>'
+        + '<button type="button" class="pd-btn apply" data-draft="' + (d.type === 'receipt_review' ? 'confirm-receipt' : 'apply')
+        + '" data-mid="' + escapeHtml(m.id) + '">' + (d.type === 'receipt_review' ? '生成待确认草稿' : '应用') + '</button>'
         + '<button type="button" class="pd-btn discard" data-draft="discard" data-mid="' + escapeHtml(m.id) + '">放弃</button>'
         + '</div>';
     }
@@ -751,6 +1089,10 @@
         send(btn.getAttribute('data-send') || btn.textContent);
       });
     });
+    box.querySelectorAll('.pd-packing-form').forEach(syncPackingChoices);
+    box.querySelectorAll('.pd-receipt [data-receipt-field="kind"]').forEach(function (kind) {
+      syncReceiptControls(kind.closest('.pd-receipt'));
+    });
     box.scrollTop = box.scrollHeight;
     /* 多天规划草稿卡片较长时，末尾的「应用」按钮可能被挤出可视区，这里再把卡片底部拉进视野 */
     var applyBtns = box.querySelectorAll('.msg-draft .pet-draft .pd-btn.apply');
@@ -783,7 +1125,7 @@
     return (prefix + String(firstText || '对话')).slice(0, 24);
   }
 
-  async function ensureConversation(firstText) {
+  async function ensureConversation(firstText, requireTrip) {
     if (S.convId) return S.convId;
     var payload = { title: newTitle(firstText) };
     if (S.tripId && S.tripBound) payload.tripId = S.tripId;
@@ -791,6 +1133,7 @@
     try {
       created = await apiPost('/ai/conversations', payload);
     } catch (err) {
+      if (requireTrip) throw err;
       /* 行程会话创建失败（如非成员/行程已删）：回退为全局会话，保证可用 */
       if (payload.tripId) {
         S.tripBound = false;
@@ -833,23 +1176,36 @@
 
   async function pdAction(kind, messageId, btn) {
     if (!S.convId || !messageId) return;
+    var form = kind === 'apply' && btn && btn.closest('.pet-draft').querySelector('.pd-packing-form');
+    var choices = form ? packingChoices(form) : {};
+    if (!choices) return;
+    if (form) form.dataset.busy = 'true';
     if (btn) btn.disabled = true; // 体验优化：请求在途时禁用按钮（后端条件更新才是并发保证）
     try {
-      await apiPost('/ai/conversations/' + encodeURIComponent(S.convId)
-        + '/' + kind + '/' + encodeURIComponent(messageId), {});
-      toast(kind === 'apply' ? '已应用变更' : '已放弃该草稿');
+      var result = await apiPost('/ai/conversations/' + encodeURIComponent(S.convId)
+        + '/' + kind + '/' + encodeURIComponent(messageId), choices);
+      var packing = result && result.packing;
+      if (kind === 'discard' && S.receiptImage && S.receiptImage.id === messageId) clearReceiptImage();
+      toast(packing ? '新增 ' + result.appliedCount + ' 项打包物品'
+        : (kind === 'apply' ? '已应用变更' : '已放弃该草稿'));
+      if (packing) dispatchApplied(kind, messageId, packing);
       await refresh();
-      dispatchApplied(kind, messageId);
+      if (!packing) dispatchApplied(kind, messageId);
     } catch (err) {
       if (btn) btn.disabled = false;
+      if (form) {
+        delete form.dataset.busy;
+        syncPackingChoices(form);
+      }
       toast(humanError(err));
       // 409（正在应用中/状态已变化）等：同步服务端权威状态，避免用户基于过期状态重复点击
       try { await refresh(); } catch (e) { /* ignore */ }
     }
   }
 
-  function dispatchApplied(kind, messageId) {
-    var detail = { kind: kind, messageId: messageId, conversationId: S.convId, tripId: S.tripId };
+  function dispatchApplied(kind, messageId, packing) {
+    var detail = { kind: kind, messageId: messageId, conversationId: S.convId,
+      tripId: packing ? packing.tripId : S.tripId, packing: packing };
     try {
       window.dispatchEvent(new CustomEvent('travelos:ai-applied', { detail: detail }));
     } catch (e) { /* ignore */ }
@@ -995,7 +1351,7 @@
     }
   }
 
-  async function send(preset, plan) {
+  async function send(preset, plan, requireTrip) {
     if (S.sending || (S.planning && !plan)) return;
     var text = String(preset != null ? preset : S.el.input.value).trim();
     if (!text) return;
@@ -1017,7 +1373,7 @@
     box.scrollTop = box.scrollHeight;
     appendTyping();
     try {
-      if (!plan) await ensureConversation(text);
+      if (!plan) await ensureConversation(text, requireTrip);
       var result = await streamMessage(text, box, clientRequestId);
       /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配，
        * 同时也是流式中断/停止后的权威对齐——不会再次发送同一条消息） */
@@ -1063,6 +1419,7 @@
       return;
     }
     S.el.inputRow.hidden = false;
+    S.el.receipt.hidden = !S.tripBound || !paramTripId();
     S.el.input.focus();
     if (Array.isArray(knownMessages)) {
       if (knownMessages.length) renderMessages(knownMessages); else renderEmpty();
@@ -1150,6 +1507,7 @@
 
   function hideBubble() {
     if (!S.bubbleOpen) return;
+    clearReceiptImage();
     S.expanded = false;
     S.bubble.classList.remove('open');
     S.bubbleOpen = false;
@@ -1275,6 +1633,13 @@
     S.bubbleOpen = false; S.drag = null; S.snapped = null; S.expanded = false;
   }
 
+  async function generatePacking(tripId) {
+    if (!S.host || !S.tripBound || S.tripId !== tripId) return false;
+    await showBubble();
+    await send('请根据当前行程生成打包清单草稿。', null, true);
+    return true;
+  }
+
   global.TravelOSAi = {
     __loaded: true,
     init: init,
@@ -1283,6 +1648,7 @@
     showBubble: showBubble,
     hideBubble: hideBubble,
     setTrip: setTrip,
+    generatePacking: generatePacking,
     refresh: refresh,
     stop: stop,
     expand: function () { setExpanded(true); },

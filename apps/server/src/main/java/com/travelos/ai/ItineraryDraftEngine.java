@@ -7,9 +7,11 @@ import com.travelos.entity.TripPlace;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.service.BookingService;
+import com.travelos.service.AiPackingDraftService;
 import com.travelos.service.PlacesService;
 import com.travelos.service.TripExpenseService;
 import com.travelos.service.TripPlaceService;
+import com.travelos.service.TripRouteAdjustmentService;
 import com.travelos.service.TripService;
 import org.springframework.stereotype.Component;
 
@@ -40,11 +42,13 @@ public class ItineraryDraftEngine {
   private final PlacesService placesService;
   private final TripExpenseService tripExpenseService;
   private final BookingService bookingService;
+  private final TripRouteAdjustmentService routeAdjustments;
+  private final AiPackingDraftService packingDrafts;
 
   public ItineraryDraftEngine(TripService tripService, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripPlaceService tripPlaceService,
       PlacesService placesService, TripExpenseService tripExpenseService,
-      BookingService bookingService) {
+      BookingService bookingService, TripRouteAdjustmentService routeAdjustments, AiPackingDraftService packingDrafts) {
     this.tripService = tripService;
     this.tripDayMapper = tripDayMapper;
     this.tripPlaceMapper = tripPlaceMapper;
@@ -52,10 +56,20 @@ public class ItineraryDraftEngine {
     this.placesService = placesService;
     this.tripExpenseService = tripExpenseService;
     this.bookingService = bookingService;
+    this.routeAdjustments = routeAdjustments;
+    this.packingDrafts = packingDrafts;
+  }
+
+  public Map<String, Object> applyPackingDraft(String tripId, Map<String, Object> draft, String userId,
+      Map<String, Object> choices) {
+    return packingDrafts.apply(tripId, userId, draft, choices);
   }
 
   /** 应用行程变更草稿（add/remove/update，可跨多天），返回实际应用的变更数。 */
   public int applyItineraryChanges(String tripId, Map<String, Object> draft, String userId) {
+    if (draft.get("routeAdjustment") instanceof Map<?, ?> adjustment) {
+      return routeAdjustments.apply(tripId, userId, draft, adjustment);
+    }
     if (!(draft.get("changes") instanceof List<?> changes) || changes.isEmpty()) {
       throw ApiException.badRequest("草稿中没有可应用的变更");
     }
@@ -387,6 +401,11 @@ public class ItineraryDraftEngine {
     }
     if (booking.get("amount") != null) {
       payload.put("amount", booking.get("amount"));
+    }
+    for (String key : List.of("currency", "startTimezone", "endTimezone")) {
+      if (booking.get(key) != null) {
+        payload.put(key, booking.get(key));
+      }
     }
     if (booking.get("orderNo") != null) {
       payload.put("orderNo", booking.get("orderNo"));

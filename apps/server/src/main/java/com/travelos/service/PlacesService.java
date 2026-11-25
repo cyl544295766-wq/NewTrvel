@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -99,6 +100,11 @@ public class PlacesService {
    * @param category "restaurant" / "attraction" / "hotel" / 其它（不限类型）
    */
   public Map<String, Object> searchPois(String keyword, String city, String category, Integer limit) {
+    return searchPois(keyword, city, category, limit, REQUEST_TIMEOUT);
+  }
+
+  Map<String, Object> searchPois(String keyword, String city, String category, Integer limit,
+      Duration timeout) {
     String normalizedKeyword = keyword == null ? "" : keyword.trim();
     if (normalizedKeyword.isEmpty()) {
       throw ApiException.badRequest("关键词不能为空");
@@ -135,7 +141,7 @@ public class PlacesService {
       }
       HttpResponse<String> response = httpClient.send(HttpRequest.newBuilder()
           .uri(URI.create(url.toString()))
-          .timeout(REQUEST_TIMEOUT)
+          .timeout(timeout)
           .GET()
           .build(), HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() != 200) {
@@ -147,11 +153,93 @@ public class PlacesService {
       }
       List<Map<String, Object>> places = normalizePois(pois(data), normalizedCity, normalizedCategory);
       poiCache.put(cacheKey, new CachedPlaces(System.currentTimeMillis() + CACHE_TTL_MS, places));
-      return Map.of("places", places);    } catch (ApiException ex) {
+      return Map.of("places", places);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      throw ApiException.serviceUnavailable("地点搜索已取消");
+    } catch (ApiException ex) {
       throw ex;
     } catch (Exception ex) {
       throw ApiException.serviceUnavailable("地点搜索暂时不可用");
     }
+  }
+
+  /** 路径规划 2.0 的耗时以秒返回。只有供应商返回有效方案时才使用。 */
+  OptionalLong routeSeconds(String origin, String destination, String mode, Duration timeout) {
+    if (webServiceKey.isEmpty()) {
+      return OptionalLong.empty();
+    }
+    String endpoint = switch (mode) {
+      case "driving" -> "driving";
+      case "walking" -> "walking";
+      case "transit" -> "transit/integrated";
+      default -> null;
+    };
+    if (endpoint == null) {
+      return OptionalLong.empty();
+    }
+    try {
+      long deadline = System.nanoTime() + timeout.toNanos();
+      String url = "https://restapi.amap.com/v5/direction/" + endpoint
+          + "?key=" + URLEncoder.encode(webServiceKey, StandardCharsets.UTF_8)
+          + "&origin=" + origin + "&destination=" + destination + "&show_fields=cost";
+      if ("transit".equals(mode)) {
+        String city1 = cityCode(origin, deadline);
+        String city2 = city1 == null ? null : cityCode(destination, deadline);
+        if (city2 == null) {
+          return OptionalLong.empty();
+        }
+        url += "&city1=" + city1 + "&city2=" + city2 + "&AlternativeRoute=1";
+      }
+      HttpResponse<String> response = routeRequest(url, deadline);
+      return response.statusCode() == 200
+          ? parseRouteSeconds(response.body(), "transit".equals(mode) ? "transits" : "paths")
+          : OptionalLong.empty();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      return OptionalLong.empty();
+    } catch (Exception ex) {
+      return OptionalLong.empty();
+    }
+  }
+
+  private String cityCode(String coordinates, long deadline) throws java.io.IOException, InterruptedException {
+    HttpResponse<String> response = routeRequest("https://restapi.amap.com/v3/geocode/regeo?key="
+        + URLEncoder.encode(webServiceKey, StandardCharsets.UTF_8) + "&location=" + coordinates, deadline);
+    if (response.statusCode() != 200) {
+      return null;
+    }
+    Map<String, Object> data = com.travelos.common.JsonUtil.readObject(response.body());
+    if ("1".equals(String.valueOf(data.get("status"))) && data.get("regeocode") instanceof Map<?, ?> geocode
+        && geocode.get("addressComponent") instanceof Map<?, ?> address) {
+      String code = String.valueOf(address.get("citycode"));
+      return code.matches("\\d{3,4}") ? code : null;
+    }
+    return null;
+  }
+
+  private HttpResponse<String> routeRequest(String url, long deadline) throws java.io.IOException, InterruptedException {
+    long remaining = deadline - System.nanoTime();
+    if (remaining <= 0) {
+      throw new java.net.http.HttpTimeoutException("Map request timed out");
+    }
+    return httpClient.send(HttpRequest.newBuilder().uri(URI.create(url))
+        .timeout(Duration.ofNanos(remaining)).GET().build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  static OptionalLong parseRouteSeconds(String body, String optionsKey) {
+    Map<String, Object> data = com.travelos.common.JsonUtil.readObject(body);
+    if ("1".equals(String.valueOf(data.get("status"))) && data.get("route") instanceof Map<?, ?> route
+        && route.get(optionsKey) instanceof List<?> paths && !paths.isEmpty()
+        && paths.get(0) instanceof Map<?, ?> path && path.get("cost") instanceof Map<?, ?> cost) {
+      try {
+        long seconds = Long.parseLong(String.valueOf(cost.get("duration")));
+        return seconds > 0 ? OptionalLong.of(seconds) : OptionalLong.empty();
+      } catch (NumberFormatException ignored) {
+        // 算路结果缺少有效耗时。
+      }
+    }
+    return OptionalLong.empty();
   }
 
   @SuppressWarnings("unchecked")

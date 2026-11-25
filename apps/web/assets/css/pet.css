@@ -299,6 +299,9 @@
 }
 .pet-bubble .pb-input button:hover { transform: translateY(-1px); }
 .pet-bubble .pb-input button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.pet-bubble .pb-input #petReceipt { padding-inline: 9px; font-size: 12px; white-space: nowrap; }
+.pet-bubble .pb-input #petInput { min-width: 0; }
+.pet-bubble .pb-input [hidden] { display: none; }
 /* 未登录提示 */
 .pet-login { text-align: center; padding: 18px 14px; }
 .pet-login .t { font-size: 13px; color: var(--ink-2, #3C545A); margin-bottom: 10px; }
@@ -374,6 +377,42 @@
 .pet-draft .pd-expense li span { overflow-wrap: anywhere; min-width: 0; }
 .pet-draft .pd-expense .pd-share-name { flex: 1; }
 .pet-draft .pd-expense strong { white-space: nowrap; }
+.pet-draft .pd-route { overflow-wrap: anywhere; color: #354c50; font-size: 12px; line-height: 1.55; }
+.pet-draft .pd-route p { margin: 0 0 8px; }
+.pet-draft .pd-route .pd-list li { align-items: flex-start; }
+.pet-draft .pd-route details { margin-top: 8px; }
+.pet-draft .pd-route summary { cursor: pointer; font-weight: 600; }
+.pet-draft .pd-route details ul { margin: 6px 0 2px; padding-inline-start: 1.25rem; }
+.pet-draft .pd-packing { color: #354c50; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.pet-draft .pd-packing p { margin: 0 0 6px; }
+.pet-draft .pd-packing-form > label { display: grid; gap: 3px; margin: 8px 0; font-weight: 600; }
+.pet-draft .pd-packing [hidden] { display: none; }
+.pet-draft .pd-packing select, .pet-draft .pd-packing input:not([type="checkbox"]) {
+  min-width: 0; min-height: 32px; padding: 4px 8px; border: 1px solid #adbec0;
+  border-radius: 7px; background: #fff; color: #26393c; font: inherit;
+}
+.pet-draft .pd-packing .pd-list { margin: 8px 0; padding: 0; }
+.pet-draft .pd-packing-form .pd-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.pet-draft .pd-packing-form .pd-list label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.pet-draft .pd-packing [type="number"] { width: 5.2em; }
+.pet-draft .pd-packing [type="number"]:disabled { opacity: .55; }
+.pet-draft .pd-packing-existing { color: #675336; font-size: 11px; grid-column: 1 / -1; }
+.pet-draft .pd-receipt { color: #354c50; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.pet-draft .pd-receipt p { margin: 0 0 6px; }
+.pet-draft .pd-receipt [hidden] { display: none; }
+.pet-draft .pd-receipt label { display: grid; gap: 3px; margin: 6px 0; font-weight: 600; }
+.pet-draft .pd-receipt label span { color: #865b1d; font-size: 11px; font-weight: 400; }
+.pet-draft .pd-receipt input:not([type="checkbox"]), .pet-draft .pd-receipt select {
+  min-width: 0; width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid #adbec0;
+  border-radius: 7px; background: #fff; color: #26393c; font: inherit;
+}
+.pet-draft .pd-receipt .pd-list { padding: 0; }
+.pet-draft .pd-receipt .pd-receipt-person label, .pet-draft .pd-receipt .pd-receipt-duplicate:not([hidden]) {
+  display: flex; gap: 7px; align-items: center;
+}
+.pet-draft .pd-receipt .pd-receipt-person input[type="text"] { width: 7em; }
+.pet-draft .pd-receipt .pd-receipt-duplicate { color: #80552d; }
+.pet-draft .pd-receipt-image img { display: block; max-width: 100%; max-height: 260px; margin: 6px 0; }
 .pet-draft .pd-more {
   margin-top: 6px;
   font-size: 11px;

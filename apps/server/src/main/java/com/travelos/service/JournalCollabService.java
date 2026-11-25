@@ -1,5 +1,6 @@
 package com.travelos.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.travelos.auth.UserContext;
 import com.travelos.common.ApiException;
@@ -111,6 +112,15 @@ public class JournalCollabService {
   /** 行程天写操作校验：必须持有该天的未过期锁。 */
   public void requireDayLockHolder(String dayId, String userId) {
     requireScopeHolder(dayId, userId);
+  }
+
+  /** 草稿是一笔即时事务，已有他人编辑锁时应等待其完成手工编辑。 */
+  void requireDayAvailableForDraft(String dayId, String userId) {
+    EditLock lock = bypassed(() -> lockMapper.selectOne(new LambdaQueryWrapper<EditLock>()
+        .eq(EditLock::getScopeId, dayId).last("FOR UPDATE")));
+    if (lock != null && lock.getExpiresAt().after(new Date()) && !userId.equals(lock.getHolderId())) {
+      throw ApiException.conflict("这一天正被其他成员编辑，请等对方完成后重新校验");
+    }
   }
 
   /** 地点写操作校验：地点所属天必须处于持锁状态（无天归属的散点不锁）。 */

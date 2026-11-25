@@ -112,6 +112,20 @@ public class FileAccessService {
     return new AuthorizedFile(path, filename);
   }
 
+  /** 识别仅接受当前行程中已有的票据、预订附件或照片。 */
+  public AuthorizedFile authorizeReceiptImage(String url, String tripId, UserContext viewer) {
+    String name = ManagedFileNames.nameFromUrl(url);
+    if (name == null || !(bookingMapper.exists(new LambdaQueryWrapper<Booking>()
+        .eq(Booking::getTripId, tripId).eq(Booking::getAttachmentUrl, url))
+        || tripExpenseMapper.exists(new LambdaQueryWrapper<TripExpense>()
+            .eq(TripExpense::getTripId, tripId).eq(TripExpense::getReceiptUrl, url))
+        || photoMapper.exists(new LambdaQueryWrapper<Photo>()
+            .eq(Photo::getTripId, tripId).eq(Photo::getUrl, url)))) {
+      throw ApiException.notFound("图片不存在");
+    }
+    return authorize(name, viewer);
+  }
+
   private boolean isAllowed(String filename, String url, UserContext viewer) {
     FileMetadata metadata = fileMetadataMapper.selectById(filename);
 

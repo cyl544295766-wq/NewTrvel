@@ -14,11 +14,13 @@ import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.service.AiPreferenceService;
 import com.travelos.service.AiExpenseDraftService;
+import com.travelos.service.AiPackingDraftService;
 import com.travelos.service.BookingService;
 import com.travelos.service.PlacesService;
 import com.travelos.service.TodayBriefService;
 import com.travelos.service.TripDayService;
 import com.travelos.service.TripMemberService;
+import com.travelos.service.TripRouteAdjustmentService;
 import com.travelos.service.TripService;
 import com.travelos.service.WeatherService;
 import org.slf4j.Logger;
@@ -93,13 +95,16 @@ public class AiToolRegistry {
   private final AiPromptBuilder promptBuilder;
   private final TodayBriefService todayBriefService;
   private final AiExpenseDraftService expenseDrafts;
+  private final TripRouteAdjustmentService routeAdjustments;
+  private final AiPackingDraftService packingDrafts;
 
   public AiToolRegistry(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       TripService tripService, TripDayService tripDayService, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
       PlacesService placesService, BookingService bookingService,
       WeatherService weatherService, AiPreferenceService preferenceService,
-      AiPromptBuilder promptBuilder, TodayBriefService todayBriefService, AiExpenseDraftService expenseDrafts) {
+      AiPromptBuilder promptBuilder, TodayBriefService todayBriefService, AiExpenseDraftService expenseDrafts,
+      TripRouteAdjustmentService routeAdjustments, AiPackingDraftService packingDrafts) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.tripService = tripService;
@@ -114,6 +119,8 @@ public class AiToolRegistry {
     this.promptBuilder = promptBuilder;
     this.todayBriefService = todayBriefService;
     this.expenseDrafts = expenseDrafts;
+    this.routeAdjustments = routeAdjustments;
+    this.packingDrafts = packingDrafts;
   }
 
   // ==================== 工具定义 ====================
@@ -237,6 +244,42 @@ public class AiToolRegistry {
                     "member", stringProp("用户明确指定的成员称呼，重名时请先确认用户名或 ID"),
                     "ratio", stringProp("按比例时每位成员的权重，例如 2"),
                     "shareAmount", stringProp("按金额时每位成员的原币金额，例如 25.00"))))))));
+    tools.add(function("get_packing_context",
+        "读取指定行程的目的地、天数、可用天气和已有打包清单，生成打包建议前先调用。",
+        Map.of("tripId", stringProp("全局会话中用户明确选定的行程 ID"))));
+    tools.add(function("propose_packing_list",
+        "生成最多 32 项打包建议的可编辑预览。用户确认目标清单、勾选物品和数量后才写入。",
+        Map.of("tripId", stringProp("全局会话中用户明确选定的行程 ID"),
+            "listId", stringProp("仅在用户明确指定时填清单 ID，明确要求新建时填 new"),
+            "newListName", stringProp("建议的新清单名称，选填"),
+            "items", Map.of("type", "array", "items", Map.of("type", "object", "properties",
+                Map.of("name", stringProp("物品名称"), "quantity", Map.of("type", "integer")))))));
+    tools.add(function("check_day_route",
+        "核对指定行程某一天的在途安排，包括地点时间、天气、固定预订、营业时间和实际地图估时。"
+            + "日期或行程不明确时先询问用户；地点 ID 可用于随后的临时调整。",
+        Map.of("tripId", stringProp("全局对话中明确选定的行程 ID"),
+            "date", stringProp("明确选定的日期 yyyy-MM-dd"),
+            "mode", stringProp("driving / walking / transit；省略时只验证驾车估时"))));
+    tools.add(function("propose_route_adjustment",
+        "旅途中的单日临时调整。先核对当日路线，使用实际地点 ID，保留固定预订、已完成地点及用户锁定的安排。"
+            + "结果中的 draftCreated=false 表示需先解决冲突或请用户选方案。",
+        Map.of("tripId", stringProp("全局对话中明确选定的行程 ID"),
+            "date", stringProp("与 check_day_route 相同的 yyyy-MM-dd 日期"),
+            "mode", stringProp("driving / walking / transit；省略时只验证驾车估时"),
+            "reason", stringProp("变更理由与用户要求"),
+            "lockedPlaceIds", Map.of("type", "array", "items", Map.of("type", "string"),
+                "description", "用户明确要求原样保留的地点 ID"),
+            "changes", Map.of("type", "array", "items", Map.of("type", "object", "properties", Map.ofEntries(
+                Map.entry("action", stringProp("add / update / remove")),
+                Map.entry("placeId", stringProp("update/remove 对应的当日地点 ID")),
+                Map.entry("name", stringProp("添加或替换地点的准确名称")),
+                Map.entry("type", stringProp("attraction / hotel / restaurant / transport / shopping / custom")),
+                Map.entry("address", stringProp("地点地址")),
+                Map.entry("latitude", stringProp("地图查询返回的纬度")),
+                Map.entry("longitude", stringProp("地图查询返回的经度")),
+                Map.entry("startTime", stringProp("所选日期与时区内的开始时间 HH:mm")),
+                Map.entry("endTime", stringProp("所选日期与时区内的结束时间 HH:mm")),
+                Map.entry("notes", stringProp("用户确认用的安排备注"))))))));
     tools.add(function("propose_itinerary_change",
         "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。"
             + "changes 数组可一次包含多天的变更项（整趟规划时一次调用覆盖全部天，每项各带 dayIndex）；"
@@ -328,6 +371,12 @@ public class AiToolRegistry {
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "add_booking" -> createBookingDraft(args, conversation, userId);
         case "ask_options" -> askOptions(args);
+        case "get_packing_context" -> JsonUtil.write(
+            packingDrafts.context(selectedTripId(args, conversation), userId));
+        case "propose_packing_list" -> createPackingDraft(args, conversation, userId);
+        case "check_day_route" -> JsonUtil.write(
+            routeAdjustments.check(selectedTripId(args, conversation), userId, args));
+        case "propose_route_adjustment" -> createRouteAdjustment(args, conversation, userId);
         case "propose_itinerary_change" -> createItineraryDraft(args, conversation, userId);
         case "open_page" -> openPage(args, conversation, userId);
         default -> "{\"error\":\"未知工具 " + name + "\"}";
@@ -655,6 +704,39 @@ public class AiToolRegistry {
     return summary.append("（应用后写入预定管理）。").toString();
   }
 
+  private String selectedTripId(Map<String, Object> args, AiConversation conversation) {
+    String selected = Payloads.trimmedOrNull(args.get("tripId"));
+    String bound = conversation.getTripId();
+    if (bound != null && selected != null && !bound.equals(selected)) {
+      throw ApiException.badRequest("请切换到目标行程的会话");
+    }
+    if (bound == null && selected == null) {
+      throw ApiException.badRequest("请先明确要操作的行程");
+    }
+    return bound == null ? selected : bound;
+  }
+
+  private String createRouteAdjustment(Map<String, Object> args, AiConversation conversation, String userId) {
+    Map<String, Object> proposal = routeAdjustments.propose(selectedTripId(args, conversation), userId, args);
+    if (!(proposal.get("routeAdjustment") instanceof Map<?, ?> adjustment)) {
+      return JsonUtil.write(proposal);
+    }
+    Map<String, Object> result = persistDraft(conversation, userId, proposal);
+    result.put("preview", adjustment.get("preview"));
+    return JsonUtil.write(result);
+  }
+
+  private String createPackingDraft(Map<String, Object> args, AiConversation conversation, String userId) {
+    String tripId = selectedTripId(args, conversation);
+    Map<String, Object> preview = packingDrafts.preview(tripId, userId, args);
+    Map<String, Object> draft = Map.of("type", "packing", "tripId", tripId, "summary", "打包清单草稿",
+        "packingPreview", preview);
+    Map<String, Object> result = persistDraft(conversation, userId, draft);
+    result.put("preview", preview);
+    result.put("hint", "草稿已创建，请用户在卡片中选择清单、勾选物品并核对数量。");
+    return JsonUtil.write(result);
+  }
+
   /** 行程变更 → 草稿（AI 不直接写行程，应用时才走 TripPlaceService）。 */
   private String createItineraryDraft(Map<String, Object> args, AiConversation conversation,
       String userId) {
@@ -682,6 +764,12 @@ public class AiToolRegistry {
       draft.put("replaceDay", Boolean.parseBoolean(args.get("replaceDay").toString()));
     }
 
+    return JsonUtil.write(persistDraft(conversation, userId, draft));
+  }
+
+  private Map<String, Object> persistDraft(AiConversation conversation, String userId,
+      Map<String, Object> draft) {
+    String summary = String.valueOf(draft.get("summary"));
     AiMessage draftMessage = insertMessage(conversation.getId(), userId, "assistant",
         summary, JsonUtil.write(draft), "pending");
     conversation.setUpdatedAt(new Date());
@@ -691,7 +779,7 @@ public class AiToolRegistry {
     result.put("messageId", draftMessage.getId());
     result.put("summary", summary);
     result.put("hint", "草稿已创建，请告知用户预览变更并点击「应用」或「放弃」。");
-    return JsonUtil.write(result);
+    return result;
   }
 
   private String normalizeCategory(Object raw) {

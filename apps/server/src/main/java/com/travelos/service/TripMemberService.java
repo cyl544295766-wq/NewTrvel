@@ -264,7 +264,7 @@ public class TripMemberService {
         .eq(TripMember::getTripId, tripId));
   }
 
-  List<TripMember> lockLedgerMembers(String tripId) {
+  List<TripMember> lockTripMembers(String tripId) {
     // 数据权限插件会将 ORDER BY 移到锁子句后面，这里无需排序。
     return tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
         .eq(TripMember::getTripId, tripId).last("FOR SHARE"));

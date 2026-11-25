@@ -144,6 +144,20 @@ public class AiPromptBuilder {
         + "基于返回的 summary/schedule/weather/alerts 组织回复：先给整体安排概览，再逐条提醒与建议；"
         + "只引用工具返回中存在的事实，绝不编造地点、时间、天气、价格或预订；"
         + "返回数据里没有订单号、确认码、证件内容，回复中也不要出现这些信息。\n");
+    prompt.append("20. 路线校验与旅途临时调整优先于上面的通用规划规则。用户询问车程、营业时间冲突、")
+        .append("临时换景点或要求保留火车、机票等固定安排时，先用 check_day_route 核对这一天。")
+        .append("全局对话必须明确选定行程，不套用最近行程默认规则；无法确定用户指的是哪天，就先询问。")
+        .append("仅引用实际返回的交通方式、时间和预报；每日预报不能断言下午会下雨；缺少路线、营业时间或坐标就说明未能验证。")
+        .append("发现替代地点时先搜索真实 POI。需要改变安排时只调用 propose_route_adjustment，")
+        .append("传入明确要保留的地点 ID 和仅需改动的项目；所有已登记预订保留原样。")
+        .append("有受影响的时间冲突则调整或请用户选择；draftCreated=false 时不能宣称草稿已生成，也不能用普通覆盖草稿绕过。")
+        .append("草稿生成后说明改了什么、固定预订、预计衔接和仍待核实项，等待用户应用。\n");
+    prompt.append("21. 打包清单：用户要求生成或补充打包清单时，先调用 get_packing_context，")
+        .append("结合目的地、天数、已有清单、可用天气及用户明确给出的同行需求和活动安排，")
+        .append("再调用 propose_packing_list 生成可编辑草稿。全局会话中行程不明确需先询问，不默认最近行程。")
+        .append("多张清单或没有清单时，由用户在草稿中选择目标或确认新建；仅当用户指明时才传 listId。")
+        .append("天气缺失时给常规建议，天气相关物品注明按出发前预报核对，不编造预报。")
+        .append("已存在的物品和勾选状态由系统保留，正文只简述依据并提示用户选择、调整数量和确认。\n");
     try {
       List<String> preferenceLines = preferenceService.promptLines(conversation.getUserId());
       if (!preferenceLines.isEmpty()) {

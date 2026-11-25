@@ -11,6 +11,12 @@ import java.util.Date;
 @Mapper
 public interface AiMessageMapper extends BaseMapper<AiMessage> {
 
+  @Update("UPDATE ai_messages SET tool_calls = CAST(#{draft} AS jsonb), content = #{summary} "
+      + "WHERE id = #{id} AND conversation_id = #{conversationId} AND user_id = #{userId} "
+      + "AND draft_status = 'pending' AND tool_calls ->> 'type' = 'receipt_review'")
+  int confirmReceipt(@Param("id") String id, @Param("conversationId") String conversationId,
+      @Param("userId") String userId, @Param("draft") String draft, @Param("summary") String summary);
+
   /**
    * 草稿应用原子抢占：pending → applying（写入执行令牌与租约起点）。
    * 仅当记录仍为 pending 时影响行数 = 1——并发 apply/discard/接管中只有一个赢家。

@@ -10,11 +10,15 @@ import com.travelos.mapper.PackingListMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class PackingListService {
@@ -43,31 +47,30 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> create(String tripId, String userId, Map<String, Object> dto) {
     String category = requiredString(dto.get("category"), "category should not be empty");
+    PackingList list = insertList(tripId, userId, Payloads.text(dto.get("name")), category);
+    for (Map.Entry<Integer, TemplateItem> entry : templateItems(category).entrySet()) {
+      insertItem(list.getId(), entry.getValue().name(), entry.getValue().quantity(), null, entry.getKey());
+    }
+    return Map.of("packingList", toListResponse(findListById(list.getId())));
+  }
+
+  private PackingList insertList(String tripId, String userId, String name, String category) {
     PackingList list = new PackingList();
     list.setTripId(tripId);
-    list.setName(normalizeName(Payloads.text(dto.get("name")), 100, "清单名称"));
+    list.setName(normalizeName(name, 100, "清单名称"));
     list.setCategory(category);
     // 创建者以当前登录用户为准，禁止信任前端传入的 creatorId 等字段
     list.setCreatorId(userId);
     list.setCreatedAt(new Date());
     list.setUpdatedAt(new Date());
     listMapper.insert(list);
-    for (Map.Entry<Integer, TemplateItem> entry : templateItems(category).entrySet()) {
-      PackingItem item = new PackingItem();
-      item.setPackingListId(list.getId());
-      item.setName(entry.getValue().name());
-      item.setQuantity(entry.getValue().quantity());
-      item.setIsPacked(false);
-      item.setOrderIndex(entry.getKey());
-      itemMapper.insert(item);
-    }
-    return Map.of("packingList", toListResponse(findListById(list.getId())));
+    return list;
   }
 
   @Transactional
   public Map<String, Object> update(String tripId, String listId, Map<String, Object> dto,
       String userId) {
-    PackingList list = requireList(tripId, listId);
+    PackingList list = requireLockedList(tripId, listId);
     if (dto.containsKey("name")) {
       list.setName(normalizeName(Payloads.text(dto.get("name")), 100, "清单名称"));
     }
@@ -81,7 +84,7 @@ public class PackingListService {
 
   @Transactional
   public Map<String, Object> delete(String tripId, String listId, String userId) {
-    PackingList list = requireList(tripId, listId);
+    PackingList list = requireLockedList(tripId, listId);
     // 数据隔离：仅创建者本人或行程 owner/admin 可删除整张清单（NULL 属主为存量兼容）
     tripMemberService.requireOwnerOrManager(tripId, list.getCreatorId(), userId, "清单创建者");
     itemMapper.delete(new LambdaQueryWrapper<PackingItem>()
@@ -95,7 +98,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> createItem(String tripId, String listId, Map<String, Object> dto,
       String userId) {
-    PackingList list = requireList(tripId, listId);
+    requireLockedList(tripId, listId);
     int quantity = 1;
     if (dto.containsKey("quantity") && dto.get("quantity") != null) {
       quantity = Integer.parseInt(dto.get("quantity").toString());
@@ -103,23 +106,29 @@ public class PackingListService {
         throw ApiException.badRequest("物品数量必须大于等于 1");
       }
     }
+    String name = normalizeName(requiredString(dto.get("name"), "name should not be empty"), 200, "物品名称");
+    List<PackingItem> existing = itemsOf(listId);
+    requireUniqueName(existing, name);
+    int order = dto.get("orderIndex") == null ? existing.size() : Integer.parseInt(dto.get("orderIndex").toString());
+    return Map.of("item", toItemResponse(insertItem(listId, name, quantity, Payloads.trimmedOrNull(dto.get("notes")), order)));
+  }
+
+  private PackingItem insertItem(String listId, String name, int quantity, String notes, int order) {
     PackingItem item = new PackingItem();
     item.setPackingListId(listId);
-    item.setName(normalizeName(requiredString(dto.get("name"), "name should not be empty"), 200, "物品名称"));
+    item.setName(name);
     item.setQuantity(quantity);
     item.setIsPacked(false);
-    item.setNotes(Payloads.trimmedOrNull(dto.get("notes")));
-    item.setOrderIndex(dto.containsKey("orderIndex") && dto.get("orderIndex") != null
-        ? Integer.parseInt(dto.get("orderIndex").toString())
-        : itemsOf(listId).size());
+    item.setNotes(notes);
+    item.setOrderIndex(order);
     itemMapper.insert(item);
-    return Map.of("item", toItemResponse(item));
+    return item;
   }
 
   @Transactional
   public Map<String, Object> updateItem(String tripId, String listId, String itemId,
       Map<String, Object> dto, String userId) {
-    requireList(tripId, listId);
+    requireLockedList(tripId, listId);
     PackingItem item = requireItem(listId, itemId);
     if (dto.containsKey("quantity") && dto.get("quantity") != null) {
       int quantity = Integer.parseInt(dto.get("quantity").toString());
@@ -129,7 +138,11 @@ public class PackingListService {
       item.setQuantity(quantity);
     }
     if (dto.containsKey("name") && dto.get("name") != null) {
-      item.setName(normalizeName(Payloads.text(dto.get("name")), 200, "物品名称"));
+      String name = normalizeName(Payloads.text(dto.get("name")), 200, "物品名称");
+      if (!nameKey(name).equals(nameKey(item.getName()))) {
+        requireUniqueName(itemsOf(listId), name);
+      }
+      item.setName(name);
     }
     if (dto.containsKey("isPacked") && dto.get("isPacked") != null) {
       item.setIsPacked(Boolean.parseBoolean(dto.get("isPacked").toString()));
@@ -147,7 +160,7 @@ public class PackingListService {
   @Transactional
   public Map<String, Object> deleteItem(String tripId, String listId, String itemId,
       String userId) {
-    requireList(tripId, listId);
+    requireLockedList(tripId, listId);
     requireItem(listId, itemId);
     itemMapper.deleteById(itemId);
     return Map.of("success", true);
@@ -181,7 +194,53 @@ public class PackingListService {
     return Map.of("packingList", toListResponse(findListById(list.getId())));
   }
 
-  private List<PackingList> findListsByTrip(String tripId) {
+  /** 调用方已锁定旅行和成员。清单锁与手工新增/改名物品共用。 */
+  PackingInsert appendDraftItems(String tripId, String userId, String listId, String listName,
+      List<PackingEntry> entries) {
+    PackingList list;
+    if (listId == null) {
+      if (findListsByTrip(tripId).stream().anyMatch(existing -> nameKey(existing.getName()).equals(nameKey(listName)))) {
+        throw ApiException.conflict("已有同名清单，请换个名称或重新生成草稿后选择已有清单");
+      }
+      list = insertList(tripId, userId, listName, "other");
+    } else {
+      list = requireLockedList(tripId, listId);
+      if (!list.getName().equals(listName)) {
+        throw ApiException.conflict("目标清单已改名，请重新生成打包草稿");
+      }
+    }
+    List<PackingItem> current = itemsOf(list.getId());
+    Set<String> keys = new HashSet<>();
+    current.forEach(item -> keys.add(nameKey(item.getName())));
+    List<PackingEntry> added = new ArrayList<>();
+    List<String> skipped = new ArrayList<>();
+    for (PackingEntry entry : entries) {
+      if (keys.add(nameKey(entry.name()))) {
+        insertItem(list.getId(), entry.name(), entry.quantity(), null, current.size() + added.size());
+        added.add(entry);
+      } else {
+        skipped.add(entry.name());
+      }
+    }
+    return new PackingInsert(list.getId(), list.getName(), added, skipped);
+  }
+
+  static String nameKey(String name) {
+    return Normalizer.normalize(name, Normalizer.Form.NFKC).replaceAll("(?U)\\s+", " ")
+        .trim().toLowerCase(Locale.ROOT);
+  }
+
+  private void requireUniqueName(List<PackingItem> items, String name) {
+    String key = nameKey(name);
+    if (items.stream().anyMatch(item -> key.equals(nameKey(item.getName())))) {
+      throw ApiException.conflict("清单中已有同名物品，请修改已有物品的数量");
+    }
+  }
+
+  record PackingEntry(String name, int quantity) {}
+  record PackingInsert(String listId, String listName, List<PackingEntry> added, List<String> skipped) {}
+
+  List<PackingList> findListsByTrip(String tripId) {
     return listMapper.selectList(new LambdaQueryWrapper<PackingList>()
         .eq(PackingList::getTripId, tripId)
         .orderByAsc(PackingList::getCreatedAt));
@@ -191,7 +250,7 @@ public class PackingListService {
     return listMapper.selectById(listId);
   }
 
-  private List<PackingItem> itemsOf(String listId) {
+  List<PackingItem> itemsOf(String listId) {
     return itemMapper.selectList(new LambdaQueryWrapper<PackingItem>()
         .eq(PackingItem::getPackingListId, listId)
         .orderByAsc(PackingItem::getOrderIndex));
@@ -239,6 +298,15 @@ public class PackingListService {
   private PackingList requireList(String tripId, String listId) {
     PackingList list = findListById(listId);
     if (list == null || !list.getTripId().equals(tripId)) {
+      throw ApiException.notFound("打包清单不存在");
+    }
+    return list;
+  }
+
+  private PackingList requireLockedList(String tripId, String listId) {
+    PackingList list = listMapper.selectOne(new LambdaQueryWrapper<PackingList>()
+        .eq(PackingList::getTripId, tripId).eq(PackingList::getId, listId).last("FOR UPDATE"));
+    if (list == null) {
       throw ApiException.notFound("打包清单不存在");
     }
     return list;

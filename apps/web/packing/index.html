@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
 <link rel="stylesheet" href="../assets/css/theme.css?v=appearance">
-<link rel="stylesheet" href="../assets/css/pet.css?v=ai-expense">
+<link rel="stylesheet" href="../assets/css/pet.css?v=ai-receipt">
 <style>
   .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--ui-accent, #7FD8D4); text-align: center; padding: 4px 0 6px; }
 
@@ -113,6 +113,9 @@
   .btn-new:hover { transform: translateY(-1px); }
 
   .btn-new:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .btn-new.btn-packing-ai {
+    background: transparent; border: 1px solid var(--ui-line, #93adad); color: var(--ui-text, #24464a);
+  }
 
 
   /* ===== 清单卡（票根 + 主区） ===== */
@@ -523,6 +526,7 @@
       <select id="newCat" aria-label="清单类别"></select>
       <input type="text" id="newName" maxlength="100" placeholder="给清单起个名字，如：贴身衣物（选填，默认用类别名）">
       <button type="button" class="btn-new" id="btnNewList">＋ 新建清单</button>
+      <button type="button" class="btn-new btn-packing-ai" id="btnAiPacking">AI 生成清单</button>
     </div>
 
     <!-- 清单区 -->
@@ -534,7 +538,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
-<script src="../assets/js/pet.js?v=ai-expense"></script>
+<script src="../assets/js/pet.js?v=ai-receipt"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -677,6 +681,24 @@
         document.getElementById('loading').textContent = '加载失败，请刷新重试';
       }
     }
+
+    $('btnAiPacking').addEventListener('click', async function () {
+      var button = this;
+      button.disabled = true;
+      try {
+        if (!window.TravelOSAi || !await window.TravelOSAi.generatePacking(tripId)) {
+          showToast('AI 助手暂不可用，请稍后重试');
+        }
+      } catch (err) {
+        showToast(humanError(err));
+      } finally {
+        button.disabled = false;
+      }
+    });
+    window.addEventListener('travelos:ai-applied', function (event) {
+      var detail = event.detail;
+      if (detail && detail.kind === 'apply' && detail.packing && detail.tripId === tripId) load();
+    });
 
     /* ===== 总览 ===== */
     function renderOverview() {

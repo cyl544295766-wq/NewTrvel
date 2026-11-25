@@ -1,6 +1,7 @@
 package com.travelos.controller;
 
 import com.travelos.ai.AiChatService;
+import com.travelos.ai.AiReceiptService;
 import com.travelos.auth.CurrentUser;
 import com.travelos.auth.UserContext;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,9 +22,11 @@ import java.util.Map;
 public class AiController {
 
   private final AiChatService aiChatService;
+  private final AiReceiptService receipts;
 
-  public AiController(AiChatService aiChatService) {
+  public AiController(AiChatService aiChatService, AiReceiptService receipts) {
     this.aiChatService = aiChatService;
+    this.receipts = receipts;
   }
 
   @GetMapping
@@ -73,11 +76,24 @@ public class AiController {
     return aiChatService.deleteConversation(conversationId, user.id());
   }
 
-  /** 应用草稿（幂等）：行程变更写入 TripPlaceService，记账写入 TripExpenseService。 */
+  @PostMapping("/{conversationId}/receipts")
+  public Map<String, Object> recognizeReceipt(@PathVariable String conversationId,
+      @RequestBody Map<String, Object> image, @CurrentUser UserContext user) {
+    return receipts.recognize(conversationId, user, image);
+  }
+
+  @PostMapping("/{conversationId}/receipts/{messageId}/confirm")
+  public Map<String, Object> confirmReceipt(@PathVariable String conversationId, @PathVariable String messageId,
+      @RequestBody Map<String, Object> fields, @CurrentUser UserContext user) {
+    return receipts.confirm(conversationId, messageId, user.id(), fields);
+  }
+
+  /** 应用草稿（幂等）。打包草稿另带用户选择的清单、物品和数量。 */
   @PostMapping("/{conversationId}/apply/{messageId}")
   public Map<String, Object> apply(@PathVariable String conversationId,
-      @PathVariable String messageId, @CurrentUser UserContext user) {
-    return aiChatService.applyDraft(conversationId, messageId, user.id());
+      @PathVariable String messageId, @RequestBody(required = false) Map<String, Object> choices,
+      @CurrentUser UserContext user) {
+    return aiChatService.applyDraft(conversationId, messageId, user.id(), choices == null ? Map.of() : choices);
   }
 
   /** 放弃草稿。 */

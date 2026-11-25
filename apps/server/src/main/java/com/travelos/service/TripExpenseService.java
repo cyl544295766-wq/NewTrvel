@@ -164,7 +164,7 @@ public class TripExpenseService {
   public void applyAiExpense(String tripId, String userId, Map<String, Object> dto, Map<?, ?> preview) {
     lockLedger(tripId);
     // 行程锁阻止新成员插入，成员共享锁阻止应用中途撤销角色或移除付款/分摊人。
-    List<TripMember> members = tripMemberService.lockLedgerMembers(tripId);
+    List<TripMember> members = tripMemberService.lockTripMembers(tripId);
     TripMember actor = members.stream().filter(member -> userId.equals(member.getUserId()))
         .findFirst().orElseThrow(() -> ApiException.notFound("旅行不存在"));
     if (!TripPermission.EDITABLE_ROLES.contains(actor.getRole())) {

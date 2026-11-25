@@ -86,6 +86,8 @@ llm:
   base-url: ${LLM_BASE_URL:}
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:}
+  # 票据识别使用显式配置的图片模型，留空时保留手动核对入口。
+  vision-model: ${LLM_VISION_MODEL:}
   # 单次模型调用的连接/读取超时（读取超时同时是“取消后阻塞读”的兜底边界）
   connect-timeout-ms: ${LLM_CONNECT_TIMEOUT_MS:30000}
   read-timeout-ms: ${LLM_READ_TIMEOUT_MS:30000}

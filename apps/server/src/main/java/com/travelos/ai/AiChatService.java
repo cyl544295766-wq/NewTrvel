@@ -472,6 +472,7 @@ public class AiChatService {
       String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
       String options = null;      /* 本轮 ask_options 工具产生的选择按钮（随最终回复下发） */
       int draftClaimRetries = 0;  /* 「声称生成了草稿但实际没调用工具」的纠正次数 */
+      boolean routeWorkflow = false;
       Date turnStart = userMessage.getCreatedAt();
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         ctx.checkActive(); // 每轮模型调用前：取消/超时立即收口
@@ -493,8 +494,10 @@ public class AiChatService {
             retryTurn.put("content", messageContent);
             llmMessages.add(retryTurn);
             llmMessages.add(Map.of("role", "user", "content",
-                "（系统提示：你刚才的回复说草稿已生成、让用户点卡片上的「应用」，但本轮并没有调用 propose_itinerary_change，"
-                    + "用户看不到任何卡片。请立刻调用 propose_itinerary_change 生成草稿，不要在正文里重复描述方案；"
+                "（系统提示：你刚才的回复说草稿已生成、让用户点卡片上的「应用」，但本轮没有成功生成草稿，"
+                    + "用户看不到卡片。普通规划用 propose_itinerary_change；临时调整请按路线核对流程使用 propose_route_adjustment，"
+                    + "打包清单用 propose_packing_list；"
+                    + "如工具提示冲突请先解决或向用户说明；"
                     + "若确实缺少必要信息（哪一天、哪个行程），就直说需要用户补充什么。）"));
             continue;
           }
@@ -518,9 +521,13 @@ public class AiChatService {
         assistantTurn.put("tool_calls", message.get("tool_calls"));
         llmMessages.add(assistantTurn);
 
+        routeWorkflow |= toolCalls.stream().anyMatch(call -> "check_day_route".equals(call.get("name"))
+            || "propose_route_adjustment".equals(call.get("name")));
         for (Map<String, Object> call : toolCalls) {
           ctx.checkActive(); // 每个工具调用前：断开/超时后不再执行新工具
-          String result = toolRegistry.executeTool(call, conversation, userId);
+          String result = routeWorkflow && "propose_itinerary_change".equals(call.get("name"))
+              ? JsonUtil.write(Map.of("error", "路线校验后的行程调整请使用 propose_route_adjustment"))
+              : toolRegistry.executeTool(call, conversation, userId);
           if ("open_page".equals(call.get("name"))) {
             navigation = toolRegistry.extractNavigation(result);
           } else if ("ask_options".equals(call.get("name"))) {
@@ -630,7 +637,8 @@ public class AiChatService {
     boolean changeRequest = userContent.contains("规划") || userContent.contains("安排")
         || userContent.contains("行程") || userContent.contains("改")
         || userContent.contains("预订") || userContent.contains("订") || userContent.contains("记账")
-        || userContent.contains("删除") || userContent.contains("新增") || userContent.contains("加一个");
+        || userContent.contains("删除") || userContent.contains("新增") || userContent.contains("加一个")
+        || userContent.contains("打包清单");
     if (!changeRequest) {
       return false;
     }
@@ -672,8 +680,16 @@ public class AiChatService {
    * <p><b>结果回放</b>：成功结果持久化在 draft_apply_result，同稿重试返回与首次完全一致的
    * 结果（历史无结果的 applied 行回退通用成功响应）。</p>
    */
-  public Map<String, Object> applyDraft(String conversationId, String messageId, String userId) {
+  public Map<String, Object> applyDraft(String conversationId, String messageId, String userId,
+      Map<String, Object> choices) {
     AiMessage message = requireDraftMessage(conversationId, messageId, userId); // 授权/归属校验（不变）
+    boolean terminal = "applied".equals(message.getDraftStatus()) || "discarded".equals(message.getDraftStatus());
+    Map<String, Object> draft = terminal || message.getToolCalls() == null
+        ? Map.of() : JsonUtil.readObject(message.getToolCalls());
+    String type = String.valueOf(draft.get("type"));
+    if (AiReceiptService.REVIEW.equals(type)) {
+      throw ApiException.badRequest("请先核对票据内容并生成预订或记账草稿");
+    }
     String myToken = UUID.randomUUID().toString();
 
     // ---- 1) 原子抢占（条件更新；失败则按最新状态决策，最多重读 6 次收敛） ----
@@ -721,12 +737,10 @@ public class AiChatService {
     }
 
     // ---- 2) 业务应用 + 审计 + 最终落账（同一事务；落账 fencing 失败 → 整体回滚） ----
-    Map<String, Object> draft = JsonUtil.readObject(message.getToolCalls() == null
-        ? "{}" : message.getToolCalls());
-    String type = String.valueOf(draft.get("type"));
     try {
       return businessTx.execute(status -> {
         int applied;
+        Map<String, Object> payload = new LinkedHashMap<>();
         if ("itinerary_change".equals(type)) {
           String tripId = String.valueOf(draft.get("tripId"));
           applied = draftEngine.applyItineraryChanges(tripId, draft, userId);
@@ -744,10 +758,16 @@ public class AiChatService {
           applied = 1;
           auditService.record(userId, tripId, "ai_booking_applied", "ai_message", messageId,
               Map.of("summary", String.valueOf(draft.getOrDefault("summary", ""))));
+        } else if ("packing".equals(type)) {
+          String tripId = String.valueOf(draft.get("tripId"));
+          Map<String, Object> result = draftEngine.applyPackingDraft(tripId, draft, userId, choices);
+          applied = ((Number) result.get("appliedCount")).intValue();
+          payload.put("packing", result);
+          auditService.record(userId, tripId, "ai_packing_applied", "ai_message", messageId,
+              Map.of("listId", result.get("listId"), "itemsAdded", applied));
         } else {
           throw ApiException.badRequest("未知草稿类型");
         }
-        Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("success", true);
         payload.put("status", "applied");
         payload.put("appliedCount", applied);
@@ -993,7 +1013,8 @@ public class AiChatService {
           continue;
         }
         Map<String, Object> data = JsonUtil.readObject(draft.getToolCalls());
-        if (data.get("tripId") != null && defaultTripId.equals(data.get("tripId").toString())) {
+        if (!data.containsKey("routeAdjustment") && !"packing".equals(data.get("type"))
+            && defaultTripId.equals(data.get("tripId"))) {
           usedDefault = true;
           break;
         }
@@ -1112,7 +1133,12 @@ public class AiChatService {
     map.put("content", message.getContent());
     map.put("draftStatus", message.getDraftStatus());
     if (message.getDraftStatus() != null && message.getToolCalls() != null) {
-      map.put("draft", JsonUtil.readObject(message.getToolCalls()));
+      Map<String, Object> draft = JsonUtil.readObject(message.getToolCalls());
+      draft.remove(AiReceiptService.FINGERPRINT);
+      map.put("draft", draft);
+      if ("packing".equals(draft.get("type")) && "applied".equals(message.getDraftStatus())) {
+        map.put("packingResult", appliedReplay(message).get("packing"));
+      }
     } else if (message.getToolCalls() != null) {
       // 非草稿消息的 toolCalls 承载页面导航（open_page）与选择按钮（ask_options），解析失败则不带
       try {
