@@ -3,6 +3,7 @@ package com.travelos.ai;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.travelos.common.ApiException;
 import com.travelos.common.JsonUtil;
+import com.travelos.common.Payloads;
 import com.travelos.entity.AiConversation;
 import com.travelos.entity.AiMessage;
 import com.travelos.entity.TripDay;
@@ -12,6 +13,7 @@ import com.travelos.mapper.AiMessageMapper;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.service.AiPreferenceService;
+import com.travelos.service.AiExpenseDraftService;
 import com.travelos.service.BookingService;
 import com.travelos.service.PlacesService;
 import com.travelos.service.TodayBriefService;
@@ -90,13 +92,14 @@ public class AiToolRegistry {
   private final AiPreferenceService preferenceService;
   private final AiPromptBuilder promptBuilder;
   private final TodayBriefService todayBriefService;
+  private final AiExpenseDraftService expenseDrafts;
 
   public AiToolRegistry(AiConversationMapper conversationMapper, AiMessageMapper messageMapper,
       TripService tripService, TripDayService tripDayService, TripDayMapper tripDayMapper,
       TripPlaceMapper tripPlaceMapper, TripMemberService tripMemberService,
       PlacesService placesService, BookingService bookingService,
       WeatherService weatherService, AiPreferenceService preferenceService,
-      AiPromptBuilder promptBuilder, TodayBriefService todayBriefService) {
+      AiPromptBuilder promptBuilder, TodayBriefService todayBriefService, AiExpenseDraftService expenseDrafts) {
     this.conversationMapper = conversationMapper;
     this.messageMapper = messageMapper;
     this.tripService = tripService;
@@ -110,6 +113,7 @@ public class AiToolRegistry {
     this.preferenceService = preferenceService;
     this.promptBuilder = promptBuilder;
     this.todayBriefService = todayBriefService;
+    this.expenseDrafts = expenseDrafts;
   }
 
   // ==================== 工具定义 ====================
@@ -211,12 +215,28 @@ public class AiToolRegistry {
                 "description", "可点击选项（2-6 条）：字符串，或酒店候选的对象 "
                     + "{\"label\":\"订这家：××酒店\",\"description\":\"4.6 分 · ¥320 · 地址 ×× · 电话 ××\"}",
                 "items", Map.of("type", "string"))))));
+    tools.add(function("list_expense_members",
+        "核对当前记账目标行程的成员。结果仅包含可用于确认付款人和分摊人的用户名、昵称和用户 ID。",
+        Map.of("tripId", stringProp("指定行程 ID，可空，使用当前会话或默认行程"))));
     tools.add(function("add_expense",
-        "记账草稿：识别到用户记账意图时调用（如「午饭两人136元」），生成待确认的记账草稿而非直接写入。"
-            + "对话未关联行程时（全局对话），默认记入最近行程，并在回复中说明",
-        Map.of("amount", stringProp("金额（元，数字字符串）"),
-            "category", stringProp("类别：transport/hotel/food/ticket/shopping/other 之一"),
-            "title", stringProp("标题，可空"), "notes", stringProp("备注，可空"))));
+        "生成待确认的记账草稿。保留用户给出的原币、付款人和明细；金额、币种、成员或分摊规则有歧义时先提问。"
+            + "用户指定人数但未说明成员时先核对名单，不得选人凑够人数。只有简单记账未指定任何分摊、或明确要求全员均分时才省略 participants。",
+        Map.ofEntries(
+            Map.entry("tripId", stringProp("指定行程 ID，可空，使用当前会话或默认行程")),
+            Map.entry("amount", stringProp("原币总金额，数字字符串")),
+            Map.entry("currency", stringProp("原币 ISO 4217 代码，如 USD、JPY、CNY。简单记账未涉及外币时可默认 CNY。")),
+            Map.entry("category", stringProp("类别：transport/hotel/food/ticket/shopping/other 之一")),
+            Map.entry("title", stringProp("标题，可空")), Map.entry("notes", stringProp("备注，可空")),
+            Map.entry("payer", stringProp("付款人的用户原话称呼，或已确认的用户名/用户 ID。确实未指定付款人时默认我。")),
+            Map.entry("splitType", Map.of("type", "string", "enum", List.of("equal", "ratio", "amount"),
+                "description", "均分、按比例或按金额，缺省为均分")),
+            Map.entry("participantCount", Map.of("type", "integer", "minimum", 1,
+                "description", "用户明确指定的分摊人数。指定时需给出对应成员，不得用作默认全员。")),
+            Map.entry("participants", Map.of("type", "array", "items",
+                Map.of("type", "object", "required", List.of("member"), "properties", Map.of(
+                    "member", stringProp("用户明确指定的成员称呼，重名时请先确认用户名或 ID"),
+                    "ratio", stringProp("按比例时每位成员的权重，例如 2"),
+                    "shareAmount", stringProp("按金额时每位成员的原币金额，例如 25.00"))))))));
     tools.add(function("propose_itinerary_change",
         "行程变更草稿：新增/修改/删除行程点时调用，生成待确认的变更预览而非直接写入。add 需要 dayIndex(第几天,从1开始) 与 name；remove/update 需要 placeId（可先用 list_trip_days 查询）。"
             + "changes 数组可一次包含多天的变更项（整趟规划时一次调用覆盖全部天，每项各带 dayIndex）；"
@@ -303,6 +323,8 @@ public class AiToolRegistry {
         case "get_bookings" -> JsonUtil.write(
             bookingService.findAll(requireArg(args, "tripId"), userId));
         case "today_brief" -> todayBrief(args, conversation, userId);
+        case "list_expense_members" -> JsonUtil.write(Map.of("members",
+            expenseDrafts.members(expenseTripId(args, conversation, userId), userId)));
         case "add_expense" -> createExpenseDraft(args, conversation, userId);
         case "add_booking" -> createBookingDraft(args, conversation, userId);
         case "ask_options" -> askOptions(args);
@@ -318,7 +340,7 @@ public class AiToolRegistry {
       return result;
     } catch (ApiException ex) {
       log.warn("AI tool {} rejected: {}", name, ex.getMessage());
-      return "{\"error\":\"" + ex.getMessage().replace("\"", "'") + "\"}";
+      return JsonUtil.write(Map.of("error", ex.getMessage()));
     }
   }
 
@@ -515,36 +537,16 @@ public class AiToolRegistry {
   /** 记账意图 → 草稿（不直接写库，用户确认后才走 TripExpenseService.create）。 */
   private String createExpenseDraft(Map<String, Object> args, AiConversation conversation,
       String userId) {
-    String tripId = conversation.getTripId() != null ? conversation.getTripId()
-        : (args.get("tripId") == null ? null : args.get("tripId").toString());
-    if (tripId == null || tripId.isBlank()) {
-      // 全局对话：默认落到最近行程（与系统提示词中「最近行程」上下文一致）
-      tripId = promptBuilder.resolveDefaultTripId(userId);
-    }
-    if (tripId == null || tripId.isBlank()) {
-      return "{\"error\":\"当前对话未关联行程，也没有可用的最近行程，请先创建行程或在具体行程中打开 AI 助手\"}";
-    }
-    tripMemberService.requireTripMember(tripId, userId);
-    String amount = String.valueOf(args.get("amount"));
+    String tripId = expenseTripId(args, conversation, userId);
     String category = normalizeCategory(args.get("category"));
-    String title = args.get("title") == null ? "" : args.get("title").toString();
-    Map<String, Object> expense = new LinkedHashMap<>();
-    expense.put("amount", amount);
-    expense.put("category", category);
-    if (!title.isBlank()) {
-      expense.put("title", title);
-    }
-    if (args.get("notes") != null) {
-      expense.put("notes", args.get("notes").toString());
-    }
-    String summary = "将为当前行程记录：" + categoryLabel(category) + " " + amount + " 元，"
-        + "付款人 " + "当前用户，均分给全部行程成员（应用时生效）。";
-
-    Map<String, Object> draft = new LinkedHashMap<>();
+    Map<String, Object> draft = new LinkedHashMap<>(expenseDrafts.preview(tripId, userId, args, category));
+    Map<?, ?> preview = (Map<?, ?>) draft.get("expensePreview");
+    String label = Payloads.trimmedOrNull(args.get("title"));
+    String summary = (label == null ? categoryLabel(category) : label) + " · "
+        + preview.get("currency") + " " + preview.get("amount");
     draft.put("type", "expense");
     draft.put("tripId", tripId);
     draft.put("summary", summary);
-    draft.put("expense", expense);
 
     AiMessage draftMessage = insertMessage(conversation.getId(), userId, "assistant",
         summary, JsonUtil.write(draft), "pending");
@@ -554,8 +556,25 @@ public class AiToolRegistry {
     result.put("draftCreated", true);
     result.put("messageId", draftMessage.getId());
     result.put("summary", summary);
+    result.put("expensePreview", preview);
     result.put("hint", "草稿已创建，请告知用户在「变更预览卡片」上点击「应用」完成记账。");
     return JsonUtil.write(result);
+  }
+
+  private String expenseTripId(Map<String, Object> args, AiConversation conversation, String userId) {
+    String bound = Payloads.trimmedOrNull(conversation.getTripId());
+    String requested = Payloads.trimmedOrNull(args.get("tripId"));
+    if (bound != null && requested != null && !bound.equals(requested)) {
+      throw ApiException.badRequest("请打开指定行程的会话后再记账");
+    }
+    String tripId = bound != null ? bound : requested;
+    if (tripId == null) {
+      tripId = promptBuilder.resolveDefaultTripId(userId);
+    }
+    if (tripId == null || tripId.isBlank()) {
+      throw ApiException.badRequest("请先创建行程或在具体行程中打开 AI 助手");
+    }
+    return tripId;
   }
 
   /** 预订登记 → 草稿（AI 不直接写预订，应用时才走 BookingService 写入预定管理）。 */

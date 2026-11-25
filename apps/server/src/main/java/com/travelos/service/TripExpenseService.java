@@ -24,6 +24,7 @@ import com.travelos.mapper.TripExpenseShareMapper;
 import com.travelos.mapper.TripMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import com.travelos.mapper.TripSettlementMapper;
+import com.travelos.trip.TripPermission;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,12 +136,69 @@ public class TripExpenseService {
 
   private TripExpense createExpense(String tripId, String userId, Map<String, Object> dto,
       String bookingId, String operationKey) {
+    return insertExpense(tripId, userId, dto, bookingId, operationKey, allocate(tripId, userId, dto));
+  }
+
+  private record ExpenseAllocation(long amountCents, String payerId, SharePlan plan) {
+    Map<String, Object> preview(String currency) {
+      return Map.of("amount", centsToString(amountCents), "payerUserId", payerId,
+          "currency", currency, "splitType", plan.splitType(), "shares", plan.shares());
+    }
+  }
+
+  private ExpenseAllocation allocate(String tripId, String userId, Map<String, Object> dto) {
     long amountCents = toCents(Payloads.text(dto.get("amount")), false);
     String payerUserId = Payloads.text(dto.get("payerUserId")) == null
         ? userId
         : dto.get("payerUserId").toString();
     SharePlan plan = planShares(tripId, payerUserId, amountCents, dto, List.of());
-    List<Map<String, String>> shares = plan.shares();
+    return new ExpenseAllocation(amountCents, payerUserId, plan);
+  }
+
+  public Map<String, Object> previewAiExpense(String tripId, String userId, Map<String, Object> dto) {
+    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
+    return allocate(tripId, userId, dto).preview(normalizeCurrency(Payloads.text(dto.get("currency"))));
+  }
+
+  @Transactional
+  public void applyAiExpense(String tripId, String userId, Map<String, Object> dto, Map<?, ?> preview) {
+    lockLedger(tripId);
+    // 行程锁阻止新成员插入，成员共享锁阻止应用中途撤销角色或移除付款/分摊人。
+    List<TripMember> members = tripMemberService.lockLedgerMembers(tripId);
+    TripMember actor = members.stream().filter(member -> userId.equals(member.getUserId()))
+        .findFirst().orElseThrow(() -> ApiException.notFound("旅行不存在"));
+    if (!TripPermission.EDITABLE_ROLES.contains(actor.getRole())) {
+      throw ApiException.forbidden("没有足够的旅行权限，请确认权限后再应用");
+    }
+
+    ExpenseAllocation allocation;
+    try {
+      allocation = allocate(tripId, userId, dto);
+    } catch (ApiException ex) {
+      if (preview != null && ex.getStatusCode() == 400) {
+        throw ApiException.conflict("付款人或分摊成员已变化，请重新生成记账草稿");
+      }
+      throw ex;
+    }
+    if (preview != null) {
+      Map<String, Object> current = allocation.preview(normalizeCurrency(Payloads.text(dto.get("currency"))));
+      boolean matches = current.entrySet().stream()
+          .allMatch(entry -> entry.getValue().equals(preview.get(entry.getKey())));
+      if (Boolean.TRUE.equals(preview.get("allMembers")) && allocation.plan().shares().size() != members.size()) {
+        matches = false;
+      }
+      if (!matches) {
+        throw ApiException.conflict("分摊范围或金额已与预览不同，请重新生成记账草稿");
+      }
+    }
+    insertExpense(tripId, userId, dto, null, null, allocation);
+  }
+
+  private TripExpense insertExpense(String tripId, String userId, Map<String, Object> dto,
+      String bookingId, String operationKey, ExpenseAllocation allocation) {
+    long amountCents = allocation.amountCents();
+    String payerUserId = allocation.payerId();
+    SharePlan plan = allocation.plan();
 
     String category = Payloads.text(dto.get("category")) == null ? "other"
         : dto.get("category").toString();
@@ -179,7 +237,7 @@ public class TripExpenseService {
     expense.setCreatedAt(new Date());
     expense.setUpdatedAt(new Date());
     expenseMapper.insert(expense);
-    for (Map<String, String> share : shares) {
+    for (Map<String, String> share : plan.shares()) {
       insertShare(expense.getId(), share.get("userId"), share.get("shareAmount"));
     }
     checkBudgetNotice(tripId, payerUserId);

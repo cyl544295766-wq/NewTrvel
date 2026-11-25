@@ -351,23 +351,22 @@ public class ItineraryDraftEngine {
     return new String[]{null, null};
   }
 
-  /** 应用记账草稿：走 TripExpenseService.create 全量校验；付款人默认当前用户、缺省均分。 */
+  /** 新草稿核对确认时的分摊预览，旧草稿保留原有默认值。 */
   public void applyExpenseDraft(String tripId, Map<String, Object> draft, String userId) {
     @SuppressWarnings("unchecked")
     Map<String, Object> expense = (Map<String, Object>) draft.get("expense");
     if (expense == null) {
       throw ApiException.badRequest("草稿中没有记账信息");
     }
-    Map<String, Object> payload = new LinkedHashMap<>();
-    payload.put("amount", expense.get("amount"));
-    payload.put("category", expense.get("category"));
-    if (expense.get("title") != null) {
-      payload.put("title", expense.get("title"));
+    Map<?, ?> preview = draft.get("expensePreview") instanceof Map<?, ?> snapshot ? snapshot : null;
+    Map<String, Object> payload = expense;
+    if (preview == null) {
+      payload = new LinkedHashMap<>();
+      for (String key : List.of("amount", "category", "title", "notes")) {
+        payload.put(key, expense.get(key));
+      }
     }
-    if (expense.get("notes") != null) {
-      payload.put("notes", expense.get("notes"));
-    }
-    tripExpenseService.create(tripId, userId, payload);
+    tripExpenseService.applyAiExpense(tripId, userId, payload, preview);
   }
 
   /** 应用预订草稿：走 BookingService.create 全量校验（类型、标题、归属行程等），写入预定管理。 */

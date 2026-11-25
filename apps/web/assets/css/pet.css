@@ -371,6 +371,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pet-draft .pd-expense li span { overflow-wrap: anywhere; min-width: 0; }
+.pet-draft .pd-expense .pd-share-name { flex: 1; }
+.pet-draft .pd-expense strong { white-space: nowrap; }
 .pet-draft .pd-more {
   margin-top: 6px;
   font-size: 11px;

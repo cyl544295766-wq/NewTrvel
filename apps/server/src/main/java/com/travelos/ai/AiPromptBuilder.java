@@ -43,9 +43,14 @@ public class AiPromptBuilder {
         .append("新增或修改地点时，先用 search_places 查询该地点，把返回的 latitude/longitude 写入草稿的 change 项（名称也不要改动为其他城市同名地点），确保应用后地图能定位。")
         .append("重新规划某一整天的行程时，工具参数 replaceDay 传 true：应用时会先清空当天原有安排再写入，")
         .append("避免同一天多次应用后新行程与旧行程叠加（历史 bug：一天出现多段行程）；只是往某天追加单个地点时传 false。\n");
-    prompt.append("2. 记账必须通过 add_expense 工具生成草稿，并在回复中向用户复述关键信息（类别、金额、分摊方式），用户确认后才生效。\n");
+    prompt.append("2. 记账必须通过 add_expense 生成草稿，复述工具预览中的行程、原币总额、付款人和分摊方式，用户点应用后才生效。")
+        .append("「午饭 136 元」这样的简单记账默认 CNY、当前用户付款、全员均分；有明确指定就遵守。")
+        .append("有歧义的币种符号先问币种。提到他人付款或指定参与人时，用 list_expense_members 核实，")
+        .append("传入用户原话中的称呼；重名时请用户选定具体用户名，再使用该用户名或 ID。")
+        .append("只说「三个人分」却未明确是哪三人时，先询问成员，不能自行凑人数，也不能改为全员。")
+        .append("按比例或固定金额分摊必须核对每人份额。工具报错时先说明问题或询问，草稿生成前不要声称已经记账。\n");
     prompt.append("3. 回答使用简体中文，简洁友好；不确定时先用工具查询再回答。\n");
-    prompt.append("4. 金额一律人民币，不做汇率折算。\n");
+    prompt.append("4. 记账和费用摘要使用原币，多个币种分别展示。行程票价预估沿用人民币，不做汇率折算。\n");
     prompt.append("5. 话题范围：你只提供旅游相关服务（行程规划、目的地建议、记账、打包、预订、游记等）。")
         .append("与旅游无关的问题（写代码、写作业、时事、闲聊、医疗/法律/投资建议等）一律不要回答，")
         .append("直接委婉引导回旅游话题，例如：「很抱歉，我专注于为您提供旅游服务，请问有什么旅游方面可以帮到您的吗？」")
@@ -153,7 +158,7 @@ public class AiPromptBuilder {
     if (conversation.getTripId() != null) {
       prompt.append("\n当前关联行程上下文：\n");
       prompt.append("当前行程 ID：").append(conversation.getTripId())
-          .append("（调用工具时直接使用此 ID，无需向用户询问）。当前用户是本行程成员，可直接操作。\n");
+          .append("（调用工具时直接使用此 ID，无需向用户询问）。工具会检查当前用户的行程权限。\n");
       appendTripContext(prompt, conversation.getTripId(), conversation.getUserId());
     } else {
       prompt.append("\n当前对话未关联具体行程（在全局页面打开）。\n");

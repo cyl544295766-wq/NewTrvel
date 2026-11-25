@@ -603,11 +603,28 @@
     html += '<div class="pd-s">' + escapeHtml(d.summary || m.content || '') + '</div>';
     if (d.type === 'expense' && d.expense) {
       var e = d.expense;
-      var bits = [];
-      if (e.amount) bits.push('¥ ' + e.amount);
-      if (e.category) bits.push(e.category);
-      if (e.title) bits.push(e.title);
-      if (bits.length) html += '<ul class="pd-list"><li><span class="op">记账</span>' + escapeHtml(bits.join(' · ')) + '</li></ul>';
+      var p = d.expensePreview;
+      if (p) {
+        var names = p.memberLabels || {};
+        var splitLabels = { equal: p.allMembers ? '全员均分' : '均分', ratio: '按比例', amount: '按金额' };
+        var lines = [
+          ['行程', p.tripTitle],
+          ['付款人', names[p.payerUserId]],
+          ['分摊方式', splitLabels[p.splitType]]
+        ];
+        html += '<ul class="pd-list pd-expense">' + lines.map(function (line) {
+          return '<li><span class="op">' + escapeHtml(line[0]) + '</span><span>' + escapeHtml(line[1] || '—') + '</span></li>';
+        }).join('') + (p.shares || []).map(function (share) {
+          return '<li><span class="pd-share-name">' + escapeHtml(names[share.userId] || '行程成员') + '</span>'
+            + '<strong>' + escapeHtml(p.currency + ' ' + share.shareAmount) + '</strong></li>';
+        }).join('') + '</ul>';
+      } else {
+        var bits = [];
+        if (e.amount) bits.push('CNY ' + e.amount);
+        if (e.category) bits.push(e.category);
+        if (e.title) bits.push(e.title);
+        if (bits.length) html += '<ul class="pd-list"><li><span class="op">记账</span>' + escapeHtml(bits.join(' · ')) + '</li></ul>';
+      }
     }
     if (d.type === 'booking' && d.booking) {
       var b = d.booking;

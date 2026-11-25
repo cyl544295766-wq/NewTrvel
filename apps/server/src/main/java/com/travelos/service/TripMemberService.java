@@ -264,6 +264,12 @@ public class TripMemberService {
         .eq(TripMember::getTripId, tripId));
   }
 
+  List<TripMember> lockLedgerMembers(String tripId) {
+    // 数据权限插件会将 ORDER BY 移到锁子句后面，这里无需排序。
+    return tripMemberMapper.selectList(new LambdaQueryWrapper<TripMember>()
+        .eq(TripMember::getTripId, tripId).last("FOR SHARE"));
+  }
+
   /**
    * 危险操作行级属主校验：属主本人或行程 owner/admin 放行。
    * 存量数据属主为 NULL 时按行程成员兼容处理（任何成员可改），

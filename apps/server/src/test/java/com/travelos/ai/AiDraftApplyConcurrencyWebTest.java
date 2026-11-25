@@ -3,6 +3,7 @@ package com.travelos.ai;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.travelos.common.EnvLoader;
+import com.travelos.entity.AiConversation;
 import com.travelos.entity.AiMessage;
 import com.travelos.mapper.AiMessageMapper;
 import com.travelos.service.TripService;
@@ -70,6 +71,9 @@ class AiDraftApplyConcurrencyWebTest {
 
   @Autowired
   AiMessageMapper messageMapper;
+
+  @Autowired
+  AiToolRegistry toolRegistry;
 
   @Autowired
   TripService tripService;
@@ -214,6 +218,123 @@ class AiDraftApplyConcurrencyWebTest {
     draft.put("tripId", tripId);
     draft.put("expense", expense);
     return JSON.writeValueAsString(draft);
+  }
+
+  private AiConversation expenseConversation(String tripId, String username, String token) throws Exception {
+    var response = post("/api/ai/conversations", token, JSON.writeValueAsString(Map.of("tripId", tripId)));
+    assertEquals(200, response.statusCode(), response.body());
+    AiConversation conversation = new AiConversation();
+    conversation.setId(json(response).path("conversation").path("id").asText());
+    conversation.setUserId(fixtureUserId(username));
+    conversation.setTripId(tripId);
+    return conversation;
+  }
+
+  private String fixtureUserId(String username) {
+    return jdbc.queryForObject("SELECT id FROM users WHERE username = ?", String.class, username);
+  }
+
+  private void addExpenseMember(String tripId, String userId) {
+    jdbc.update("""
+        INSERT INTO trip_members (id, trip_id, user_id, role, created_at, updated_at)
+        VALUES (?, ?, ?, 'member', now(), now())
+        """, "expense-fixture-" + tripId + "-" + userId, tripId, userId);
+  }
+
+  private JsonNode expenseTool(AiConversation conversation, Map<String, Object> args) throws Exception {
+    return JSON.readTree(toolRegistry.executeTool(Map.of("name", "add_expense",
+        "arguments", JSON.writeValueAsString(args)), conversation, conversation.getUserId()));
+  }
+
+  @Test
+  @Order(20)
+  void expenseDraftPreservesOriginalCurrencyAndAllThreeSplitModes() throws Exception {
+    String tripId = newTrip();
+    String owner = fixtureUserId(userA);
+    String payer = fixtureUserId(userB);
+    String thirdUsername = "idmdbx" + userA.substring(5);
+    register(thirdUsername);
+    String third = fixtureUserId(thirdUsername);
+    addExpenseMember(tripId, payer);
+    addExpenseMember(tripId, third);
+    AiConversation conversation = expenseConversation(tripId, userA, tokenA);
+
+    List<Map<String, Object>> cases = List.of(
+        Map.of("title", "美元均分", "amount", "80", "currency", "usd", "payer", userB,
+            "participantCount", 3, "participants", List.of(
+                Map.of("member", userB), Map.of("member", thirdUsername), Map.of("member", "我"))),
+        Map.of("title", "欧元比例", "amount", "100.01", "currency", "EUR", "payer", userB,
+            "splitType", "ratio", "participants", List.of(
+                Map.of("member", "我", "ratio", "1"), Map.of("member", userB, "ratio", "2"))),
+        Map.of("title", "日元金额", "amount", "25.02", "currency", "JPY", "payer", userB,
+            "splitType", "amount", "participants", List.of(
+                Map.of("member", "我", "shareAmount", "10.00"), Map.of("member", userB, "shareAmount", "15.01"))));
+    List<Map<String, String>> expected = List.of(
+        Map.of(payer, "26.66", third, "26.66", owner, "26.68"),
+        Map.of(owner, "33.34", payer, "66.67"),
+        Map.of(owner, "10.00", payer, "15.02"));
+
+    for (int i = 0; i < cases.size(); i++) {
+      Map<String, Object> args = cases.get(i);
+      JsonNode tool = expenseTool(conversation, args);
+      assertTrue(tool.path("draftCreated").asBoolean(), tool.toString());
+      JsonNode preview = tool.path("expensePreview");
+      assertEquals(payer, preview.path("payerUserId").asText());
+      Map<String, String> shares = new LinkedHashMap<>();
+      preview.path("shares").forEach(row -> shares.put(row.path("userId").asText(), row.path("shareAmount").asText()));
+      assertEquals(expected.get(i), shares);
+      assertEquals(i, expenseCount(tripId), "预览阶段不得入账");
+      String messageId = tool.path("messageId").asText();
+      var applied = post(applyPath(conversation.getId(), messageId), tokenA, "{}");
+      assertEquals(200, applied.statusCode(), applied.body());
+      assertEquals(200, post(applyPath(conversation.getId(), messageId), tokenA, "{}").statusCode());
+      assertEquals(i + 1, expenseCount(tripId));
+
+      String expense = jdbc.queryForObject("SELECT id FROM trip_expenses WHERE trip_id = ? AND title = ?",
+          String.class, tripId, args.get("title"));
+      assertEquals(preview.path("currency").asText(),
+          jdbc.queryForObject("SELECT currency FROM trip_expenses WHERE id = ?", String.class, expense));
+      assertEquals(payer, jdbc.queryForObject("SELECT payer_user_id FROM trip_expenses WHERE id = ?", String.class, expense));
+      assertEquals(preview.path("splitType").asText(),
+          jdbc.queryForObject("SELECT split_type FROM trip_expenses WHERE id = ?", String.class, expense));
+      Map<String, String> persisted = new LinkedHashMap<>();
+      jdbc.query("SELECT user_id, share_amount FROM trip_expense_shares WHERE expense_id = ?",
+          rs -> { persisted.put(rs.getString(1), rs.getBigDecimal(2).setScale(2).toPlainString()); }, expense);
+      assertEquals(shares, persisted);
+    }
+  }
+
+  @Test
+  @Order(21)
+  void ambiguousExpenseDraftAndChangedExpenseScopeNeverWrite() throws Exception {
+    String tripId = newTrip();
+    String owner = fixtureUserId(userA);
+    String other = fixtureUserId(userB);
+    addExpenseMember(tripId, other);
+    jdbc.update("UPDATE users SET display_name = '同名成员' WHERE id IN (?, ?)", owner, other);
+    AiConversation conversation = expenseConversation(tripId, userA, tokenA);
+    assertTrue(expenseTool(conversation, Map.of("amount", "80", "currency", "¥")).path("error").asText().contains("原币"));
+    assertTrue(expenseTool(conversation, Map.of("amount", "80", "participantCount", 3)).path("error").asText().contains("成员"));
+    assertTrue(expenseTool(conversation, Map.of("amount", "80", "payer", "同名成员")).path("error").asText().contains("重名"));
+    assertTrue(expenseTool(conversation, Map.of("amount", "80", "participants", List.of(Map.of("member", "行程外成员"))))
+        .path("error").asText().contains("当前行程"));
+    assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM ai_messages WHERE conversation_id = ?", Integer.class, conversation.getId()));
+    assertEquals(0, expenseCount(tripId));
+
+    var own = expenseTool(conversation, Map.of("amount", "136", "category", "food"));
+    assertEquals("CNY", own.path("expensePreview").path("currency").asText());
+    AiConversation otherConversation = expenseConversation(tripId, userB, tokenB);
+    String otherDraft = expenseTool(otherConversation, Map.of("amount", "80", "currency", "USD")).path("messageId").asText();
+    jdbc.update("UPDATE trip_members SET role = 'viewer' WHERE trip_id = ? AND user_id = ?", tripId, other);
+    var forbidden = post(applyPath(otherConversation.getId(), otherDraft), tokenB, "{}");
+    assertEquals(403, forbidden.statusCode(), forbidden.body());
+    assertTrue(expenseTool(otherConversation, Map.of("amount", "80")).path("error").asText().contains("权限"));
+    jdbc.update("DELETE FROM trip_members WHERE trip_id = ? AND user_id = ?", tripId, other);
+    var stale = post(applyPath(conversation.getId(), own.path("messageId").asText()), tokenA, "{}");
+    assertEquals(409, stale.statusCode(), stale.body());
+    assertTrue(stale.body().contains("重新生成"));
+    assertEquals(200, post(discardPath(conversation.getId(), own.path("messageId").asText()), tokenA, "{}").statusCode());
+    assertEquals(0, expenseCount(tripId));
   }
 
   private String bookingDraftJson(String tripId) throws Exception {
