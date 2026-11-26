@@ -37,28 +37,33 @@
 }
 
 .pet .body-wrap {
+  --pet-hop: 8px;
+  --pet-sway: 2px;
   position: absolute;
   inset: 0 0 5px;
   background: var(--pet-portrait) center bottom / contain no-repeat;
   filter: drop-shadow(0 3px 4px rgba(56, 45, 28, .3));
   pointer-events: none;
+  transform-origin: 50% 88%;
   transition: transform 0.25s ease;
 }
-.pet[data-facing="left"] .body-wrap { transform: scaleX(-1); }
-/* 待机：上下浮动 */
-.pet[data-state="idle"] .body-wrap { animation: petFloat 2.6s ease-in-out infinite; }
-@keyframes petFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+.pet[data-facing="left"] .body-wrap { scale: -1 1; }
+.pet[data-state="idle"] .body-wrap { animation: petIdle 4s ease-in-out infinite; }
+@keyframes petIdle {
+  0%, 42%, 100% { transform: none; }
+  17% { transform: translateX(calc(-1 * var(--pet-sway))) rotate(-4deg) scale(1.02, .98); }
+  32% { transform: translateX(var(--pet-sway)) rotate(4deg) scale(.98, 1.02); }
+  51% { transform: scale(1.045, .955); }
+  65% { transform: translateY(calc(-1 * var(--pet-hop))) rotate(-3deg) scale(.98, 1.03); }
+  81% { transform: scale(1.03, .97); }
 }
-.pet[data-facing="left"][data-state="idle"] .body-wrap { animation: petFloatFlip 2.6s ease-in-out infinite; }
-@keyframes petFloatFlip {
-  0%, 100% { transform: scaleX(-1) translateY(0); }
-  50% { transform: scaleX(-1) translateY(-4px); }
+.pet[data-state="idle"] .shadow { animation: petIdleShadow 4s ease-in-out infinite; }
+@keyframes petIdleShadow {
+  0%, 51%, 81%, 100% { transform: none; opacity: 1; }
+  65% { transform: scaleX(.76); opacity: .52; }
 }
-/* 拖拽态：抬起（放大 + 影子收缩），暂停待机浮动 */
+/* 拖拽态：抬起（放大 + 影子收缩），暂停待机动画 */
 .pet[data-state="drag"] .body-wrap { animation: none; transform: scale(1.1); }
-.pet[data-state="drag"][data-facing="left"] .body-wrap { transform: scale(-1.1, 1.1); }
 .pet[data-state="drag"] .shadow { transform: scaleX(1.18); opacity: .35; }
 
 /* 影子 */
@@ -145,6 +150,14 @@
   border-radius: 11px;
   background: #F5E7D1 var(--pet-portrait) center top / 93% auto no-repeat;
   flex: none;
+}
+.pet-bubble.open:has(.pet-typing, .msg-streaming) .pb-head .av {
+  animation: petReplyNod 1.8s ease-in-out infinite;
+}
+@keyframes petReplyNod {
+  0%, 100% { transform: none; }
+  32% { transform: translateY(2px) rotate(-5deg); }
+  61% { transform: translateY(-1px) rotate(3deg); }
 }
 .pet-bubble .pb-head .nm { font-weight: 700; font-size: 14px; line-height: 1.35; }
 .pet-bubble .pb-head .role { font-size: 11px; color: #D5ECE8; }
@@ -544,7 +557,9 @@
 /* ===== 无障碍 / 弱动效 ===== */
 @media (prefers-reduced-motion: reduce) {
   /* 移动由用户拖拽驱动，保留交互；仅停用装饰性动画与吸附过渡 */
-  .pet .body-wrap, .pet .shadow { animation: none !important; }
+  .pet .body-wrap, .pet .shadow, .pet-bubble .pb-head .av, .pet-typing i {
+    animation: none !important;
+  }
   .pet { transition: none !important; }
   .pet-bubble, .pet-mask { transition: none !important; }
 }
