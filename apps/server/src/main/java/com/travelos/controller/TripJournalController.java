@@ -33,11 +33,17 @@ public class TripJournalController {
     this.recapService = recapService;
   }
 
-  /** AI 行程回顾：基于行程安排/花费/照片生成一篇私密草稿游记。 */
+  @RequireTripRole({"owner", "admin", "member"})
+  @GetMapping("/recap/materials")
+  public Map<String, Object> recapMaterials(@PathVariable String tripId, @CurrentUser UserContext user) {
+    return recapService.listMaterials(tripId, user.id());
+  }
+
   @RequireTripRole({"owner", "admin", "member"})
   @PostMapping("/recap")
-  public Map<String, Object> recap(@PathVariable String tripId, @CurrentUser UserContext user) {
-    return recapService.generate(tripId, user.id());
+  public Map<String, Object> recap(@PathVariable String tripId,
+      @RequestBody(required = false) Map<String, Object> options, @CurrentUser UserContext user) {
+    return recapService.generate(tripId, user.id(), options == null ? Map.of() : options);
   }
 
   @GetMapping

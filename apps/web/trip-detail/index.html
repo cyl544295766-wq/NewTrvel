@@ -307,6 +307,44 @@
     font-size: 11px; color: var(--ui-muted, rgba(255,255,255,.45)); margin-top: 2px;
   }
 
+  .recap-entry {
+    display: flex; flex-direction: column; border-radius: 13px;
+    border: 1.5px solid rgba(var(--ui-line-rgb, 255,255,255),.08);
+    background: rgba(var(--ui-overlay-rgb, 255,255,255),.06);
+  }
+  .recap-entry .module { flex: 1; border: 0; background: transparent; }
+  .recap-entry .module:hover { transform: none; box-shadow: none; }
+  .recap-material-button {
+    padding: 10px 16px; border: 0; border-top: 1px solid rgba(var(--ui-line-rgb, 255,255,255),.10);
+    border-radius: 0 0 12px 12px; background: transparent; color: var(--ui-accent, #7FD8D4);
+    cursor: pointer; font: inherit; font-size: 13px; text-align: left;
+  }
+  .recap-material-button:hover { background: rgba(var(--ui-overlay-rgb, 255,255,255),.06); }
+  .recap-dialog {
+    width: min(610px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 0;
+    border: 1px solid rgba(var(--ui-line-rgb, 255,255,255),.16); border-radius: 16px;
+    background: var(--ui-surface, #161A23); color: var(--ui-text, #fff);
+  }
+  .recap-dialog::backdrop { background: rgba(0,0,0,.54); }
+  .recap-dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 26px); }
+  .recap-dialog h2 { margin: 0; font-size: 17px; }
+  .recap-dialog .x { min-width: 36px; min-height: 36px; }
+  .recap-scroll { padding: 0 18px 14px; overflow: auto; min-height: 0; }
+  .recap-scroll p, .recap-material-meta { font-size: 13px; color: var(--ui-muted, #a5adb9); }
+  .recap-scroll fieldset { min-width: 0; margin: 16px 0; padding: 0; border: 0; }
+  .recap-scroll legend { padding: 0 0 7px; font-weight: 600; font-size: 14px; }
+  .recap-dialog .sh-foot { align-items: center; flex-wrap: wrap; }
+  .recap-dialog [hidden] { display: none; }
+  .recap-option {
+    display: flex; align-items: start; gap: 10px; padding: 9px 0; cursor: pointer;
+    border-bottom: 1px solid rgba(var(--ui-line-rgb, 255,255,255),.10);
+  }
+  .recap-option input, .recap-fees input { accent-color: var(--ui-accent, #0D6E6E); }
+  .recap-option img { width: 50px; height: 46px; object-fit: cover; border-radius: 6px; }
+  .recap-option span { overflow-wrap: anywhere; }
+  .recap-option > span > span { display: block; white-space: pre-wrap; }
+  .recap-fees { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .recap-dialog #recapStatus { margin: 10px 0 0; overflow-wrap: anywhere; }
 
   /* ===== 天气 ===== */
   .weather-panel { margin-top: 18px; }
@@ -822,11 +860,41 @@
   </div>
 </aside>
 
+<dialog class="recap-dialog" id="recapDialog" aria-labelledby="recapTitle">
+  <form id="recapForm">
+    <div class="sh-head">
+      <h2 id="recapTitle">用旅行素材生成回顾</h2>
+      <button type="button" class="x" id="recapClose" aria-label="关闭" autofocus>✕</button>
+    </div>
+    <div class="recap-scroll">
+      <p>AI 根据已完成的行程、所选笔记和照片说明撰写回顾。生成后只有你能看到草稿，可以继续编辑。</p>
+      <p id="recapStatus" role="status" aria-live="polite"></p>
+      <div id="recapMaterials" hidden>
+        <fieldset id="recapPhotoField">
+          <legend id="recapPhotoCount">代表照片</legend>
+          <div id="recapPhotos"></div>
+        </fieldset>
+        <fieldset id="recapNoteField">
+          <legend id="recapNoteCount">行程笔记</legend>
+          <div id="recapNotes"></div>
+        </fieldset>
+        <label class="recap-fees"><input type="checkbox" id="recapExpenses"> 包含原币费用小结</label>
+      </div>
+    </div>
+    <div class="sh-foot">
+      <button type="button" class="btn-plain" id="recapReload" hidden>重新加载素材</button>
+      <button type="button" class="btn-plain" id="recapAnother" hidden>另生成一篇</button>
+      <button type="submit" class="btn-primary-sm" id="recapSubmit" disabled>保存为私密草稿</button>
+    </div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/ai-planning.js?v=1"></script>
 <script src="../assets/js/pet.js?v=ai-receipt"></script>
+<script src="../assets/js/trip-recap.js?v=1"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -1084,10 +1152,9 @@
         { name: '游记',     hint: '记录时刻', badge: cnt(c.journals, '篇'), bg: '#E8F1F9', fg: '#3A7FA5', icon: '✎', link: '/journals/?trip=' + encodeURIComponent(tripId) },
       ];
 
-      /* 行程已结束：显示「AI 行程回顾」一键生成卡片（点击走 recap 接口生成私密草稿游记） */
       var tripEnded = state.journey && ['past', 'archived'].includes(state.journey.phase);
       if (tripEnded && ['owner', 'admin', 'member'].includes(state.trip.currentUserRole)) {
-        modules.unshift({ name: 'AI 行程回顾', hint: '一键生成回顾游记', badge: '✨ 新',
+        modules.unshift({ name: 'AI 行程回顾', hint: '一键生成基础回顾',
           bg: '#E8F6F5', fg: '#0D6E6E', icon: '✦', recap: true });
       }
 
@@ -1097,12 +1164,14 @@
           ? '<span class="badge">' + escapeHtml(m.badge) + '</span>'
           : (m.badge === null ? '<span class="badge dim">暂不可用</span>' : '');
         if (m.recap) {
-          return ''
-            + '<button class="module" id="recapModule" onclick="generateRecap(this)">'
+          return '<div class="recap-entry">'
+            + '<button class="module" type="button" id="recapModule">'
             + '<span class="ic" style="background:' + m.bg + ';color:' + m.fg + ';">' + m.icon + '</span>'
             + '<span class="nm">' + m.name + badge + '</span>'
             + '<span class="hint" id="recapHint">' + m.hint + '</span>'
-            + '</button>';
+            + '</button>'
+            + '<button type="button" class="recap-material-button" id="recapMaterialButton" aria-haspopup="dialog">选择照片与笔记</button>'
+            + '</div>';
         }
         return ''
           + '<button class="module" data-link="' + escapeHtml(m.link) + '">'
@@ -1113,24 +1182,7 @@
       }).join('');
     }
 
-    /* AI 行程回顾：生成私密草稿游记后跳转游记详情编辑 */
-    async function generateRecap(btn) {
-      var hint = document.getElementById('recapHint');
-      if (btn) btn.disabled = true;
-      if (hint) hint.textContent = 'AI 正在撰写回顾…（约 10-30 秒）';
-      try {
-        var r = await apiPost('/trips/' + encodeURIComponent(tripId) + '/journals/recap', {});
-        var journal = (r.journal || {});
-        showToast('回顾游记已生成（私密草稿），正在打开…');
-        location.href = '/journal-detail/?id=' + encodeURIComponent(journal.id)
-          + '&trip=' + encodeURIComponent(tripId);
-      } catch (err) {
-        if (btn) btn.disabled = false;
-        if (hint) hint.textContent = '一键生成回顾游记';
-        showToast(humanError(err));
-      }
-    }
-    window.generateRecap = generateRecap;
+    TravelOSRecap.init(tripId, user.id, showToast);
 
     /* 天气：后端字段是 condition / tempLow / tempHigh / rainChance / iconCode */
     var WICON = { sun: '☀', cloud: '☁', 'cloud-rain': '🌧', snowflake: '❄', 'cloud-lightning': '⛈' };
