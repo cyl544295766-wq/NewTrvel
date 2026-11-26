@@ -12,6 +12,7 @@ import com.travelos.entity.TripExpense;
 import com.travelos.entity.TripPlace;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
+import com.travelos.trip.TripPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -64,6 +66,10 @@ public class TodayBriefService {
 
   /** 降雨概率达到该值且当天有室外安排时提示天气风险。 */
   private static final int RAIN_ALERT_THRESHOLD = 50;
+  public static final String WEATHER_RAIN = "weather_rain";
+  public static final String TIME_CONFLICT = "time_conflict";
+  private static final Set<String> POSSIBLY_OUTDOOR = Set.of("attraction", "shopping", "custom");
+  private static final List<String> INDOOR_VENUES = List.of("博物馆", "美术馆", "展览馆");
 
   private static final Map<String, String> BOOKING_TYPE_LABELS = Map.of(
       "flight", "机票", "hotel", "酒店", "train", "火车票", "ticket", "门票", "other", "预订");
@@ -136,14 +142,17 @@ public class TodayBriefService {
     Trip trip = selection.trip();
     String mode = "draft".equals(selection.phase()) ? "pre-trip" : selection.phase();
     String dateKey = target.toString();
-    String cacheKey = userId + "|" + trip.getId() + "|" + dateKey + "|" + mode + "|" + zone + "|" + llmSummary;
+    boolean canAdjust = "today".equals(mode) && target.equals(today)
+        && TripPermission.EDITABLE_ROLES.contains(tripMemberService.requireTripMember(trip.getId(), userId).getRole());
+    String cacheKey = userId + "|" + trip.getId() + "|" + dateKey + "|" + mode + "|" + zone + "|" + llmSummary
+        + "|" + canAdjust;
     if (!refresh) {
       CacheEntry cached = briefCache.get(cacheKey);
       if (cached != null && System.currentTimeMillis() - cached.cachedAt() < CACHE_TTL_MS) {
         return cached.brief();
       }
     }
-    Map<String, Object> brief = buildBrief(userId, trip, mode, target, zone, llmSummary);
+    Map<String, Object> brief = buildBrief(userId, trip, mode, target, zone, llmSummary, canAdjust);
     brief.put("phase", selection.phase());
     brief.put("dateKey", dateKey);
     brief.put("timeZone", zone.getId());
@@ -180,7 +189,7 @@ public class TodayBriefService {
   // ==================== 简报构建 ====================
 
   private Map<String, Object> buildBrief(String userId, Trip trip, String mode, LocalDate target,
-      ZoneId zone, boolean llmSummary) {
+      ZoneId zone, boolean llmSummary, boolean canAdjust) {
     String dateKey = target.toString();
     boolean preTrip = "pre-trip".equals(mode);
     TripDay day = journey.dayFor(trip.getId(), mode, target);
@@ -241,6 +250,20 @@ public class TodayBriefService {
 
     List<Alert> alerts = buildAlerts(tripId, tripStartKey, mode, dateKey, zone, day, schedule,
         weather, bookings, budget, packing, documents);
+    if (canAdjust) {
+      for (Alert alert : alerts) {
+        String type = (String) alert.body().get("type");
+        var targets = switch (type) {
+          case WEATHER_RAIN -> outdoorPlaces(schedule, weather);
+          case TIME_CONFLICT -> firstOverlap(schedule);
+          default -> List.<Map<String, Object>>of();
+        };
+        if (!actionPlaceIds(targets).isEmpty()) {
+          alert.body().put("adjustment", Map.of("type", type, "date", dateKey,
+              "label", WEATHER_RAIN.equals(type) ? "找室内替代" : "调整时间"));
+        }
+      }
+    }
 
     SummaryResult summary = llmSummary
         ? summarizeViaLlm(trip, mode, day, schedule, weather, bookings, packing, documents,
@@ -283,6 +306,68 @@ public class TodayBriefService {
     body.put("dataStatus", dataStatus);
     body.put("generatedAt", new Date());
     return body;
+  }
+
+  public record RouteAction(String type, String tripId, String date, String destination, List<String> placeIds) {}
+
+  public RouteAction resolveRouteAction(String userId, String tripId, String type, String date) {
+    if (tripId == null || tripId.isBlank()) {
+      throw ApiException.badRequest("请从简报打开行程对应的助手");
+    }
+    tripMemberService.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
+    ZoneId zone = userPreferenceService.timeZone(userId);
+    LocalDate today = LocalDate.now(zone);
+    Trip trip = tripService.findLive(tripId);
+    if (trip == null || !"today".equals(journey.phase(trip, today)) || !today.toString().equals(date)) {
+      throw ApiException.conflict("提醒日期或行程状态已变更，请刷新今日简报");
+    }
+    TripDay day = journey.dayFor(tripId, "today", today);
+    List<Map<String, Object>> schedule = buildSchedule(day);
+    var candidates = switch (type) {
+      case WEATHER_RAIN -> schedule.isEmpty() ? List.<Map<String, Object>>of()
+          : outdoorPlaces(schedule, buildWeather(userId, tripId, date));
+      case TIME_CONFLICT -> firstOverlap(schedule);
+      default -> throw ApiException.badRequest("该提醒不支持一键调整");
+    };
+    var ids = actionPlaceIds(candidates);
+    if (ids.isEmpty()) {
+      throw ApiException.conflict("提醒已变化或相关安排不可编辑，请刷新简报或手动查看行程");
+    }
+    return new RouteAction(type, tripId, date, trip.getDestination(), ids);
+  }
+
+  private static List<String> actionPlaceIds(List<Map<String, Object>> places) {
+    return places.stream().filter(place -> !Boolean.TRUE.equals(place.get("isCompleted")))
+        .map(place -> (String) place.get("id")).toList();
+  }
+
+  private static List<Map<String, Object>> firstOverlap(List<Map<String, Object>> schedule) {
+    Map<String, Object> latest = null;
+    for (var place : schedule) {
+      if (!(place.get("startTime") instanceof Date start)) break;
+      Date latestEnd = latest == null ? null : (Date) latest.get("endTime");
+      if (latestEnd != null && latestEnd.after(start)) return List.of(latest, place);
+      if (place.get("endTime") instanceof Date end && (latestEnd == null || end.after(latestEnd))) latest = place;
+    }
+    return List.of();
+  }
+
+  private static List<Map<String, Object>> outdoorPlaces(List<Map<String, Object>> schedule, Map<String, Object> weather) {
+    if (weather == null) return List.of();
+    String condition = weatherCondition(weather);
+    if (rainChance(weather) < RAIN_ALERT_THRESHOLD && !condition.contains("雨")
+        && !condition.contains("雪") && !condition.contains("雷")) return List.of();
+    return schedule.stream().filter(place -> POSSIBLY_OUTDOOR.contains(place.get("type")))
+        .filter(place -> INDOOR_VENUES.stream().noneMatch(String.valueOf(place.get("name"))::contains))
+        .toList();
+  }
+
+  private static String weatherCondition(Map<String, Object> weather) {
+    return weather.get("condition") == null ? "" : weather.get("condition").toString();
+  }
+
+  private static int rainChance(Map<String, Object> weather) {
+    return weather.get("rainChance") instanceof Number n ? n.intValue() : 0;
   }
 
   // ---- 模块：行程 ----
@@ -566,50 +651,28 @@ public class TodayBriefService {
     List<Alert> alerts = new ArrayList<>();
     boolean preTrip = "pre-trip".equals(mode);
 
-    // 1. 降雨/恶劣天气：当天有室外安排且降雨概率较高（只建议查看行程，不自动改期）
-    if (weather != null && !schedule.isEmpty()) {
-      int rain = weather.get("rainChance") instanceof Number number ? number.intValue() : 0;
-      String condition = weather.get("condition") == null ? "" : weather.get("condition").toString();
-      boolean rainy = rain >= RAIN_ALERT_THRESHOLD || condition.contains("雨")
-          || condition.contains("雪") || condition.contains("雷");
-      List<String> outdoor = new ArrayList<>();
-      if (rainy) {
-        for (Map<String, Object> place : schedule) {
-          String type = String.valueOf(place.get("type"));
-          if (List.of("attraction", "shopping", "custom").contains(type)) {
-            outdoor.add(String.valueOf(place.get("name")));
-          }
-        }
-      }
-      if (!outdoor.isEmpty()) {
-        alerts.add(alert("weather_rain", "warning", "天气可能影响室外安排",
-            "预报" + (condition.isEmpty() ? "降雨概率 " + rain + "%" : condition + "，降雨概率 " + rain + "%")
-                + "，当天有 " + outdoor.size() + " 项室外安排（如" + outdoor.get(0)
-                + "），建议查看行程并考虑调整",
-            "rainChance=" + rain + "，室外安排：" + String.join("、", outdoor),
-            action("查看行程并考虑调整", itineraryUrl(tripId, day)), 3));
-      }
+    // 1. 类型只能提示可能受天气影响，地点是否为露天需由用户核对。
+    List<String> outdoor = outdoorPlaces(schedule, weather).stream().map(place -> (String) place.get("name")).toList();
+    if (!outdoor.isEmpty()) {
+      int rain = rainChance(weather);
+      String condition = weatherCondition(weather);
+      alerts.add(alert(WEATHER_RAIN, "warning", "天气可能影响室外安排",
+          "预报" + (condition.isEmpty() ? "降雨概率 " + rain + "%" : condition + "，降雨概率 " + rain + "%")
+              + "，有 " + outdoor.size() + " 项安排可能受影响（如" + outdoor.get(0) + "）",
+          "rainChance=" + rain + "，可能受天气影响的安排：" + String.join("、", outdoor),
+          action("查看行程", itineraryUrl(tripId, day)), 3));
     }
 
     // 2. 时间冲突：按开始时间排序后，上一项结束时间晚于下一项开始时间
-    List<Map<String, Object>> timed = new ArrayList<>();
-    for (Map<String, Object> place : schedule) {
-      if (place.get("startTime") instanceof Date) {
-        timed.add(place);
-      }
-    }
-    for (int i = 0; i + 1 < timed.size(); i++) {
-      Date end = (Date) timed.get(i).get("endTime");
-      Date nextStart = (Date) timed.get(i + 1).get("startTime");
-      if (end != null && nextStart != null && end.after(nextStart)) {
-        alerts.add(alert("time_conflict", "warning", "今日时间安排有冲突",
-            "「" + timed.get(i).get("name") + "」结束时间晚于「" + timed.get(i + 1).get("name")
-                + "」的开始时间，建议查看行程并调整",
-            timed.get(i).get("name") + " endTime(" + hmInZone(end, zone) + ") > "
-                + timed.get(i + 1).get("name") + " startTime(" + hmInZone(nextStart, zone) + ")",
-            action("查看行程", itineraryUrl(tripId, day)), 3));
-        break;
-      }
+    var overlap = firstOverlap(schedule);
+    if (!overlap.isEmpty()) {
+      var first = overlap.get(0);
+      var next = overlap.get(1);
+      alerts.add(alert(TIME_CONFLICT, "warning", "今日时间安排有冲突",
+          "「" + first.get("name") + "」结束时间晚于「" + next.get("name") + "」的开始时间",
+          first.get("name") + " endTime(" + hmInZone((Date) first.get("endTime"), zone) + ") > "
+              + next.get("name") + " startTime(" + hmInZone((Date) next.get("startTime"), zone) + ")",
+          action("查看行程", itineraryUrl(tripId, day)), 3));
     }
 
     // 3. 时间信息不完整：当天有地点但全部没有时间

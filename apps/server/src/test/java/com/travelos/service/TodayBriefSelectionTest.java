@@ -2,6 +2,7 @@ package com.travelos.service;
 
 import com.travelos.ai.LlmGatewayService;
 import com.travelos.entity.Trip;
+import com.travelos.entity.TripMember;
 import com.travelos.mapper.TripDayMapper;
 import com.travelos.mapper.TripPlaceMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -106,6 +108,9 @@ class TodayBriefSelectionTest {
     when(tripService.findAll(USER)).thenReturn(Map.of("trips", rows));
     when(tripService.findLive(anyString()))
         .thenAnswer(inv -> byId.get(inv.getArgument(0, String.class)));
+    TripMember viewer = new TripMember();
+    viewer.setRole("viewer");
+    when(tripMemberService.requireTripMember(anyString(), eq(USER))).thenReturn(viewer);
   }
 
   private Map<String, Object> autoBrief() {

@@ -116,6 +116,7 @@
     receiptBusy: false,
     receiptImage: null,
     planning: false,
+    briefBusy: false,
     streamAbort: null,   /* 当前流式请求的 AbortController（用户主动停止用） */
     expanded: false,    /* 桌面使用右侧抽屉，窄屏使用底部面板 */
     mobile: false,      /* ≤720px：气泡即底部 sheet */
@@ -522,9 +523,14 @@
   function loadConversations() {
     if (!isLoggedIn()) return;
     renderBar();
-    var qs = S.tripId ? ('?tripId=' + encodeURIComponent(S.tripId)) : '?scope=global';
+    var tripId = S.tripId;
+    var qs = tripId ? ('?tripId=' + encodeURIComponent(tripId)) : '?scope=global';
     apiGet('/ai/conversations' + qs)
-      .then(function (r) { S.convs = scopeConvs(r && r.conversations); renderBar(); })
+      .then(function (r) {
+        if (tripId !== S.tripId) return;
+        S.convs = scopeConvs(r && r.conversations);
+        renderBar();
+      })
       .catch(function () { /* 读不到就保持既有列表 */ });
   }
   function renderBar() {
@@ -532,36 +538,37 @@
     var sel = S.bubble.querySelector('.pb-bar .conv');
     if (!sel) return;
     var del = S.bubble.querySelector('.pb-bar .del');
-    S.bubble.querySelector('.pb-bar .new').disabled = S.planning;
+    var busy = S.planning || S.briefBusy;
+    S.bubble.querySelector('.pb-bar .new').disabled = busy;
     if (!S.convs.length) {
       sel.innerHTML = '<option value="">（还没有会话）</option>';
       sel.disabled = true;
       if (del) del.disabled = true;
       return;
     }
-    sel.disabled = S.planning;
-    if (del) del.disabled = S.planning;
+    sel.disabled = busy;
+    if (del) del.disabled = busy;
     sel.innerHTML = S.convs.map(function (c) {
       return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.title || '未命名会话') + '</option>';
     }).join('');
     if (S.convId) sel.value = S.convId;
   }
   function selectConv(id) {
-    if (S.planning) { renderBar(); return; }
+    if (S.planning || S.briefBusy) { renderBar(); return; }
     if (!id || id === S.convId) return;
     S.convId = id;
     saveConvId(id);
     loadHistory();
   }
   function newConv() {
-    if (S.planning) return;
+    if (S.planning || S.briefBusy) return;
     S.convId = null;
     clearConvId();
     renderEmpty();
     if (S.el.input && !S.el.inputRow.hidden) S.el.input.focus();
   }
   async function delConv() {
-    if (S.planning) return;
+    if (S.planning || S.briefBusy) return;
     if (!S.convId) return;
     if (!global.confirm('删除该会话？对话记录将不可恢复。')) return;
     try {
@@ -1188,9 +1195,10 @@
       if (kind === 'discard' && S.receiptImage && S.receiptImage.id === messageId) clearReceiptImage();
       toast(packing ? '新增 ' + result.appliedCount + ' 项打包物品'
         : (kind === 'apply' ? '已应用变更' : '已放弃该草稿'));
-      if (packing) dispatchApplied(kind, messageId, packing);
+      var brief = result && result.briefAlert;
+      if (packing || brief) dispatchApplied(kind, messageId, packing, brief && result);
       await refresh();
-      if (!packing) dispatchApplied(kind, messageId);
+      if (!packing && !brief) dispatchApplied(kind, messageId);
     } catch (err) {
       if (btn) btn.disabled = false;
       if (form) {
@@ -1203,9 +1211,10 @@
     }
   }
 
-  function dispatchApplied(kind, messageId, packing) {
+  function dispatchApplied(kind, messageId, packing, briefResult) {
     var detail = { kind: kind, messageId: messageId, conversationId: S.convId,
-      tripId: packing ? packing.tripId : S.tripId, packing: packing };
+      tripId: briefResult ? briefResult.tripId : packing ? packing.tripId : S.tripId, packing: packing };
+    if (briefResult) detail.briefAlert = briefResult.briefAlert;
     try {
       window.dispatchEvent(new CustomEvent('travelos:ai-applied', { detail: detail }));
     } catch (e) { /* ignore */ }
@@ -1220,11 +1229,12 @@
    *  - 可能已被接受（网络中断 / 5xx / 读体失败 / 流中断）→ 只拉权威消息列表对齐，不盲目重发；
    *  - 服务端明确拒绝（429 等）→ 抛出展示，不重发；
    *  - 用户主动停止 → 中断请求（服务端同步取消），既不重发也不恢复。 */
-  async function streamMessage(text, box, requestId) {
+  async function streamMessage(text, box, requestId, briefAction) {
     var endpoint = '/ai/conversations/' + encodeURIComponent(S.convId) + '/messages/stream';
+    var body = { content: text, clientRequestId: requestId };
+    if (briefAction) body.briefAction = briefAction;
     var normalSend = function () {
-      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages',
-        { content: text, clientRequestId: requestId });
+      return apiPost('/ai/conversations/' + encodeURIComponent(S.convId) + '/messages', body);
     };
     var token = getToken();
     var controller = (typeof AbortController === 'function') ? new AbortController() : null;
@@ -1248,7 +1258,7 @@
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + token,
           },
-          body: JSON.stringify({ content: text, clientRequestId: requestId }),
+          body: JSON.stringify(body),
         });
       } catch (e) {
         fetchFailed = true; // 请求可能已被服务端接受：禁止直接重发
@@ -1351,8 +1361,8 @@
     }
   }
 
-  async function send(preset, plan, requireTrip) {
-    if (S.sending || (S.planning && !plan)) return;
+  async function send(preset, plan, requireTrip, briefAction) {
+    if (S.sending || (S.planning && !plan) || (S.briefBusy && !briefAction)) return;
     var text = String(preset != null ? preset : S.el.input.value).trim();
     if (!text) return;
     /* 每次发送生成稳定 clientRequestId（普通/流式共享幂等键；停止后的新发送必然是新 ID） */
@@ -1374,7 +1384,7 @@
     appendTyping();
     try {
       if (!plan) await ensureConversation(text, requireTrip);
-      var result = await streamMessage(text, box, clientRequestId);
+      var result = await streamMessage(text, box, clientRequestId, briefAction);
       /* 与行程详情 AI 面板同一模式：发送后拉取完整消息列表（草稿状态由后端装配，
        * 同时也是流式中断/停止后的权威对齐——不会再次发送同一条消息） */
       var d = await fetchMessages();
@@ -1382,7 +1392,7 @@
       removeTyping();
       renderMessages(items);
       var last = items[items.length - 1];
-      if (!plan && last && last.role === 'assistant' && last.navigation && last.navigation.url) {
+      if (!plan && !briefAction && last && last.role === 'assistant' && last.navigation && last.navigation.url) {
         setTimeout(function () { window.location.href = last.navigation.url; }, 1200);
       }
       return { messages: items, result: result };
@@ -1391,7 +1401,7 @@
       box.insertAdjacentHTML('beforeend',
         '<div class="pet-msg ai"><div class="txt">' + escapeHtml(humanError(err)) + '</div></div>');
       box.scrollTop = box.scrollHeight;
-      if (plan) throw err;
+      if (plan || briefAction) throw err;
     } finally {
       S.sending = false;
       if (sendBtn) sendBtn.textContent = sendLabel;
@@ -1615,13 +1625,14 @@
     setState('idle', 'right');
   }
 
-  function setTrip(tripId) {
+  function setTrip(tripId, skipHistory) {
     tripId = tripId || null;
     if (tripId === S.tripId) return;
     S.tripId = tripId;
     S.tripBound = !!tripId;
     S.convId = null;
-    if (S.bubble && S.bubbleOpen) loadHistory();
+    S.convs = [];
+    if (!skipHistory && S.bubble && S.bubbleOpen) loadHistory();
   }
 
   function stop() {
@@ -1640,6 +1651,50 @@
     return true;
   }
 
+  async function generateBriefAdjustment(tripId, action) {
+    if (!S.host || !tripId || !isLoggedIn()) throw new Error('请登录后重试');
+    if (S.sending || S.planning || S.briefBusy || S.receiptBusy) throw new Error('请等当前助手任务完成后再试');
+    S.briefBusy = true;
+    function pending(messages) {
+      return messages.some(function (item) {
+        var draft = item.draft;
+        return item.draftStatus === 'pending' && draft && draft.tripId === tripId && draft.briefAlert
+          && draft.briefAlert.type === action.type && draft.briefAlert.date === action.date;
+      });
+    }
+    try {
+      var changed = S.tripId !== tripId;
+      var wasOpen = S.bubbleOpen;
+      setTrip(tripId, true);
+      S.tripBound = true;
+      await showBubble();
+      if (wasOpen && changed) {
+        S.el.receipt.hidden = true;
+        await loadHistory();
+        loadConversations();
+      }
+      renderBar();
+      if (S.convId) {
+        var history = await fetchMessages();
+        if (!history.conversation || history.conversation.tripId !== tripId) {
+          S.convId = null;
+          clearConvId();
+          renderEmpty();
+        } else if (pending(history.messages || [])) {
+          renderMessages(history.messages);
+          return true;
+        }
+      }
+      var text = action.type === 'weather_rain' ? '为今日简报的天气提醒找室内替代，先生成调整草稿。'
+        : '为今日简报的时间冲突寻找可用时段，先生成调整草稿。';
+      var outcome = await send(text, null, true, { type: action.type, date: action.date });
+      return !!outcome && pending(outcome.messages);
+    } finally {
+      S.briefBusy = false;
+      renderBar();
+    }
+  }
+
   global.TravelOSAi = {
     __loaded: true,
     init: init,
@@ -1649,6 +1704,7 @@
     hideBubble: hideBubble,
     setTrip: setTrip,
     generatePacking: generatePacking,
+    generateBriefAdjustment: generateBriefAdjustment,
     refresh: refresh,
     stop: stop,
     expand: function () { setExpanded(true); },

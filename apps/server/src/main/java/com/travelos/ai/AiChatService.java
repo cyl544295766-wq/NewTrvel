@@ -11,6 +11,7 @@ import com.travelos.service.AuditService;
 import com.travelos.service.TripDayService;
 import com.travelos.service.TripMemberService;
 import com.travelos.service.TripService;
+import com.travelos.service.TodayBriefService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +27,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
@@ -205,6 +207,7 @@ public class AiChatService {
       Map<String, Object> dto) {
     String content = validateContent(dto);
     String clientRequestId = extractClientRequestId(dto);
+    BriefRequest brief = briefRequest(dto);
     requireOwnedConversation(conversationId, userId); // 先做归属校验，避免无效键残留
 
     AiIdempotencyService.Begin begin =
@@ -216,7 +219,7 @@ public class AiChatService {
 
     AiTaskManager.TaskHandle handle;
     try {
-      handle = submitTurn(conversationId, userId, content, begin, null, null, null);
+      handle = submitTurn(conversationId, userId, content, brief, begin, null, null, null);
     } catch (ApiException ex) {
       idempotency.abandon(userId, conversationId, begin); // 准入被拒：只清本请求自己的占位
       throw ex;
@@ -272,6 +275,7 @@ public class AiChatService {
       Map<String, Object> dto) {
     String content = validateContent(dto);
     String clientRequestId = extractClientRequestId(dto);
+    BriefRequest brief = briefRequest(dto);
     requireOwnedConversation(conversationId, userId);
 
     SseEmitter emitter = new SseEmitter(taskManager.taskTimeoutMs() + 15_000L);
@@ -299,7 +303,7 @@ public class AiChatService {
 
     AiTaskManager.TaskHandle handle;
     try {
-      handle = submitTurn(conversationId, userId, content, begin,
+      handle = submitTurn(conversationId, userId, content, brief, begin,
           (ctx, delta) -> {
             try {
               emitter.send(SseEmitter.event().name("delta").data(Map.of("text", delta)));
@@ -358,12 +362,12 @@ public class AiChatService {
    * onError 在执行体以运行时异常逃逸时回调（流式发 error 事件）。
    */
   private AiTaskManager.TaskHandle submitTurn(String conversationId, String userId, String content,
-      AiIdempotencyService.Begin begin, java.util.function.BiConsumer<AiTaskContext, String> deltaSink,
+      BriefRequest brief, AiIdempotencyService.Begin begin, java.util.function.BiConsumer<AiTaskContext, String> deltaSink,
       java.util.function.BiConsumer<AiTaskContext, Map<String, Object>> afterResult,
       java.util.function.BiConsumer<AiTaskContext, Throwable> onError) {
     return taskManager.submit(userId, conversationId, begin.key(), ctx -> {
       try {
-        Map<String, Object> result = executeTurn(ctx, conversationId, userId, content,
+        Map<String, Object> result = executeTurn(ctx, conversationId, userId, content, brief,
             deltaSink == null ? null : delta -> deltaSink.accept(ctx, delta));
         if (afterResult != null) {
           afterResult.accept(ctx, result);
@@ -437,6 +441,19 @@ public class AiChatService {
     return value.isEmpty() ? null : value;
   }
 
+  private record BriefRequest(String type, String date) {}
+
+  private BriefRequest briefRequest(Map<String, Object> dto) {
+    Object value = dto.get("briefAction");
+    if (value == null) return null;
+    if (!(value instanceof Map<?, ?> action) || !(action.get("type") instanceof String type)
+        || !Set.of(TodayBriefService.WEATHER_RAIN, TodayBriefService.TIME_CONFLICT).contains(type)
+        || !(action.get("date") instanceof String date) || !date.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+      throw ApiException.badRequest("简报操作无效，请从今日简报重试");
+    }
+    return new BriefRequest(type, date);
+  }
+
   /**
    * 工具调用主循环（执行体）。进度检查点：每个模型调用前后、每个工具调用前后、
    * 每次写库之前都会 {@link AiTaskContext#checkActive()}——取消后不再开始下一轮模型与工具，
@@ -444,7 +461,14 @@ public class AiChatService {
    */
   Map<String, Object> executeTurn(AiTaskContext ctx, String conversationId, String userId,
       String content, java.util.function.Consumer<String> onDelta) {
+    return executeTurn(ctx, conversationId, userId, content, null, onDelta);
+  }
+
+  private Map<String, Object> executeTurn(AiTaskContext ctx, String conversationId, String userId,
+      String content, BriefRequest brief, java.util.function.Consumer<String> onDelta) {
     AiConversation conversation = requireOwnedConversation(conversationId, userId);
+    ctx.checkActive();
+    var briefTools = brief == null ? null : toolRegistry.briefTools(conversation, userId, brief.type(), brief.date());
 
     // 用户消息：取消发生在写入前则直接终止（策略：未写入的不再写）
     ctx.checkActive();
@@ -464,9 +488,10 @@ public class AiChatService {
     try {
       List<Map<String, Object>> llmMessages = new ArrayList<>();
       llmMessages.add(Map.of("role", "system", "content",
-          promptBuilder.buildPrompt(conversation)));
-      appendHistory(llmMessages, conversationId);
+          briefTools == null ? promptBuilder.buildPrompt(conversation) : briefTools.instructions()));
+      if (briefTools == null) appendHistory(llmMessages, conversationId);
       llmMessages.add(Map.of("role", "user", "content", content));
+      var tools = briefTools == null ? toolRegistry.toolDefinitions() : briefTools.definitions();
 
       AiMessage finalReply = null;
       String navigation = null;   /* 本轮 open_page 工具产生的页面跳转（随最终回复下发） */
@@ -477,8 +502,8 @@ public class AiChatService {
       for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
         ctx.checkActive(); // 每轮模型调用前：取消/超时立即收口
         Map<String, Object> message = onDelta == null
-            ? llm.chat(llmMessages, toolRegistry.toolDefinitions())
-            : llm.chatStream(llmMessages, toolRegistry.toolDefinitions(), onDelta,
+            ? llm.chat(llmMessages, tools)
+            : llm.chatStream(llmMessages, tools, onDelta,
                 ctx::isCancelled); // 流式读取中逐行检查取消
         ctx.checkActive(); // 模型返回后、处理前
         List<Map<String, Object>> toolCalls = llm.extractToolCalls(message);
@@ -487,7 +512,7 @@ public class AiChatService {
 
         if (toolCalls.isEmpty()) {
           // 模型可能只写「草稿已生成/点卡片应用」却在轮内没真正调用工具 → 用户看不到卡片，纠正后重试
-          if (draftClaimRetries < 2 && claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
+          if (briefTools == null && draftClaimRetries < 2 && claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
             draftClaimRetries++;
             Map<String, Object> retryTurn = new LinkedHashMap<>();
             retryTurn.put("role", "assistant");
@@ -502,12 +527,14 @@ public class AiChatService {
             continue;
           }
           String finalContent = messageContent.isBlank() ? "（AI 未返回内容，请重试）" : messageContent;
-          if (claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
+          if (briefTools != null && !briefTools.created()) {
+            finalContent = "本次尚未生成可应用的调整。可回到简报查看原行程或重试。\n\n" + finalContent;
+          } else if (briefTools == null && claimsMissingDraft(messageContent, conversationId, turnStart, content)) {
             // 重试仍未生成草稿：明确告知，避免用户以为有卡片
             finalContent = "（提示：本轮没有生成可应用的卡片，以下内容仅供参考；回复「生成草稿」我再试一次）\n\n" + finalContent;
           }
-          finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
-          String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
+          if (briefTools == null) finalContent = appendDefaultTripNote(finalContent, conversation, userId, turnStart);
+          String replyOptions = briefTools == null ? resolveReplyOptions(options, content, conversation, userId, turnStart) : null;
           ctx.checkActive(); // 写最终回复前最后检查（取消则不写）
           finalReply = insertMessage(conversationId, userId, "assistant", finalContent,
               toolRegistry.buildReplyMeta(navigation, replyOptions), null);
@@ -525,12 +552,17 @@ public class AiChatService {
             || "propose_route_adjustment".equals(call.get("name")));
         for (Map<String, Object> call : toolCalls) {
           ctx.checkActive(); // 每个工具调用前：断开/超时后不再执行新工具
-          String result = routeWorkflow && "propose_itinerary_change".equals(call.get("name"))
-              ? JsonUtil.write(Map.of("error", "路线校验后的行程调整请使用 propose_route_adjustment"))
-              : toolRegistry.executeTool(call, conversation, userId);
-          if ("open_page".equals(call.get("name"))) {
+          String result;
+          if (briefTools != null) {
+            result = briefTools.execute(call, ctx);
+          } else if (routeWorkflow && "propose_itinerary_change".equals(call.get("name"))) {
+            result = JsonUtil.write(Map.of("error", "路线校验后的行程调整请使用 propose_route_adjustment"));
+          } else {
+            result = toolRegistry.executeTool(call, conversation, userId);
+          }
+          if (briefTools == null && "open_page".equals(call.get("name"))) {
             navigation = toolRegistry.extractNavigation(result);
-          } else if ("ask_options".equals(call.get("name"))) {
+          } else if (briefTools == null && "ask_options".equals(call.get("name"))) {
             // 仅成功的解析结果才覆盖，避免后续失败调用把已捕获的按钮清空
             String parsedOptions = toolRegistry.extractOptions(result);
             if (parsedOptions != null) {
@@ -545,11 +577,11 @@ public class AiChatService {
         }
       }
       if (finalReply == null) {
-        String replyOptions = resolveReplyOptions(options, content, conversation, userId, turnStart);
+        String replyOptions = briefTools == null ? resolveReplyOptions(options, content, conversation, userId, turnStart) : null;
         String fallback;
         if (replyOptions != null) {
           fallback = "想预订的话，直接点选下面的一项就可以～";
-        } else if (hasPendingDraft(conversationId, turnStart)) {
+        } else if (briefTools == null ? hasPendingDraft(conversationId, turnStart) : briefTools.created()) {
           // 本轮的草稿卡片已经生成，不要再说「请求复杂」，否则用户会以为没出应用按钮
           fallback = "草稿已经生成，点卡片上的「应用」即可写入行程；想调整的话，直接告诉我要改哪一天或哪个地点。";
         } else {
@@ -744,6 +776,10 @@ public class AiChatService {
         if ("itinerary_change".equals(type)) {
           String tripId = String.valueOf(draft.get("tripId"));
           applied = draftEngine.applyItineraryChanges(tripId, draft, userId);
+          if (draft.get("briefAlert") != null) {
+            payload.put("briefAlert", draft.get("briefAlert"));
+            payload.put("tripId", tripId);
+          }
           auditService.record(userId, tripId, "ai_itinerary_applied", "ai_message", messageId,
               Map.of("changes", applied));
         } else if ("expense".equals(type)) {

@@ -3,6 +3,7 @@ package com.travelos.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.travelos.ai.AiToolRegistry;
 import com.travelos.ai.LlmGatewayService;
+import com.travelos.common.DateUtil;
 import com.travelos.common.JsonUtil;
 import com.travelos.entity.AiConversation;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,11 +23,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,15 +42,18 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = "security.rate-limit.register-ip-max-attempts=30")
 class TripRouteAdjustmentWebTest {
   private static final String DATE = "2027-02-14";
   private static final String NEXT_DATE = "2027-02-15";
   private static final String CHECK = "check_day_route";
   private static final String PROPOSE = "propose_route_adjustment";
+  private static final String BRIEF_PROPOSE = "propose_brief_adjustment";
   private final HttpClient http = HttpClient.newHttpClient();
 
   @LocalServerPort int port;
@@ -222,20 +229,150 @@ class TripRouteAdjustmentWebTest {
     assertNull(TripRouteCheck.withinHours("请以现场为准", LocalDate.parse(DATE), noon, null));
   }
 
+  @Test
+  void briefWeatherUsesRealCandidateAndCreatesOneDraftBeforeApplying() throws Exception {
+    String today = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
+    Fixture f = fixture(today);
+    when(weather.getTripWeather(eq(f.trip()), anyString())).thenReturn(Map.of("weather",
+        List.of(Map.of("date", DateUtil.parse(today), "condition", "雨", "rainChance", 85))));
+    when(maps.searchPois("博物馆", "成都", "", 6))
+        .thenReturn(Map.of("places", List.of(Map.of("name", "室内博物馆", "address", "人民路 1 号",
+            "latitude", "30.66", "longitude", "104.04", "openTime", "09:00–17:30"))));
+    when(maps.searchPois(eq("室内博物馆"), nullable(String.class), nullable(String.class), anyInt(), any()))
+        .thenReturn(poi("室内博物馆", "30.66", "104.04", "09:00–17:30"));
+    assertEquals("找室内替代", briefAlert(f, "weather_rain").at("/adjustment/label").asText());
+    String previousBooking = bookingTimes(f.train());
+    doReturn(true).when(model).isEnabled();
+    var turns = List.of(modelCall(CHECK, Map.of()),
+        modelCall("add_expense", Map.of("title", "不应保存")),
+        modelCall("find_brief_indoor_places", Map.of()),
+        modelCall(BRIEF_PROPOSE, Map.of("placeId", f.outdoor(), "candidateId", "missing")),
+        modelCall(BRIEF_PROPOSE, Map.of("placeId", f.outdoor(), "candidateId", "1")),
+        modelCall(BRIEF_PROPOSE, Map.of("placeId", f.outdoor(), "candidateId", "1")),
+        Map.<String, Object>of("content", "请预览室内替代方案。"));
+    var nextTurn = new AtomicInteger();
+    var toolContext = new AtomicReference<String>();
+    doAnswer(call -> {
+      toolContext.set(JsonUtil.write(call.getArgument(0)));
+      return turns.get(Math.min(nextTurn.getAndIncrement(), turns.size() - 1));
+    }).when(model).chat(anyList(), anyList());
+    var request = briefRequest("weather_rain", today, "brief-weather-test");
+    var first = success(f.user(), "POST", messagesPath(f.conversation()), request);
+    assertEquals(first.at("/assistantMessage/id"),
+        success(f.user(), "POST", messagesPath(f.conversation()), request).at("/assistantMessage/id"));
+    assertTrue(toolContext.get().contains("draftCreated\\\":true"), toolContext.get());
+    var draft = singleDraft(f);
+    assertEquals("weather_rain", draft.at("/draft/briefAlert/type").asText());
+    assertEquals("室内博物馆", draft.at("/draft/routeAdjustment/preview/differences/0/after/name").asText());
+    assertEquals("公园", placeName(f.outdoor()));
+    var applied = success(f.user(), "POST", "/api/ai/conversations/" + f.conversation().getId()
+        + "/apply/" + draft.path("id").asText(), Map.of());
+    assertEquals("weather_rain", applied.at("/briefAlert/type").asText());
+    assertEquals("室内博物馆", placeName(f.outdoor()));
+    assertEquals(previousBooking, bookingTimes(f.train()));
+    doReturn(false).when(model).isEnabled();
+    assertTrue(briefAlert(f, "weather_rain").isMissingNode());
+  }
+
+  @Test
+  void briefTimeAdjustsOnlyTheConflictAndRefreshRemovesTheWarning() throws Exception {
+    String today = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
+    Fixture f = fixture(today);
+    String lunch = place(f.user(), f.trip(), day(f.trip(), 1), "午餐", "restaurant",
+        "30.65", "104.06", today, "14:00", "15:30");
+    assertEquals("调整时间", briefAlert(f, "time_conflict").at("/adjustment/label").asText());
+    doReturn(true).when(model).isEnabled();
+    doReturn(modelCall(CHECK, Map.of()),
+        modelCall(BRIEF_PROPOSE, Map.of("placeId", f.station(), "startTime", "11:00", "endTime", "13:00")),
+        modelCall(BRIEF_PROPOSE, Map.of("placeId", f.outdoor(), "startTime", "11:00", "endTime", "13:00", "name", "不能改名")),
+        Map.of("content", "公园调整至 11:00。")).when(model).chat(anyList(), anyList());
+    success(f.user(), "POST", messagesPath(f.conversation()), briefRequest("time_conflict", today, "brief-time-test"));
+    var draft = singleDraft(f);
+    String apply = "/api/ai/conversations/" + f.conversation().getId() + "/apply/" + draft.path("id").asText();
+    assertEquals("公园", draft.at("/draft/routeAdjustment/preview/differences/0/after/name").asText());
+    assertEquals("13:00", placeStart(f.outdoor()));
+    success(f.user(), "POST", apply, Map.of());
+    assertEquals("11:00", placeStart(f.outdoor()));
+    assertEquals("14:00", placeStart(lunch));
+    assertEquals("17:15", placeStart(f.station()));
+    doReturn(false).when(model).isEnabled();
+    assertTrue(briefAlert(f, "time_conflict").isMissingNode());
+    assertEquals(409, send(f.user(), "POST", messagesPath(f.conversation()),
+        briefRequest("time_conflict", today, "brief-resolved-test")).statusCode());
+  }
+
+  @Test
+  void viewerOnlyGetsManualLinkAndStaleBriefCannotStartAnAdjustment() throws Exception {
+    String today = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
+    Fixture f = fixture(today);
+    place(f.user(), f.trip(), day(f.trip(), 1), "午餐", "restaurant", "30.65", "104.06", today, "14:00", "15:30");
+    User viewer = register();
+    jdbc.update("INSERT INTO trip_members (id, trip_id, user_id, role, created_at, updated_at) "
+        + "VALUES (?, ?, ?, 'viewer', now(), now())", UUID.randomUUID().toString(), f.trip(), viewer.id());
+    var viewerBrief = success(viewer, "POST", "/api/trips/" + f.trip() + "/ai/today-brief", Map.of()).path("alerts");
+    var warning = alert(viewerBrief, "time_conflict");
+    assertFalse(warning.has("adjustment"));
+    assertTrue(warning.at("/action/url").asText().contains("/itinerary/"));
+    assertEquals(403, send(viewer, "POST", messagesPath(conversation(viewer, f.trip())),
+        briefRequest("time_conflict", today, "brief-viewer-test")).statusCode());
+    assertEquals(409, send(f.user(), "POST", messagesPath(f.conversation()),
+        briefRequest("time_conflict", "2000-01-01", "brief-past-test")).statusCode());
+    assertEquals(0, success(f.user(), "GET", messagesPath(f.conversation()), Map.of()).path("messages").size());
+  }
+
+  private String placeStart(String place) {
+    return jdbc.queryForObject("SELECT start_time FROM trip_places WHERE id = ?",
+        (rs, row) -> rs.getTimestamp(1).toInstant().atZone(ZoneId.of("Asia/Shanghai")).toLocalTime().toString(), place);
+  }
+
+  private JsonNode briefAlert(Fixture f, String type) throws Exception {
+    return alert(success(f.user(), "POST", "/api/trips/" + f.trip() + "/ai/today-brief",
+        Map.of("refresh", true)).path("alerts"), type);
+  }
+
+  private JsonNode alert(JsonNode alerts, String type) {
+    for (JsonNode item : alerts) {
+      if (type.equals(item.path("type").asText())) return item;
+    }
+    return alerts.path(type);
+  }
+
+  private JsonNode singleDraft(Fixture f) throws Exception {
+    var messages = success(f.user(), "GET", messagesPath(f.conversation()) + "?latest=true", Map.of()).path("messages");
+    var drafts = java.util.stream.StreamSupport.stream(messages.spliterator(), false)
+        .filter(item -> item.hasNonNull("draft")).toList();
+    assertEquals(1, drafts.size(), messages.toString());
+    return drafts.get(0);
+  }
+
+  private static String messagesPath(AiConversation conversation) {
+    return "/api/ai/conversations/" + conversation.getId() + "/messages";
+  }
+
+  private static Map<String, Object> briefRequest(String type, String date, String requestId) {
+    return Map.of("content", "请根据今日简报生成草稿", "clientRequestId", requestId,
+        "briefAction", Map.of("type", type, "date", date));
+  }
+
   private Fixture fixture() throws Exception {
+    return fixture(DATE);
+  }
+
+  private Fixture fixture(String date) throws Exception {
+    String nextDate = LocalDate.parse(date).plusDays(1).toString();
     User user = register();
     String trip = success(user, "POST", "/api/trips", Map.of("title", "成都周末", "destination", "成都",
-        "startDate", DATE, "endDate", NEXT_DATE)).at("/trip/id").asText();
+        "startDate", date, "endDate", nextDate)).at("/trip/id").asText();
     success(user, "POST", "/api/trips/" + trip + "/days/generate", Map.of());
     String day = day(trip, 1);
     String next = day(trip, 2);
-    String outdoor = place(user, trip, day, "公园", "attraction", "30.67", "104.11", DATE, "13:00", "15:00");
-    String station = place(user, trip, day, "成都东站", "transport", "30.63", "104.14", DATE, "17:15", "18:00");
-    String nextPlace = place(user, trip, next, "第二天原计划", "attraction", "31.25", "105.21", NEXT_DATE, "10:00", "11:00");
+    String outdoor = place(user, trip, day, "公园", "attraction", "30.67", "104.11", date, "13:00", "15:00");
+    String station = place(user, trip, day, "成都东站", "transport", "30.63", "104.14", date, "17:15", "18:00");
+    String nextPlace = place(user, trip, next, "第二天原计划", "attraction", "31.25", "105.21", nextDate, "10:00", "11:00");
     String train = success(user, "POST", "/api/trips/" + trip + "/bookings", Map.ofEntries(
         Map.entry("type", "train"), Map.entry("title", "晚间火车"), Map.entry("tripPlaceId", station),
-        Map.entry("tripDayId", day), Map.entry("startTime", DATE + "T18:00:00+08:00"),
-        Map.entry("endTime", NEXT_DATE + "T01:00:00+08:00"), Map.entry("orderNo", "order-no-private"),
+        Map.entry("tripDayId", day), Map.entry("startTime", date + "T18:00:00+08:00"),
+        Map.entry("endTime", nextDate + "T01:00:00+08:00"), Map.entry("orderNo", "order-no-private"),
         Map.entry("confirmCode", "confirm-private"), Map.entry("extra", Map.of("stations", "成都东站 → 到达站"))))
         .at("/booking/id").asText();
     return new Fixture(user, trip, outdoor, station, nextPlace, train, conversation(user, trip));

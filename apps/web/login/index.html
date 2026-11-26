@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>织途 · 登录</title>
-<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../assets/img/site-icon.png?v=1" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
-<link rel="stylesheet" href="../assets/css/theme.css?v=appearance">
+<link rel="stylesheet" href="../assets/css/theme.css?v=site-brand-1">
 <link rel="stylesheet" href="../assets/css/pet.css?v=ai-receipt">
 <style>
   :root {
@@ -80,8 +80,7 @@
   }
   .brand { grid-area: brand; max-width: 620px; }
   .auth-area { grid-area: auth; min-width: 0; }
-  .mark { display: inline-flex; margin-bottom: 18px; }
-  .mark svg { width: 46px; height: 46px; display: block; }
+  .mark { --site-icon-size: 46px; display: inline-flex; flex: none; margin-bottom: 18px; }
   .b-name {
     font-family: var(--slab); font-weight: 700; font-size: 27px; color: var(--login-text); line-height: 1.1;
   }
@@ -290,8 +289,7 @@
         url("../assets/img/login-bg.jpg") center 46% / cover no-repeat;
     }
     .brand { display: flex; align-items: center; gap: 8px; }
-    .mark { margin: 0; }
-    .mark svg { width: 34px; height: 34px; }
+    .mark { --site-icon-size: 34px; margin: 0; }
     .b-name { font-size: 23px; }
     .b-name small, .slogan, .feat { display: none; }
     .theme-toggle { grid-area: theme; margin: 0; }
@@ -330,17 +328,7 @@
 
   <!-- 顶部品牌区：Logo + Slogan -->
   <header class="brand">
-    <span class="mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" role="img" aria-label="织途 山形标志">
-        <defs>
-          <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#1BA49A"/><stop offset="1" stop-color="#54C9BE"/>
-          </linearGradient>
-        </defs>
-        <path d="M2.5 18 L9 8.2 L12.6 13 L15.4 9.4 L21.5 18 Z" fill="url(#mk)"/>
-        <circle cx="17.6" cy="5.6" r="2.1" fill="#FFC77E"/>
-      </svg>
-    </span>
+    <span class="mark site-brand-mark" aria-hidden="true"></span>
     <div class="b-name">织途<small>行程驾驶舱</small></div>
     <p class="slogan"><span>把每一次出发，</span><span>都收进同一本行程簿</span></p>
     <div class="feat"><span>行程规划</span><span>多人协作</span><span>费用结算</span><span>AI 助手</span></div>

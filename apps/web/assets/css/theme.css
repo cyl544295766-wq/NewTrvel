@@ -143,6 +143,32 @@ a { color: inherit; }
 }
 .link:hover { border-bottom-color: var(--brand); }
 
+/* Frame the original artwork around the route and pin in the page headers. */
+.tb-brand,
+.foot-brand {
+  position: relative;
+  padding-inline-start: calc(var(--site-icon-size, 30px) + 8px);
+}
+
+.tb-brand::before,
+.foot-brand::before,
+.site-brand-mark {
+  width: var(--site-icon-size, 30px);
+  height: var(--site-icon-size, 30px);
+  background: url("../img/site-icon.png?v=1") center / 121% no-repeat;
+}
+
+.tb-brand::before,
+.foot-brand::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.foot-brand { --site-icon-size: 38px; }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* ===== 键盘焦点可见性（全站统一）===== */

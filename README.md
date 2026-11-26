@@ -33,7 +33,7 @@ NewTrevl/
 │       ├── assets/css/theme.css     全站设计令牌与基础样式
 │       ├── assets/js/api.js         API 客户端与登录态管理
 │       ├── assets/js/amap.js        高德地图 JS API 加载器
-│       ├── assets/img/favicon.svg   站点图标
+│       ├── assets/img/site-icon.png 站点图标
 │       ├── <page>/index.html        各功能页（21 个，见下表）
 │       └── index.html               入口跳转（→ /home/）
 ├── deploy/                          ← 生产部署：Nginx 站点、systemd 服务、环境变量模板、初始化手册

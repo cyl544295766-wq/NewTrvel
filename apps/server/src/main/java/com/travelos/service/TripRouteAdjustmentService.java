@@ -174,6 +174,11 @@ public class TripRouteAdjustmentService {
   public int apply(String tripId, String userId, Map<String, Object> draft, Map<?, ?> adjustment) {
     members.requireTripRole(tripId, userId, TripPermission.EDITABLE_ROLES);
     Context context = context(tripId, userId, requireDate(adjustment), true);
+    if (draft.containsKey("briefAlert") && (!LocalDate.now(context.zone()).equals(context.date())
+        || context.trip().getArchivedAt() != null || "archived".equals(context.trip().getStatus())
+        || "completed".equals(context.trip().getStatus()))) {
+      throw ApiException.conflict("今日简报草稿已过期，请刷新简报重新查看");
+    }
     collab.requireDayAvailableForDraft(context.day().getId(), userId);
     if (!Objects.equals(fingerprint(context), adjustment.get("snapshot"))) {
       throw stale();
