@@ -295,17 +295,19 @@
 
 
   /* 地点联想下拉（P0-4） */
-  .sg-wrap { position: relative; flex: 1; min-width: 180px; }
+  .sg-wrap { position: relative; flex: 1; min-width: min(180px, 100%); }
 
-  .sg-wrap input[type="text"] { width: 100%; }
+  .sg-wrap input[type="text"] { width: 100%; min-width: 0; }
 
   .sg {
-    position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40;
+    position: relative; margin-top: 6px;
+    max-height: 300px; max-height: min(300px, 45dvh);
     background: var(--ui-surface, #161A23); border: 1.5px solid rgba(var(--ui-line-rgb, 255,255,255),.08); border-radius: 12px;
-    box-shadow: 0 12px 28px rgba(23,58,53,.12); overflow: hidden;
+    box-shadow: 0 12px 28px rgba(23,58,53,.12);
+    overflow-y: auto; overscroll-behavior: contain;
   }
 
-  .sg-item { padding: 9px 13px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .sg-item { padding: 9px 13px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 
   .sg-item:hover { background: rgba(var(--ui-overlay-rgb, 255,255,255),.045); }
 

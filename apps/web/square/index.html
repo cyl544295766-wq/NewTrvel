@@ -132,15 +132,13 @@
 
   .g-card:hover { transform: translateY(-3px); box-shadow: var(--ui-shadow-raised, 0 22px 52px rgba(0,0,0,.42), 0 3px 8px rgba(0,0,0,.22)); }
 
-  .g-cover { height: 138px; position: relative; background-size: cover; background-position: center; cursor: pointer; }
-
-  .g-cover.na { background: var(--ui-recessed, linear-gradient(135deg, #1C2B31 0%, #17222A 60%, #21242C 100%)); display: grid; place-items: center; }
-
-  .g-cover.na .na-initial {
-    font-family: var(--slab); font-size: 28px; font-weight: 700;
-    color: var(--ui-muted, rgba(255,255,255,.16)); line-height: 1;
-    position: absolute; right: 14px; bottom: 8px;
+  .g-cover { height: 138px; position: relative; overflow: hidden; cursor: pointer; }
+  .trip-thumbnail canvas, .trip-thumbnail .trip-cover-image {
+    display: block; width: 100%; height: 100%; object-fit: cover;
   }
+  .trip-thumbnail canvas { object-fit: contain; background: #E6F0ED; }
+  .trip-thumbnail .trip-cover-image { position: absolute; inset: 0; }
+
 
   .g-theme { position: absolute; left: 10px; top: 10px; font-family: var(--grot); font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: rgba(10,14,20,.62); color: #fff; max-width: calc(100% - 88px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 
@@ -240,9 +238,8 @@
 
   .dr-body > * { flex: none; }
 
-  .dr-cover { height: 168px; border-radius: 14px; background-size: cover; background-position: center; }
+  .dr-cover { position: relative; overflow: hidden; height: 168px; border-radius: 14px; flex: none; }
 
-  .dr-cover.na { background: var(--ui-recessed, linear-gradient(135deg, #1C2B31 0%, #17222A 60%, #21242C 100%)); }
 
   .dr-title { margin: 0; font-family: var(--slab); font-weight: 600; font-size: 22px; color: var(--ui-text, #EDF0F5); line-height: 1.3; }
 
@@ -366,7 +363,6 @@
 
     .g-cover { height: 118px; }
 
-    .g-cover.na .na-initial { font-size: 20px; }
 
     .g-theme { font-size: 11px; padding: 3px 10px; }
 
@@ -404,7 +400,6 @@
 
     .g-cover { height: 96px; }
 
-    .g-cover.na .na-initial { font-size: 18px; }
 
     #drMap .sq-mk-lab { font-size: 10.5px; max-width: 96px; }
 
@@ -440,8 +435,9 @@
   .search .si svg.ln { color: var(--ui-muted, rgba(255,255,255,.5)); stroke-width: 2.2; }
 
   .empty .ill svg.ln { color: var(--ui-accent, #8FE0DB); stroke-width: 1.6; filter: drop-shadow(0 8px 16px rgba(0,0,0,.35)); }</style>
+<link rel="stylesheet" href="../assets/css/square.css?v=collection-2">
 </head>
-<body>
+<body class="square-page">
 <script src="../assets/js/icons-line.js"></script>
 <header class="topbar">
   <div class="tb-inner">
@@ -466,13 +462,17 @@
 </header>
 
   <main>
+    <section class="square-hero" aria-labelledby="squareTitle">
     <p class="crumb"><a href="/home/">首页</a><span>/</span><b>攻略广场</b></p>
     <div class="page-head">
       <div>
-        <h1>攻略广场<span class="en">Explore Guides</span></h1>
-        <p class="meta" id="pageMeta">浏览其他旅行者公开的行程，一键复制成自己的旅行再调整。</p>
+        <p class="square-eyebrow">THE TRAVEL COLLECTION <span>·</span> 旅途灵感集</p>
+        <h1 id="squareTitle">攻略广场</h1>
+        <p class="square-intro">从别人的足迹里，找到下一程的灵感。</p>
+        <p class="square-caption">查看每日行程，复制喜欢的攻略，再按自己的节奏出发。</p>
       </div>
     </div>
+    </section>
 
     <!-- 筛选 -->
     <div class="toolbar">
@@ -495,6 +495,10 @@
     </div>
 
     <!-- 卡片区 -->
+    <div class="square-list-head">
+      <h2>值得出发的路线</h2>
+      <p class="meta" id="pageMeta" role="status" aria-live="polite">正在寻找旅行灵感…</p>
+    </div>
     <section class="g-grid" id="grid" aria-label="攻略列表">
       <p class="empty" id="loading">正在加载攻略…</p>
     </section>
@@ -526,6 +530,7 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js?v=ai-receipt"></script>
 <script src="../assets/js/amap.js"></script>
+<script src="../assets/js/trip-thumbnail.js?v=1"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -611,6 +616,12 @@
       return '/square?' + p.toString();
     }
 
+    function coverContent(r) {
+      return '<canvas width="640" height="280" role="img" aria-label="' + esc((r.title || '行程') + '路线缩略图') + '"></canvas>'
+        + (r.coverImageUrl ? '<img class="trip-cover-image" src="' + esc(r.coverImageUrl) + '" alt="'
+          + esc((r.title || '行程') + '封面') + '" loading="lazy">' : '');
+    }
+
     function card(r) {
       var author = r.author || {};
       var name = author.displayName || author.username || '旅行者';
@@ -618,9 +629,8 @@
       var avatar = author.avatarUrl
         ? '<img class="av" src="' + esc(author.avatarUrl) + '" alt="">'
         : '<span class="av" aria-hidden="true">' + esc(initial) + '</span>';
-      var cover = r.coverImageUrl
-        ? '<div class="g-cover" style="background-image:url(&quot;' + esc(r.coverImageUrl) + '&quot;)" data-detail="' + esc(r.id) + '" role="button" tabindex="0" aria-label="查看 ' + esc(r.title) + '">'
-        : '<div class="g-cover na" data-detail="' + esc(r.id) + '" role="button" tabindex="0" aria-label="查看 ' + esc(r.title) + '"><span class="na-initial">' + esc(initial) + '</span>';
+      var cover = '<div class="g-cover trip-thumbnail" data-detail="' + esc(r.id)
+        + '" role="button" tabindex="0" aria-label="查看 ' + esc(r.title) + '">' + coverContent(r);
       var copyTag = r.copiedByMe ? '<span class="g-copysee">已复制</span>' : '';
       var heat = (r.viewCount || 0) + (r.copyCount || 0) * 5;
       return '<article class="g-card" data-id="' + esc(r.id) + '">' +
@@ -647,17 +657,20 @@
       (items || []).forEach(function (r) {
         if (r.copiedByMe) seenCopied[r.id] = true;
         $grid.insertAdjacentHTML('beforeend', card(r));
+        TravelOSThumbnail.render($grid.lastElementChild.querySelector('.trip-thumbnail'), r);
       });
       if (!items.length && state.page === 1) {
+        var filtered = !!(state.keyword || state.destination);
         $grid.innerHTML = '<div class="empty"><div class="ill"><svg class="ln" viewBox="0 0 24 24"><use href="#ln-globe"></use></svg></div>' +
-          '<strong>' + (state.scope === 'friends' ? '好友还没有攻略' : '还没有公开的攻略') + '</strong><p>' +
-          (state.scope === 'friends'
+          '<strong>' + (filtered ? '没有找到匹配的攻略' : state.scope === 'friends' ? '好友还没有攻略' : '还没有公开的攻略') + '</strong><p>' +
+          (filtered ? '换个关键词，或选择其他目的地再看看。' : state.scope === 'friends'
             ? '好友还没有公开给好友的攻略，先去加几个旅行搭子吧。'
             : '写好行程后，在详情里把可见性设为「公开」就能出现在这里。') +
           '</p></div>';
       }
       var scopeText = state.scope === 'friends' ? '好友的攻略' : '公开攻略';
-      $meta.innerHTML = '共 <b>' + state.total + '</b> 篇' + (state.scope === 'public' ? '公开攻略' : '好友攻略（' + (res.friendCount || 0) + ' 位好友）') + ' · ' + scopeText;
+      $meta.innerHTML = '<b>' + state.total + '</b> 篇' + scopeText
+        + (state.scope === 'friends' ? ' · ' + (res.friendCount || 0) + ' 位好友' : '');
     }
 
     function loadPage(page, append) {
@@ -669,6 +682,7 @@
         renderList(r, append);
       }).catch(function (err) {
         if (!append) $grid.innerHTML = '<div class="empty"><p>加载失败：' + esc(humanError(err)) + '</p></div>';
+        $meta.textContent = append ? '更多攻略加载失败，可重试' : '攻略加载失败，请刷新重试';
         showToast(humanError(err));
       }).finally(function () {
         state.loading = false;
@@ -1059,7 +1073,7 @@
           '</div><div class="vis-tip">公开将出现在攻略广场，任何人都能查看与复制。</div></div>'
         : '';
 
-      return '<div class="dr-cover ' + (r.coverImageUrl ? '' : 'na') + '" style="height:168px;border-radius:14px;background-size:cover;background-position:center;width:100%;' + (r.coverImageUrl ? 'background-image:url(&quot;' + esc(r.coverImageUrl) + '&quot;)' : '') + '"></div>' +
+      return '<div class="dr-cover trip-thumbnail">' + coverContent(r) + '</div>' +
         '<h2 class="dr-title">' + esc(r.title || '未命名攻略') + '</h2>' +
         '<div class="dr-author">' + avatar + '<span>' + esc(name) + '</span>' +
         '<div class="dr-stats"><span>浏览 ' + r.viewCount + '</span><span>复制 ' + r.copyCount + '</span><span>热度 ' + heat + '</span></div></div>' +
@@ -1085,6 +1099,7 @@
       apiGet('/square/' + encodeURIComponent(tripId)).then(function (data) {
         detailTrip = data.square;
         drBody.innerHTML = bodyHtml(data);
+        TravelOSThumbnail.render(drBody.querySelector('.trip-thumbnail'), data.square);
         drCopy.hidden = !data.canCopy;
         drCopy.textContent = data.square.copiedByMe ? '再复制一份' : '复制到我的旅行';
         document.getElementById('drDelete').hidden = !data.square.isOwner;

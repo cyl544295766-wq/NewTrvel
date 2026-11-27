@@ -486,6 +486,15 @@ public class TripSquareService {
     if (cover != null && cover.getUrl() != null && !cover.getUrl().isBlank()) {
       card.put("coverImageUrl", cover.getUrl());
     }
+    card.put("routePreview", bypassed(() -> tripPlaceMapper.selectList(new LambdaQueryWrapper<TripPlace>()
+        .select(TripPlace::getName, TripPlace::getLatitude, TripPlace::getLongitude)
+        .eq(TripPlace::getTripId, trip.getId())
+        .isNotNull(TripPlace::getLatitude).isNotNull(TripPlace::getLongitude)
+        .last("ORDER BY (SELECT d.day_index FROM trip_days d WHERE d.id = trip_places.trip_day_id)"
+            + " ASC NULLS LAST, sort_order, id LIMIT 24")).stream().map(place -> Map.of(
+            "name", place.getName(),
+            "latitude", Fmt.coord(place.getLatitude()),
+            "longitude", Fmt.coord(place.getLongitude()))).toList()));
 
     // 作者
     User owner = bypassed(() -> userMapper.selectById(trip.getOwnerId()));

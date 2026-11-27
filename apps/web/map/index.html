@@ -115,6 +115,22 @@
     width: 296px; border-radius: 16px;
     display: flex; flex-direction: column; overflow: hidden;
   }
+  .day-panel[data-size="expanded"] {
+    z-index: 50;
+    width: min(480px, calc(100% - 36px));
+    height: var(--panel-available-height);
+  }
+  .day-panel[data-size="compact"] .dp-body { display: none; }
+  .day-panel[data-size="compact"] .dp-search { display: none; }
+  .day-panel[data-size="compact"] .dp-head { border-bottom: 0; }
+  .dp-size { display: flex; gap: 4px; margin-left: auto; }
+  .dp-size button {
+    width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px;
+    background: rgba(var(--ui-overlay-rgb, 255,255,255),.06);
+    color: var(--ui-text, #fff); font-size: 20px; cursor: pointer;
+  }
+  .dp-size button:hover { background: rgba(91,197,192,.14); }
+  .dp-size button:disabled { opacity: .35; cursor: default; }
 
   .dp-head {
     display: flex; align-items: center; gap: 7px; flex: none;
@@ -126,7 +142,7 @@
   .dp-n { font-family: var(--grot); font-size: 11px; color: var(--ui-muted, rgba(255,255,255,.45)); }
 
   .dp-reset {
-    margin-left: auto; font-family: var(--grot); font-size: 11px; font-weight: 600;
+    margin-left: 0; font-family: var(--grot); font-size: 11px; font-weight: 600;
     color: var(--ui-accent, #7FD8D4); background: rgba(var(--ui-overlay-rgb, 255,255,255),.06); border: none; border-radius: 999px;
     padding: 5px 11px; cursor: pointer; transition: background .14s;
   }
@@ -136,15 +152,30 @@
   .dp-reset[hidden] { display: none; }
 
   .dp-close {
-    display: none; margin-left: auto; width: 28px; height: 28px; border: none;
+    display: none; width: 28px; height: 28px; border: none;
     background: rgba(var(--ui-overlay-rgb, 255,255,255),.045); border-radius: 8px; color: var(--ui-muted, rgba(255,255,255,.45)); cursor: pointer; font-size: 13px;
   }
 
-  .dp-body { flex: 1 1 auto; overflow-y: auto; padding: 7px 8px 10px; }
+  .dp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 7px 8px 10px; }
 
   .dp-body::-webkit-scrollbar { width: 6px; }
 
   .dp-body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+  .dp-search { padding: 10px 12px 0; flex: none; }
+  .dp-search-row { display: flex; gap: 6px; }
+  .dp-search input {
+    min-width: 0; width: 100%; padding: 9px 10px; border-radius: 9px;
+    border: 1px solid rgba(var(--ui-line-rgb, 255,255,255),.16);
+    background: var(--ui-surface, #161A23); color: var(--ui-text, #fff); font: 13px var(--grot);
+  }
+  .dp-search button {
+    flex: none; border: 0; border-radius: 8px; padding: 0 8px; cursor: pointer;
+    background: rgba(var(--ui-overlay-rgb, 255,255,255),.06); color: var(--ui-text, #fff);
+  }
+  .dp-search button[hidden] { display: none; }
+  .dp-search-status { margin: 6px 0 0; font-size: 11px; color: var(--ui-muted, #8d9da3); }
+  .dp-search-status:empty { display: none; }
+  a.pl { text-decoration: none; }
 
 
   .day-block { border-radius: 11px; transition: background .16s; }
@@ -410,6 +441,9 @@
     }
 
     .day-panel.open { transform: none; opacity: 1; pointer-events: auto; }
+    .day-panel[data-size="expanded"] { width: auto; height: calc(100% - 24px); max-height: calc(100% - 24px); }
+    .day-panel[data-size="compact"] { height: auto; }
+    .dp-size button { width: 40px; height: 40px; }
 
     .dp-reset { display: none; }
 
@@ -483,12 +517,23 @@
       </div>
     </section>
 
-    <section class="glass day-panel" id="dayPanel" aria-label="每日行程">
+    <section class="glass day-panel" id="dayPanel" data-size="normal" aria-label="每日行程">
       <div class="dp-head">
         <span class="dp-title">每日行程</span>
         <span class="dp-n" id="dpN"></span>
+        <div class="dp-size" role="group" aria-label="每日行程面板大小">
+          <button type="button" id="dpSmaller" aria-label="缩小每日行程面板" title="缩小每日行程面板" aria-controls="dayPanel">−</button>
+          <button type="button" id="dpLarger" aria-label="放大每日行程面板" title="放大每日行程面板" aria-controls="dayPanel">＋</button>
+        </div>
         <button type="button" class="dp-reset" id="dpReset" hidden>重置聚焦</button>
         <button type="button" class="dp-close" id="dpClose" aria-label="收起面板">&#10005;</button>
+      </div>
+      <div class="dp-search">
+        <div class="dp-search-row">
+          <input type="search" id="dayPlaceSearch" placeholder="搜索行程地点或地址" aria-label="搜索当前行程中的地点或地址" aria-controls="dayList" autocomplete="off">
+          <button type="button" id="clearPlaceSearch" hidden>清除</button>
+        </div>
+        <p class="dp-search-status" id="placeSearchStatus" role="status" aria-live="polite"></p>
       </div>
       <div class="dp-body" id="dayList"></div>
     </section>
@@ -505,7 +550,7 @@
       </button>
     </div>
 
-    <button type="button" class="glass fbtn" id="btnPanel" aria-expanded="false">&#9776; 每日行程</button>
+    <button type="button" class="glass fbtn" id="btnPanel" aria-expanded="false" aria-controls="dayPanel">&#9776; 每日行程</button>
 
     <div class="map-notice" id="routeNotice" hidden></div>
 
@@ -749,12 +794,20 @@
   function buildPanel() {
     var html = [];
     var colored = 0;
+    var keyword = $('dayPlaceSearch').value.trim().normalize('NFKC').toLocaleLowerCase();
+    var matches = 0;
 
     state.days.forEach(function (day) {
       var pts = (day.places || []).filter(hasCoord);
       var isEmpty = pts.length === 0;
       var color = TravelOSAmap.dayColor(isEmpty ? 0 : colored);
       if (!isEmpty) colored++;
+      var visible = keyword ? (day.places || []).filter(function (place) {
+        return [place.name, place.address].filter(Boolean).join(' ').normalize('NFKC')
+          .toLocaleLowerCase().includes(keyword);
+      }) : pts;
+      if (keyword && !visible.length) return;
+      matches += visible.length;
 
       html.push('<div class="day-block' + (isEmpty ? ' is-empty' : '')
         + '" data-day="' + day.dayIndex + '" style="--c:' + color + '">');
@@ -765,14 +818,21 @@
       html.push('<span class="db-caret" aria-hidden="true">&#8249;</span>');
       html.push('</button>');
 
-      if (isEmpty) {
+      if (!visible.length) {
         html.push('<div class="db-empty">该天暂无带坐标的地点 ');
         html.push('<a href="/itinerary/?trip=' + encodeURIComponent(tripId) + '">去行程安排补充</a></div>');
       } else {
-        html.push('<span class="db-meta" data-meta="' + day.dayIndex + '"><b>' + pts.length + '</b> 个点 · 路线计算中…</span>');
+        html.push('<span class="db-meta" data-meta="' + day.dayIndex + '"><b>' + visible.length
+          + (keyword ? '</b> 个匹配地点</span>' : '</b> 个点 · 路线计算中…</span>'));
         html.push('<ol class="db-places">');
-        pts.forEach(function (p, pi) {
+        visible.forEach(function (p, pi) {
           var ts = TravelOSAmap.typeStyle(p.type);
+          if (!hasCoord(p)) {
+            html.push('<li><a class="pl" href="/itinerary/?trip=' + encodeURIComponent(tripId)
+              + '&date=' + encodeURIComponent(String(day.date).slice(0, 10)) + '"><span class="pl-nm">'
+              + escapeHtml(p.name) + '</span><span class="pl-tp">去补充坐标</span></a></li>');
+            return;
+          }
           html.push('<li class="pl" data-pid="' + escapeHtml(p.id) + '" tabindex="0" role="button"'
             + ' title="在地图上定位「' + escapeHtml(p.name) + '」">'
             + '<span class="pl-no">' + (pi + 1) + '</span>'
@@ -787,6 +847,9 @@
 
     $('dayList').innerHTML = html.join('');
     $('dpN').textContent = state.days.length + ' 天';
+    $('clearPlaceSearch').hidden = !keyword;
+    $('placeSearchStatus').textContent = keyword ? (matches ? '找到 ' + matches + ' 个地点'
+      : '没有匹配的行程地点，可换个名称或地址。') : '';
 
     $('dayList').querySelectorAll('.day-block').forEach(function (block) {
       if (block.classList.contains('is-empty')) return;
@@ -796,7 +859,7 @@
       });
     });
 
-    $('dayList').querySelectorAll('.pl').forEach(function (li) {
+    $('dayList').querySelectorAll('.pl[data-pid]').forEach(function (li) {
       var pid = li.getAttribute('data-pid');
       li.addEventListener('mouseenter', function () { setHot(pid, true); });
       li.addEventListener('mouseleave', function () { setHot(pid, false); });
@@ -805,9 +868,12 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusPlace(pid); }
       });
     });
+    applyFocus();
+    if (!keyword) state.days.forEach(function (day) { updateDayMeta(day.dayIndex); });
   }
 
   function updateDayMeta(dayIndex) {
+    if ($('dayPlaceSearch').value.trim()) return;
     var el = $('dayList').querySelector('[data-meta="' + dayIndex + '"]');
     if (!el) return;
     var st = state.stats[dayIndex] || {};
@@ -904,7 +970,7 @@
         state.map.add(marker);
         state.markers.push({ marker: marker, el: el, dayIndex: day.dayIndex, pid: p.id });
         state.overlays.push(marker);
-        state.places[p.id] = { marker: marker, el: el, lng: lng, lat: lat, name: p.name };
+        state.places[p.id] = { marker: marker, el: el, lng: lng, lat: lat, name: p.name, dayIndex: day.dayIndex };
       });
     });
   }
@@ -1159,6 +1225,8 @@
   function focusPlace(pid) {
     var rec = state.places[pid];
     if (!rec || !state.map) return;
+    state.focus = rec.dayIndex;
+    applyFocus();
     state.map.setZoomAndCenter(13, [rec.lng, rec.lat], false, 420);
     setHot(pid, true);
     var li = $('dayList').querySelector('.pl[data-pid="' + cssEscape(pid) + '"]');
@@ -1226,7 +1294,9 @@
     panel.style.top = top + 'px';
     var stage = panel.parentNode;
     var maxH = stage ? (stage.clientHeight - top - 18) : 0;
-    panel.style.maxHeight = Math.max(240, maxH) + 'px';
+    var available = Math.max(panel.querySelector('.dp-head').offsetHeight, maxH);
+    panel.style.maxHeight = available + 'px';
+    panel.style.setProperty('--panel-available-height', available + 'px');
   }
 
   /* ---------- 遮罩 ---------- */
@@ -1314,6 +1384,21 @@
   }
 
   /* ---------- UI 绑定 ---------- */
+  $('dayPlaceSearch').addEventListener('input', buildPanel);
+  $('clearPlaceSearch').addEventListener('click', function () {
+    $('dayPlaceSearch').value = '';
+    buildPanel();
+    $('dayPlaceSearch').focus();
+  });
+  $('dayPlaceSearch').addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      $('clearPlaceSearch').click();
+    } else if (event.key === 'Enter') {
+      var first = $('dayList').querySelector('.pl');
+      if (first) first.click();
+    }
+  });
   $('layerSeg').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-layer]');
     if (!b) return;
@@ -1336,6 +1421,20 @@
   (function initMobilePanel() {
     var panel = $('dayPanel');
     var btn = $('btnPanel');
+    var sizes = ['compact', 'normal', 'expanded'];
+    var sizeIndex = 1;
+    var panelScroll = 0;
+    function setSize(index) {
+      if (sizeIndex > 0) panelScroll = $('dayList').scrollTop;
+      sizeIndex = index;
+      panel.dataset.size = sizes[index];
+      $('dpSmaller').disabled = index === 0;
+      $('dpLarger').disabled = index === sizes.length - 1;
+      layoutPanelTop();
+      if (index > 0) $('dayList').scrollTop = panelScroll;
+    }
+    $('dpSmaller').addEventListener('click', function () { setSize(Math.max(0, sizeIndex - 1)); });
+    $('dpLarger').addEventListener('click', function () { setSize(Math.min(sizes.length - 1, sizeIndex + 1)); });
     function setOpen(open) {
       panel.classList.toggle('open', open);
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');

@@ -346,8 +346,9 @@
   .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
 
 </style>
+<link rel="stylesheet" href="../assets/css/stats.css?v=atlas-1">
 </head>
-<body>
+<body class="stats-page">
 <script src="../assets/js/icons-line.js"></script>
 <header class="topbar">
   <div class="tb-inner">
@@ -372,12 +373,18 @@
 </header>
 
   <main>
+    <section class="stats-hero" aria-labelledby="statsTitle">
     <div class="page-head">
       <div>
-        <h1>旅行统计<span class="en">Travel Stats</span></h1>
+        <p class="stats-eyebrow">YOUR TRAVEL ATLAS <span>·</span> 我的旅行档案</p>
+        <h1 id="statsTitle">旅行统计</h1>
+        <p class="stats-intro">把走过的路，变成值得珍藏的足迹。</p>
         <p class="meta" id="pageMeta">正在统计…</p>
       </div>
+      <div class="stats-year-control">
+      <span class="stats-year-label">统计年份</span>
       <div class="year-pill" id="yearPill" role="group" aria-label="年份切换"></div>
+      </div>
     </div>
 
     <!-- 4 统计卡 -->
@@ -407,8 +414,10 @@
         <div class="foot" id="sDestFoot">—</div>
       </div>
     </section>
+    </section>
 
     <!-- 图表区 -->
+    <div class="stats-section-head"><h2>旅行，换个角度看</h2><span>TRAVEL INSIGHTS</span></div>
     <div class="grid2">
       <div class="card">
         <div class="t">年度对比 <small>· 次数 / 天数（柱）</small></div>
@@ -456,6 +465,7 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js?v=ai-receipt"></script>
 <script src="../assets/js/amap.js"></script>
+<script src="../assets/js/stats-appearance.js?v=atlas-1"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
