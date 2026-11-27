@@ -18,7 +18,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
@@ -43,6 +45,8 @@ public class WeatherService {
       .connectTimeout(Duration.ofSeconds(5))
       .build();
   private final Map<String, CachedCoordinates> coordinateCache = new ConcurrentHashMap<>();
+  private final Map<String, CachedForecast> upcomingCache = new ConcurrentHashMap<>();
+  private final Clock forecastClock = Clock.systemUTC();
 
   public WeatherService(TripWeatherMapper weatherMapper, TripDayMapper tripDayMapper,
       TripMapper tripMapper, TripMemberService tripMemberService) {
@@ -90,6 +94,52 @@ public class WeatherService {
       body.put("message", "暂无天气数据");
     }
     return body;
+  }
+
+  /** Destination forecast for the next seven days, independent of the trip's travel dates. */
+  public Map<String, Object> getUpcomingWeather(String tripId, String userId) {
+    tripMemberService.requireTripMember(tripId, userId);
+    Trip trip = tripMapper.selectById(tripId);
+    if (trip == null) throw ApiException.notFound("旅行不存在");
+    String destination = trip.getDestination() == null ? "" : trip.getDestination().trim();
+    if (destination.isEmpty()) return upcomingUnavailable("请先设置目的地，再查看未来7天天气");
+    try {
+      CachedCoordinates coordinates = getCoordinates(destination);
+      if (coordinates == null) return upcomingUnavailable("暂时无法获取目的地的未来7天天气，请稍后重试");
+      LocalDate start = LocalDate.now(forecastClock.withZone(coordinates.zone()));
+      LocalDate end = start.plusDays(6);
+      long now = forecastClock.millis();
+      upcomingCache.entrySet().removeIf(item -> now - item.getValue().cachedAt() >= WEATHER_CACHE_TTL_MS);
+      String key = destination.toLowerCase(java.util.Locale.ROOT) + "\n" + start;
+      CachedForecast cached = upcomingCache.get(key);
+      Map<String, Object> forecast;
+      if (cached != null) {
+        forecast = cached.forecast();
+      } else {
+        forecast = fetchForecast(coordinates, start.toString(), end.toString());
+      }
+      List<TripWeather> rows = toWeatherRows(tripId, destination, forecast, Map.of(),
+          new Date(cached == null ? now : cached.cachedAt())).stream()
+          .filter(row -> !toUtcDateOnly(row.getDate()).isBefore(start)
+              && !toUtcDateOnly(row.getDate()).isAfter(end))
+          .sorted(java.util.Comparator.comparing(TripWeather::getDate))
+          .limit(7).toList();
+      if (rows.isEmpty()) return upcomingUnavailable("目的地未来7天天气暂不可用，请稍后重试");
+      if (cached == null) upcomingCache.put(key, new CachedForecast(forecast, now));
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("source", "api");
+      body.put("windowStart", start.toString());
+      body.put("windowEnd", end.toString());
+      body.put("timezone", coordinates.zone().getId());
+      body.put("weather", rows.stream().map(this::toResponse).toList());
+      return body;
+    } catch (Exception ex) {
+      return upcomingUnavailable("目的地未来7天天气暂不可用，请稍后重试");
+    }
+  }
+
+  private Map<String, Object> upcomingUnavailable(String message) {
+    return Map.of("source", "api", "weather", List.of(), "message", message);
   }
 
   private List<TripWeather> loadWeather(Trip trip) {
@@ -174,7 +224,7 @@ public class WeatherService {
       CachedCoordinates coordinates = new CachedCoordinates(
           ((Number) first.get("latitude")).doubleValue(),
           ((Number) first.get("longitude")).doubleValue(),
-          System.currentTimeMillis());
+          System.currentTimeMillis(), coordinateZone(first.get("timezone")));
       coordinateCache.put(key, coordinates);
       return coordinates;
     } catch (Exception ex) {
@@ -305,6 +355,17 @@ public class WeatherService {
     return date.toInstant().atZone(ZoneOffset.UTC).toLocalDate();
   }
 
-  private record CachedCoordinates(double latitude, double longitude, long cachedAt) {
+  private ZoneId coordinateZone(Object value) {
+    try {
+      return value == null ? ZoneOffset.UTC : ZoneId.of(value.toString());
+    } catch (java.time.DateTimeException ex) {
+      return ZoneOffset.UTC;
+    }
+  }
+
+  private record CachedCoordinates(double latitude, double longitude, long cachedAt, ZoneId zone) {
+  }
+
+  private record CachedForecast(Map<String, Object> forecast, long cachedAt) {
   }
 }

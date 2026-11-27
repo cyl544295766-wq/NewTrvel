@@ -380,11 +380,12 @@
   .mk-lab {
     position: absolute; left: 50%; bottom: calc(100% + 1px);
     transform: translateX(-50%) translateY(4px);
-    white-space: nowrap; padding: 3px 9px; border-radius: 8px;
-    background: rgba(15,52,54,.95); color: var(--ui-text, #fff);
-    font-family: var(--grot); font-size: 11px; font-weight: 500;
+    width: max-content; max-width: min(280px, calc(100vw - 48px)); box-sizing: border-box;
+    white-space: normal; overflow-wrap: anywhere; padding: 6px 10px; border-radius: 8px;
+    background: #0F3436; color: #fff;
+    font-family: var(--grot); font-size: 12px; font-weight: 500; line-height: 1.6;
     opacity: 0; pointer-events: none;
-    box-shadow: var(--ui-shadow, 0 4px 12px rgba(0,0,0,.22));
+    box-shadow: 0 4px 12px rgba(0,0,0,.22);
     transition: opacity .16s, transform .16s;
   }
 

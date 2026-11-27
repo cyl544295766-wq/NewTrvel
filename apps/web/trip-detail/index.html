@@ -349,7 +349,7 @@
   /* ===== 天气 ===== */
   .weather-panel { margin-top: 18px; }
 
-  .weathers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 11px; }
+  .weathers { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 11px; }
 
   .weather {
     background: rgba(var(--ui-overlay-rgb, 255,255,255),.06); border: 1.5px solid rgba(var(--ui-line-rgb, 255,255,255),.08); border-radius: 13px;
@@ -907,7 +907,7 @@
           apiGet('/trips/' + tripId + '/members'),
           apiGet('/trips/' + tripId + '/days'),
           apiGet('/trips/' + tripId + '/expenses'),
-          apiGet('/trips/' + tripId + '/weather'),
+          apiGet('/trips/' + tripId + '/weather/upcoming'),
           apiGet('/trips/' + tripId + '/photos'),
           apiGet('/trips/' + tripId + '/documents'),
           apiGet('/trips/' + tripId + '/packing-lists'),
@@ -936,6 +936,7 @@
         state.daysAvailable = !!d2;
         state.expenses = d3;
         state.weather  = (d4 && d4.weather) || [];
+        state.weatherMessage = d4 && d4.message;
         // 四个模块的计数（列表接口本身已存在，之前漏算导致徽标显示「–」）
         state.counts = {
           photos:     d5 && d5.photos ? d5.photos.length : null,
@@ -1111,16 +1112,18 @@
     function renderWeather() {
       var box = document.getElementById('weatherBox');
       if (!state.weather || state.weather.length === 0) {
-        document.getElementById('weatherHint').textContent = (state.trip.destination || '目的地') + ' · 暂无预报';
-        box.innerHTML = '<div class="weather-empty"><div class="ic">⛅</div>暂无天气数据</div>';
+        document.getElementById('weatherHint').textContent = (state.trip.destination || '目的地') + ' · 未来7天';
+        box.innerHTML = '<div class="weather-empty"><div class="ic">⛅</div>'
+          + escapeHtml(state.weatherMessage || '目的地未来7天天气暂不可用，请稍后重试') + '</div>';
         return;
       }
       var hintParts = [];
       if (state.trip.destination) hintParts.push(state.trip.destination);
-      hintParts.push('共 ' + state.weather.length + ' 天预报');
+      hintParts.push('未来7天（含今天）');
+      if (state.weather.length < 7) hintParts.push('已获取 ' + state.weather.length + ' 天预报');
       document.getElementById('weatherHint').textContent = hintParts.join(' · ');
 
-      box.innerHTML = '<div class="weathers">' + state.weather.slice(0, 6).map(function (w) {
+      box.innerHTML = '<div class="weathers">' + state.weather.slice(0, 7).map(function (w) {
         var md = fmtMonthDay(w.date) || String(w.date || '');
         var lo = wTemp(w.tempLow), hi = wTemp(w.tempHigh);
         var txt;
