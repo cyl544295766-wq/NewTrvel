@@ -22,6 +22,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
     <maven.compiler.parameters>true</maven.compiler.parameters>
+    <travelos.build.directory>${project.basedir}/target</travelos.build.directory>
     <mybatis-plus.version>3.5.7</mybatis-plus.version>
     <pdfbox.version>2.0.31</pdfbox.version>
   </properties>
@@ -86,6 +87,7 @@
   </dependencies>
 
   <build>
+    <directory>${travelos.build.directory}</directory>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>

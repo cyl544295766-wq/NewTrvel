@@ -342,10 +342,10 @@ if command -v netstat >/dev/null 2>&1 && netstat -ano 2>/dev/null | grep ':3001 
   mkdir -p "$BUILD_DIR_NAME"
 fi
 if [ "$SKIP_TESTS" = "1" ]; then
-  "$MAVEN_BIN" -B package -DskipTests "-Dproject.build.directory=$BUILD_DIR_NAME" \
+  "$MAVEN_BIN" -B package -DskipTests "-Dtravelos.build.directory=$BUILD_DIR_NAME" \
     || die "后端构建失败——中止发布"
 else
-  "$MAVEN_BIN" -B verify "-Dproject.build.directory=$BUILD_DIR_NAME" \
+  "$MAVEN_BIN" -B verify "-Dtravelos.build.directory=$BUILD_DIR_NAME" \
     || die "后端验证失败（mvn verify）——中止发布"
 fi
 JAR="$(ls $BUILD_DIR_NAME/*.jar 2>/dev/null | head -1)"

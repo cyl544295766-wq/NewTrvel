@@ -70,18 +70,18 @@ echo "SCP-COPY src=$src dst=$dst srcexists=$([ -f "$src" ] && echo Y || echo N)"
 EOF
   # ---- taskkill 桩：绝不真实停止本机进程 ----
   printf '#!/usr/bin/env bash\nexit 0\n' > "$B/taskkill"
-  # ---- mvn 桩：瞬时产物，避免真实构建；感知 -Dproject.build.directory ----
+  # ---- mvn 桩：瞬时产物，避免真实构建；感知 -Dtravelos.build.directory ----
   cat > "$B/mvn" <<'MEOF'
 #!/usr/bin/env bash
 echo "mvn $*" >> "$FAKE_STATE/calls.log"
 case "$1" in
   -v) echo "Apache Maven 3.9.11 (fake-for-simulation)"; exit 0;;
 esac
-# 解析 -Dproject.build.directory=xxx（默认 target）
+# 解析 -Dtravelos.build.directory=xxx（默认 target）
 BDIR="target"
 for a in "$@"; do
   case "$a" in
-    -Dproject.build.directory=*) BDIR="${a#*=}";;
+    -Dtravelos.build.directory=*) BDIR="${a#*=}";;
   esac
 done
 case "$*" in
