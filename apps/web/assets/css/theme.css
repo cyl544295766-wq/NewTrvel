@@ -93,6 +93,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Shared full-viewport terrain, kept behind opaque reading surfaces. */
+:root {
+  --site-canvas: #111f1b;
+  --site-wallpaper-wash: linear-gradient(110deg, rgba(17,31,27,.96), rgba(17,31,27,.88) 48%, rgba(17,31,27,.74));
+}
+:root[data-theme="light"] {
+  --site-canvas: #eef1e8;
+  --site-wallpaper-wash: linear-gradient(110deg, rgba(238,241,232,.92), rgba(238,241,232,.82) 48%, rgba(238,241,232,.64));
+}
+html:root[data-theme] body {
+  isolation: isolate;
+  background: var(--site-canvas);
+}
+html:root[data-theme] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--site-wallpaper-wash), url('../img/stats-terrain.jpg') 65% center / cover no-repeat;
+}
+html:root[data-theme] body > main { background: transparent; }
+/* Login joins the same site-wide backdrop; its form retains its own surface. */
+html:root[data-theme] body > .scene { display: none; }
+@media (max-width: 720px) {
+  html:root[data-theme] body::before { background-position: center, 62% center; }
+}
+
 a { color: inherit; }
 
 .site-theme-toggle {

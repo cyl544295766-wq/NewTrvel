@@ -18,7 +18,7 @@
 <link rel="preload" as="script" href="https://webapi.amap.com/maps?v=2.0&amp;key=0a940c6e91af319d56bdf040de7c0a5e">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
-<link rel="stylesheet" href="../assets/css/theme.css?v=nav-consistent-1">
+<link rel="stylesheet" href="../assets/css/theme.css?v=site-atlas-1">
 <link rel="stylesheet" href="../assets/css/pet.css?v=pet-motion">
 <style>
   :root {
@@ -39,31 +39,18 @@
     background: var(--ui-page, #0E1116); color: var(--ui-text, rgba(255,255,255,.82));
   }
 
-  /* ===== Hero：纯黑大舞台（全宽出血） ===== */
+  /* ===== Hero：与全站地形衔接的纸雕湖岸 ===== */
   .hero {
     position: relative;
     margin: 0 -44px 0;
     padding: 56px 56px 52px;
-    /* 暮色山脉实拍 + 左深右浅/上下压暗双层遮罩保证白字可读 */
+    /* 湖岸留在画面中部，标题与行程操作各自保持清晰的阅读区域。 */
     background:
-      linear-gradient(90deg, rgba(8,9,12,.90) 0%, rgba(8,9,12,.58) 46%, rgba(8,9,12,.30) 100%),
-      linear-gradient(180deg, rgba(8,9,12,.34) 0%, rgba(8,9,12,0) 32%, rgba(8,9,12,.46) 100%),
-      #0A0B0E url("../assets/img/home-hero-bg.jpg") center 32% / cover no-repeat;
+      linear-gradient(90deg, rgba(17,31,27,.94) 0%, rgba(17,31,27,.68) 44%, rgba(17,31,27,.44) 100%),
+      linear-gradient(0deg, #111f1b, rgba(17,31,27,0) 58%),
+      #111f1b url("../assets/img/home-atlas-lake.jpg") center 58% / cover no-repeat;
     color: var(--ui-text, #fff);
     overflow: hidden;
-  }
-  /* 双色柔光：青（右上）+ 橙（左下），让黑不沉闷 */
-  .hero::before {
-    content: ""; position: absolute; right: -140px; top: -180px;
-    width: 560px; height: 560px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(60,180,175,.34) 0%, rgba(60,180,175,0) 65%);
-    pointer-events: none;
-  }
-  .hero::after {
-    content: ""; position: absolute; left: -160px; bottom: -220px;
-    width: 520px; height: 520px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,138,76,.20) 0%, rgba(255,138,76,0) 65%);
-    pointer-events: none;
   }
   [data-theme="light"] {
     --sh-visual: var(--ui-shadow-raised);
@@ -71,9 +58,9 @@
   }
   [data-theme="light"] .hero {
     background:
-      linear-gradient(90deg, #f5f8f3 2%, rgba(245,248,243,.92) 36%, rgba(245,248,243,.42) 78%),
-      linear-gradient(0deg, #eaf2ed, transparent 42%),
-      #eaf2ed url("../assets/img/home-hero-bg.jpg") right 35% / cover no-repeat;
+      linear-gradient(90deg, #eef1e8 2%, rgba(238,241,232,.92) 30%, rgba(238,241,232,.12) 76%),
+      linear-gradient(0deg, #eef1e8, transparent 54%),
+      #eef1e8 url("../assets/img/home-atlas-lake.jpg") center 58% / cover no-repeat;
   }
   [data-theme="light"] .hero::before,
   [data-theme="light"] .hero::after { display: none; }
@@ -118,7 +105,7 @@
   /* 倒计时玻璃卡 */
   .countdown {
     min-width: 268px;
-    background: rgba(var(--ui-overlay-rgb, 255,255,255),.07);
+    background: rgba(21,40,33,.94);
     border: 1px solid rgba(var(--ui-line-rgb, 255,255,255),.14);
     border-radius: 22px;
     padding: 26px 30px;
@@ -786,8 +773,8 @@
   @media (max-width: 720px) {
     [data-theme="light"] .hero {
       background:
-        linear-gradient(180deg, rgba(245,248,243,.94) 14%, #eaf2ed 72%),
-        url("../assets/img/home-hero-bg.jpg") center top / cover no-repeat;
+        linear-gradient(180deg, rgba(238,241,232,.82), rgba(238,241,232,.92) 55%, #eef1e8 95%),
+        #eef1e8 url("../assets/img/home-atlas-lake.jpg") 56% top / cover no-repeat;
     }
   }
   @media (max-width: 980px) {

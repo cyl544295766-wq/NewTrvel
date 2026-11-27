@@ -1,90 +1,127 @@
 (function (global) {
   'use strict';
+  var entries = new Map();
+  var observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(function (changes) {
+    changes.forEach(function (change) {
+      var entry = entries.get(change.target);
+      if (!entry) return;
+      entry.visible = change.isIntersecting;
+      if (entry.visible) start(entry); else release(entry);
+    });
+  }, { rootMargin: '120px 0px' }) : null;
 
-  function draw(canvas, trip) {
-    var ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    var width = canvas.width, height = canvas.height;
-    var points = (trip.routePreview || []).filter(function (point) {
+  function pointsOf(trip) {
+    return (trip.routePreview || []).filter(function (point) {
       return point.latitude != null && point.longitude != null && point.latitude !== '' && point.longitude !== ''
         && Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
-        && Math.abs(Number(point.latitude)) <= 90 && Math.abs(Number(point.longitude)) <= 180;
-    });
-    ctx.fillStyle = '#E6F0ED';
-    ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = '#D5E4DF';
-    ctx.lineWidth = 1;
-    for (var x = 24; x < width; x += 36) {
-      for (var y = 24; y < height; y += 36) {
-        ctx.beginPath();
-        ctx.arc(x, y, 1, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+        && Math.abs(Number(point.latitude)) <= 85 && Math.abs(Number(point.longitude)) <= 180;
+    }).slice(0, 24);
+  }
+  function style() {
+    return document.documentElement.dataset.theme === 'light' ? 'amap://styles/whitesmoke' : 'amap://styles/dark';
+  }
+  function release(entry) {
+    entry.job++;
+    entry.loading = false;
+    clearTimeout(entry.timer);
+    if (entry.map) {
+      entry.map.destroy();
+      entry.map = null;
     }
-    ctx.font = '500 18px sans-serif';
-    ctx.fillStyle = '#42635F';
-    ctx.fillText('行程路线概览', 24, height - 20);
-    if (!points.length) {
-      ctx.fillStyle = '#0D6E6E';
-      ctx.font = '600 28px sans-serif';
-      ctx.fillText(trip.destination || trip.title || '旅行攻略', 24, 116, width - 48);
-      ctx.font = '18px sans-serif';
-      ctx.fillStyle = '#42635F';
-      ctx.fillText('尚未添加带坐标的地点', 24, 153, width - 48);
+    entry.surface.replaceChildren();
+  }
+  function status(entry, text, retry) {
+    entry.status.replaceChildren();
+    var message = document.createElement('span');
+    message.textContent = text;
+    entry.status.appendChild(message);
+    entry.status.hidden = false;
+    if (retry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.mapRetry = '';
+      button.textContent = '重新加载';
+      button.addEventListener('click', function (event) {
+        event.stopPropagation();
+        entry.failed = false;
+        start(entry);
+      });
+      entry.status.appendChild(button);
+    }
+  }
+  function fail(entry) {
+    release(entry);
+    entry.failed = true;
+    status(entry, '地图暂时未能加载', true);
+  }
+  function start(entry) {
+    if (!entry.visible || !entry.host.isConnected || !entry.points.length || entry.map || entry.loading || entry.failed) return;
+    var job = ++entry.job;
+    entry.loading = true;
+    status(entry, '正在加载行程地图…');
+    entry.timer = setTimeout(function () {
+      if (entry.job === job) fail(entry);
+    }, 20000);
+    Promise.resolve().then(function () { return global.TravelOSAmap.load([]); }).then(function (AMap) {
+      if (entry.job !== job || !entry.visible || !entry.host.isConnected) return;
+      var path = entry.points.map(function (point) { return [Number(point.longitude), Number(point.latitude)]; });
+      var map = new AMap.Map(entry.surface, {
+        viewMode: '2D', center: path[0], zoom: 12, mapStyle: style(), resizeEnable: true,
+        dragEnable: false, zoomEnable: false, scrollWheel: false, doubleClickZoom: false,
+        keyboardEnable: false, touchZoom: false, rotateEnable: false, animateEnable: false
+      });
+      entry.map = map;
+      map.on('complete', function () {
+        if (entry.job !== job) return;
+        clearTimeout(entry.timer);
+        entry.loading = false;
+        entry.status.hidden = true;
+      });
+      var markers = path.map(function (position, index) {
+        var label = document.createElement('span');
+        label.className = 'trip-map-point' + (index === path.length - 1 ? ' is-end' : '');
+        label.textContent = String(index + 1);
+        return new AMap.Marker({ position: position, title: entry.points[index].name || '行程地点',
+          content: label, anchor: 'center' });
+      });
+      map.add(markers);
+      if (path.length > 1) {
+        map.add(new AMap.Polyline({ path: path, strokeColor: '#188D85', strokeWeight: 3,
+          strokeOpacity: .9, strokeStyle: 'dashed', lineJoin: 'round' }));
+      }
+      map.setFitView(markers, true, [40, 24, 28, 24], 13);
+    }).catch(function () {
+      if (entry.job === job) fail(entry);
+    });
+  }
+  function clear(container) {
+    entries.forEach(function (entry, host) {
+      if (container !== host && !container.contains(host)) return;
+      release(entry);
+      if (observer) observer.unobserve(host);
+      entries.delete(host);
+    });
+  }
+  function render(host, trip) {
+    if (!host) return;
+    clear(host);
+    var surface = host.querySelector('.trip-map');
+    var message = host.querySelector('.trip-map-status');
+    if (!surface || !message) return;
+    var entry = { host: host, surface: surface, status: message, points: pointsOf(trip),
+      map: null, loading: false, failed: false, job: 0, timer: 0, visible: !observer };
+    entries.set(host, entry);
+    if (!entry.points.length) {
+      status(entry, '尚未添加地点坐标，暂无地图');
       return;
     }
-    var locations = points.map(function (point) {
-      var latitude = Math.max(-85, Math.min(85, Number(point.latitude))) * Math.PI / 180;
-      return { x: Number(point.longitude), y: -Math.log(Math.tan(Math.PI / 4 + latitude / 2)) * 180 / Math.PI };
-    });
-    var xs = locations.map(function (p) { return p.x; });
-    var ys = locations.map(function (p) { return p.y; });
-    var minX = Math.min.apply(null, xs), minY = Math.min.apply(null, ys);
-    var spanX = Math.max.apply(null, xs) - minX, spanY = Math.max.apply(null, ys) - minY;
-    var scale = Math.min((width - 150) / (spanX || 1), (height - 140) / (spanY || 1));
-    var offsetX = (width - spanX * scale) / 2;
-    var offsetY = 66 + (height - 140 - spanY * scale) / 2;
-    var positions = locations.map(function (p) {
-      return { x: offsetX + (p.x - minX) * scale, y: offsetY + (p.y - minY) * scale };
-    });
-    ctx.beginPath();
-    positions.forEach(function (p, index) {
-      if (index === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.strokeStyle = '#188D85';
-    ctx.lineWidth = 4;
-    ctx.lineJoin = 'round';
-    ctx.setLineDash([8, 6]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    positions.forEach(function (p, index) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, index === 0 || index === positions.length - 1 ? 9 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = index === positions.length - 1 ? '#FF8A4C' : '#0D6E6E';
-      ctx.fill();
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    });
-    ctx.font = '500 18px sans-serif';
-    ctx.fillStyle = '#214B47';
-    ctx.fillText(points[0].name || '起点', Math.min(width - 180, positions[0].x), positions[0].y - 17, 160);
-    if (points.length > 1) {
-      var last = positions[positions.length - 1];
-      ctx.fillText(points[points.length - 1].name || '终点', Math.min(width - 180, last.x), last.y + 29, 160);
-    }
+    if (observer) observer.observe(host); else start(entry);
   }
-
-  function render(host, trip) {
-    var canvas = host.querySelector('canvas');
-    if (canvas) draw(canvas, trip);
-    var image = host.querySelector('.trip-cover-image');
-    if (image) {
-      image.addEventListener('error', function () { image.remove(); }, { once: true });
-      if (image.complete && !image.naturalWidth) image.remove();
-    }
-  }
-
-  global.TravelOSThumbnail = { render: render };
+  var themeObserver = new MutationObserver(function () {
+    entries.forEach(function (entry) { if (entry.map) entry.map.setMapStyle(style()); });
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  global.addEventListener('pagehide', function () { entries.forEach(release); });
+  global.addEventListener('pageshow', function () { entries.forEach(start); });
+  global.TravelOSThumbnail = { render: render, clear: clear };
 })(window);

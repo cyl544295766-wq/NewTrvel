@@ -1,0 +1,37 @@
+.pl-row { display: flex; align-items: center; gap: 4px; }
+.pl-row .pl { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; }
+.pl-row .pl:disabled { cursor: default; }
+.pl-row .pl-nm { overflow-wrap: anywhere; }
+.pl-edit { flex: none; border: 0; border-radius: 7px; padding: 7px 8px; background: rgba(91,197,192,.12); color: var(--ui-accent, #8fe0db); font: 500 11px var(--grot); cursor: pointer; }
+.day-panel[data-editing="true"] { width: min(420px, calc(100% - 36px)); height: var(--panel-available-height); z-index: 50; }
+.day-panel[data-editing="true"] :is(.dp-search, .dp-body, .dp-reset) { display: none; }
+.dp-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 0; gap: 12px; }
+.dp-editor[hidden], .pe-results[hidden], #peKeep[hidden] { display: none; }
+.pe-top { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.pe-back { border: 0; border-radius: 7px; padding: 7px 9px; color: var(--ui-text, #fff); background: rgba(var(--ui-overlay-rgb,255,255,255),.07); cursor: pointer; }
+.pe-fields { border: 0; padding: 0; margin: 0; display: grid; gap: 11px; min-width: 0; }
+.pe-fields label { display: grid; gap: 5px; font: 500 12px var(--grot); color: var(--ui-secondary, #c4d4cf); min-width: 0; }
+.pe-fields :is(input,select) { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid rgba(var(--ui-line-rgb,255,255,255),.18); border-radius: 8px; background: var(--ui-surface,#182724); color: var(--ui-text,#fff); font: 400 13px var(--grot); }
+.pe-coordinates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.pe-coordinate-section { display: grid; gap: 7px; }
+.pe-coordinate-hint { margin: 0; color: var(--ui-muted,#9bb0b5); font-size: 11px; line-height: 1.7; }
+.pe-location-actions { display: flex; gap: 8px; flex: none; }
+.pe-location-actions button { flex: 1; min-width: 0; }
+.pe-results { display: flex; flex-direction: column; flex: none; max-height: 220px; overflow-y: auto; border: 1px solid rgba(var(--ui-line-rgb,255,255,255),.18); border-radius: 8px; background: var(--ui-surface,#182724); }
+.pe-result { display: grid; gap: 3px; flex: none; width: 100%; border: 0; padding: 10px; background: transparent; color: var(--ui-text,#fff); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.pe-result + .pe-result { border-top: 1px solid rgba(var(--ui-line-rgb,255,255,255),.1); }
+.pe-result:hover, .pe-result:focus-visible { background: rgba(91,197,192,.12); }
+.pe-result small { color: var(--ui-muted,#9bb0b5); font-size: 11px; }
+.pe-pick, .pe-keep { padding: 9px 12px; border: 1px solid rgba(var(--ui-line-rgb,255,255,255),.18); border-radius: 8px; background: rgba(var(--ui-overlay-rgb,255,255,255),.06); color: var(--ui-accent,#8fe0db); font: 500 12px var(--grot); cursor: pointer; }
+.pe-status { color: var(--ui-muted,#9bb0b5); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.pe-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 0; margin-top: auto; position: sticky; bottom: 0; background: var(--ui-surface,#182724); box-shadow: 0 -6px 12px var(--ui-surface,#182724); }
+.pe-actions button { padding: 10px 14px; border: 0; border-radius: 8px; background: rgba(var(--ui-overlay-rgb,255,255,255),.08); color: var(--ui-text,#fff); font: 500 13px var(--grot); cursor: pointer; }
+.pe-actions #peSave { background: var(--brand); color: #fff; }
+.dp-editor button:disabled, .dp-size button:disabled { opacity: .45; cursor: default; }
+.day-panel[data-picking="true"] { height: auto; }
+.day-panel[data-picking="true"] .pe-fields { display: none; }
+.pe-pin { display: inline-block; padding: 6px 10px; border: 2px solid #fff; border-radius: 9px; background: #be6739; color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.25); font: 600 12px var(--grot); white-space: nowrap; }
+@media(max-width:720px) {
+  .day-panel[data-editing="true"] { left: 12px; right: 12px; width: auto; height: min(650px,calc(100% - 24px)); max-height: calc(100% - 24px); z-index: 60; }
+  .day-panel[data-picking="true"] { height: auto; max-height: min(240px,40dvh); }
+}

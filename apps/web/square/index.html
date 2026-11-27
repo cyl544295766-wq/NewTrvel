@@ -18,7 +18,7 @@
 <link rel="preload" as="script" href="https://webapi.amap.com/maps?v=2.0&amp;key=0a940c6e91af319d56bdf040de7c0a5e">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
-<link rel="stylesheet" href="../assets/css/theme.css?v=nav-consistent-1">
+<link rel="stylesheet" href="../assets/css/theme.css?v=site-atlas-1">
 <link rel="stylesheet" href="../assets/css/pet.css?v=pet-motion">
 <style>
   .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--brand); text-align: center; padding: 4px 0 6px; }
@@ -133,11 +133,6 @@
   .g-card:hover { transform: translateY(-3px); box-shadow: var(--ui-shadow-raised, 0 22px 52px rgba(0,0,0,.42), 0 3px 8px rgba(0,0,0,.22)); }
 
   .g-cover { height: 138px; position: relative; overflow: hidden; cursor: pointer; }
-  .trip-thumbnail canvas, .trip-thumbnail .trip-cover-image {
-    display: block; width: 100%; height: 100%; object-fit: cover;
-  }
-  .trip-thumbnail canvas { object-fit: contain; background: #E6F0ED; }
-  .trip-thumbnail .trip-cover-image { position: absolute; inset: 0; }
 
 
   .g-theme { position: absolute; left: 10px; top: 10px; font-family: var(--grot); font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: rgba(10,14,20,.62); color: #fff; max-width: calc(100% - 88px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
@@ -435,7 +430,7 @@
   .search .si svg.ln { color: var(--ui-muted, rgba(255,255,255,.5)); stroke-width: 2.2; }
 
   .empty .ill svg.ln { color: var(--ui-accent, #8FE0DB); stroke-width: 1.6; filter: drop-shadow(0 8px 16px rgba(0,0,0,.35)); }</style>
-<link rel="stylesheet" href="../assets/css/square.css?v=collection-2">
+<link rel="stylesheet" href="../assets/css/square.css?v=route-map-1">
 </head>
 <body class="square-page">
 <script src="../assets/js/icons-line.js"></script>
@@ -530,7 +525,7 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js?v=ai-receipt"></script>
 <script src="../assets/js/amap.js"></script>
-<script src="../assets/js/trip-thumbnail.js?v=1"></script>
+<script src="../assets/js/trip-thumbnail.js?v=route-map-1"></script>
 <script>
   (function () {
     if (!requireLogin('/login/')) return;
@@ -617,9 +612,8 @@
     }
 
     function coverContent(r) {
-      return '<canvas width="640" height="280" role="img" aria-label="' + esc((r.title || '行程') + '路线缩略图') + '"></canvas>'
-        + (r.coverImageUrl ? '<img class="trip-cover-image" src="' + esc(r.coverImageUrl) + '" alt="'
-          + esc((r.title || '行程') + '封面') + '" loading="lazy">' : '');
+      return '<div class="trip-map" role="img" aria-label="' + esc((r.title || '行程') + '行程地图：按顺序标注地点并连线') + '"></div>'
+        + '<div class="trip-map-status" role="status">正在加载行程地图…</div>';
     }
 
     function card(r) {
@@ -653,7 +647,7 @@
       state.hasMore = !!res.hasMore;
       state.total = res.total || 0;
       $more.hidden = !state.hasMore;
-      if (!append) $grid.innerHTML = '';
+      if (!append) { TravelOSThumbnail.clear($grid); $grid.innerHTML = ''; }
       (items || []).forEach(function (r) {
         if (r.copiedByMe) seenCopied[r.id] = true;
         $grid.insertAdjacentHTML('beforeend', card(r));
@@ -681,7 +675,7 @@
       apiGet(query()).then(function (r) {
         renderList(r, append);
       }).catch(function (err) {
-        if (!append) $grid.innerHTML = '<div class="empty"><p>加载失败：' + esc(humanError(err)) + '</p></div>';
+        if (!append) { TravelOSThumbnail.clear($grid); $grid.innerHTML = '<div class="empty"><p>加载失败：' + esc(humanError(err)) + '</p></div>'; }
         $meta.textContent = append ? '更多攻略加载失败，可重试' : '攻略加载失败，请刷新重试';
         showToast(humanError(err));
       }).finally(function () {
@@ -734,6 +728,7 @@
       if (target) openDetail(target.dataset.detail);
     });
     $grid.addEventListener('keydown', function (e) {
+      if (e.target.closest('[data-map-retry]')) return;
       if (e.key === 'Enter' || e.key === ' ') {
         var target = e.target.closest('[data-detail]');
         if (target) { e.preventDefault(); openDetail(target.dataset.detail); }
@@ -1073,8 +1068,8 @@
           '</div><div class="vis-tip">公开将出现在攻略广场，任何人都能查看与复制。</div></div>'
         : '';
 
-      return '<div class="dr-cover trip-thumbnail">' + coverContent(r) + '</div>' +
-        '<h2 class="dr-title">' + esc(r.title || '未命名攻略') + '</h2>' +
+      // 详情下方已有交互路线地图，不再重复创建卡片缩略图。
+      return '<h2 class="dr-title">' + esc(r.title || '未命名攻略') + '</h2>' +
         '<div class="dr-author">' + avatar + '<span>' + esc(name) + '</span>' +
         '<div class="dr-stats"><span>浏览 ' + r.viewCount + '</span><span>复制 ' + r.copyCount + '</span><span>热度 ' + heat + '</span></div></div>' +
         '<div class="dr-meta">' +
@@ -1099,7 +1094,6 @@
       apiGet('/square/' + encodeURIComponent(tripId)).then(function (data) {
         detailTrip = data.square;
         drBody.innerHTML = bodyHtml(data);
-        TravelOSThumbnail.render(drBody.querySelector('.trip-thumbnail'), data.square);
         drCopy.hidden = !data.canCopy;
         drCopy.textContent = data.square.copiedByMe ? '再复制一份' : '复制到我的旅行';
         document.getElementById('drDelete').hidden = !data.square.isOwner;

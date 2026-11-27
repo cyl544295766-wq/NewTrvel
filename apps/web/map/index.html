@@ -18,7 +18,7 @@
 <link rel="preload" as="script" href="https://webapi.amap.com/maps?v=2.0&amp;key=0a940c6e91af319d56bdf040de7c0a5e">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="../assets/js/theme-mode.js"></script>
-<link rel="stylesheet" href="../assets/css/theme.css?v=nav-consistent-1">
+<link rel="stylesheet" href="../assets/css/theme.css?v=site-atlas-1">
 <link rel="stylesheet" href="../assets/css/pet.css?v=pet-motion">
 <style>
   .brand-mark { display: none; font-family: var(--slab); font-weight: 700; font-size: 20px; color: var(--ui-accent, #7FD8D4); text-align: center; padding: 4px 0 6px; }
@@ -474,6 +474,7 @@
   .ln { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
 
 </style>
+<link rel="stylesheet" href="../assets/css/map-editor.css?v=3">
 </head>
 <body>
 <script src="../assets/js/icons-line.js"></script>
@@ -536,6 +537,26 @@
         <p class="dp-search-status" id="placeSearchStatus" role="status" aria-live="polite"></p>
       </div>
       <div class="dp-body" id="dayList"></div>
+      <form class="dp-editor" id="placeEditor" aria-labelledby="peTitle" hidden>
+        <div class="pe-top"><button class="pe-back" type="button" id="peBack" aria-label="返回每日行程">←</button><b id="peTitle">修改地点</b></div>
+        <div class="pe-location-actions"><button class="pe-pick" type="button" id="pePick">在地图上选点</button><button class="pe-pick" type="button" id="peManual" aria-controls="peCoordinates">手动填写坐标</button></div>
+        <p class="pe-status" id="peStatus" role="status" aria-live="polite"></p>
+        <fieldset class="pe-fields" id="peFields">
+          <label>地点名称<input type="search" id="peName" maxlength="200" required placeholder="搜索新地点或修改名称" autocomplete="off" aria-controls="peResults"></label>
+          <div class="pe-results" id="peResults" role="group" aria-label="匹配的地点" hidden></div>
+          <label>地址<input id="peAddress" maxlength="500" placeholder="地点地址，可手动补充"></label>
+          <label>地点类型<select id="peType"><option value="attraction">景点</option><option value="hotel">酒店</option><option value="restaurant">餐厅</option><option value="transport">交通</option><option value="shopping">购物</option><option value="custom">其他</option></select></label>
+          <div id="peCoordinates" class="pe-coordinate-section" role="group" aria-label="手动填写坐标">
+            <p class="pe-coordinate-hint" id="peCoordinateHint">搜索不到也可直接填写高德地图经纬度，填写后保存即可。</p>
+            <div class="pe-coordinates">
+              <label>经度<input type="number" id="peLng" min="-180" max="180" step="any" placeholder="例如 120.124" aria-describedby="peCoordinateHint"></label>
+              <label>纬度<input type="number" id="peLat" min="-90" max="90" step="any" placeholder="例如 30.252" aria-describedby="peCoordinateHint"></label>
+            </div>
+          </div>
+          <button class="pe-keep" type="button" id="peKeep">沿用原位置，仅修改文字</button>
+        </fieldset>
+        <div class="pe-actions"><button type="button" id="peCancel">取消</button><button type="submit" id="peSave">保存地点</button></div>
+      </form>
     </section>
 
     <div class="hud-tr">
@@ -582,6 +603,7 @@
 <script src="../assets/js/api.js"></script><script>try{if(((window.getCurrentUser?getCurrentUser():null)||{}).role!=="super_admin"){document.documentElement.setAttribute("data-hide-admin","1")}}catch(e){}</script>
 <script src="../assets/js/pet.js?v=ai-receipt"></script>
 <script src="../assets/js/amap.js"></script>
+<script src="../assets/js/map-place-editor.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -723,8 +745,13 @@
     AMap: null,
     sat: null,
     road: null,
-    routesPending: false
+    routesPending: false,
+    routeVersion: 0,
+    canEdit: false
   };
+  var placeEditor = TravelOSMapPlaceEditor.init({
+    tripId: function () { return tripId; }, state: function () { return state; }, refresh: refreshGeometry
+  });
 
   /* 高德驾车规划对并发/QPS 敏感：150ms 间隔实测约 4 次/秒，会触发
      CUQPS_HAS_EXCEEDED_THE_LIMIT (10021)。调度网格取 500ms（标称 2 次/秒），
@@ -805,7 +832,7 @@
       var visible = keyword ? (day.places || []).filter(function (place) {
         return [place.name, place.address].filter(Boolean).join(' ').normalize('NFKC')
           .toLocaleLowerCase().includes(keyword);
-      }) : pts;
+      }) : (day.places || []);
       if (keyword && !visible.length) return;
       matches += visible.length;
 
@@ -819,7 +846,7 @@
       html.push('</button>');
 
       if (!visible.length) {
-        html.push('<div class="db-empty">该天暂无带坐标的地点 ');
+        html.push('<div class="db-empty">该天还没有地点 ');
         html.push('<a href="/itinerary/?trip=' + encodeURIComponent(tripId) + '">去行程安排补充</a></div>');
       } else {
         html.push('<span class="db-meta" data-meta="' + day.dayIndex + '"><b>' + visible.length
@@ -827,18 +854,15 @@
         html.push('<ol class="db-places">');
         visible.forEach(function (p, pi) {
           var ts = TravelOSAmap.typeStyle(p.type);
-          if (!hasCoord(p)) {
-            html.push('<li><a class="pl" href="/itinerary/?trip=' + encodeURIComponent(tripId)
-              + '&date=' + encodeURIComponent(String(day.date).slice(0, 10)) + '"><span class="pl-nm">'
-              + escapeHtml(p.name) + '</span><span class="pl-tp">去补充坐标</span></a></li>');
-            return;
-          }
-          html.push('<li class="pl" data-pid="' + escapeHtml(p.id) + '" tabindex="0" role="button"'
-            + ' title="在地图上定位「' + escapeHtml(p.name) + '」">'
-            + '<span class="pl-no">' + (pi + 1) + '</span>'
+          var located = hasCoord(p);
+          html.push('<li class="pl-row"><button type="button" class="pl" data-pid="' + escapeHtml(p.id) + '"'
+            + (!located && !state.canEdit ? ' disabled' : '')
+            + ' title="' + (located ? '在地图上定位' : '补充位置') + '「' + escapeHtml(p.name) + '」">'
+            + '<span class="pl-no">' + (located ? pts.indexOf(p) + 1 : '·') + '</span>'
             + '<span class="pl-nm">' + escapeHtml(p.name) + '</span>'
-            + '<span class="pl-tp" style="--tc:' + ts.c + ';--tb:' + ts.bg + ';">' + ts.label + '</span>'
-            + '</li>');
+            + '<span class="pl-tp" style="--tc:' + ts.c + ';--tb:' + ts.bg + ';">' + (located ? ts.label : '缺坐标') + '</span></button>'
+            + (state.canEdit ? '<button class="pl-edit" type="button" data-edit-place="' + escapeHtml(p.id)
+              + '" aria-label="修改地点：' + escapeHtml(p.name) + '">修改</button>' : '') + '</li>');
         });
         html.push('</ol>');
       }
@@ -849,7 +873,7 @@
     $('dpN').textContent = state.days.length + ' 天';
     $('clearPlaceSearch').hidden = !keyword;
     $('placeSearchStatus').textContent = keyword ? (matches ? '找到 ' + matches + ' 个地点'
-      : '没有匹配的行程地点，可换个名称或地址。') : '';
+      : '没有匹配的行程地点，可换个名称或地址。') : (state.canEdit ? '点击「修改」可直接更换地点或补充坐标。' : '当前行程仅可查看。');
 
     $('dayList').querySelectorAll('.day-block').forEach(function (block) {
       if (block.classList.contains('is-empty')) return;
@@ -863,10 +887,10 @@
       var pid = li.getAttribute('data-pid');
       li.addEventListener('mouseenter', function () { setHot(pid, true); });
       li.addEventListener('mouseleave', function () { setHot(pid, false); });
-      li.addEventListener('click', function () { focusPlace(pid); });
-      li.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusPlace(pid); }
-      });
+      li.addEventListener('click', function () { if (state.places[pid]) focusPlace(pid); else placeEditor.open(pid); });
+    });
+    $('dayList').querySelectorAll('[data-edit-place]').forEach(function (button) {
+      button.addEventListener('click', function () { placeEditor.open(button.dataset.editPlace); });
     });
     applyFocus();
     if (!keyword) state.days.forEach(function (day) { updateDayMeta(day.dayIndex); });
@@ -977,6 +1001,7 @@
 
   function addRoutes() {
     var AMap = state.AMap;
+    var generation = state.routeVersion;
     var jobs = [];
     var colored = 0;
     var prevLast = null;   /* 上一个有安排天的最后一个点，用于跨天转场衔接 */
@@ -998,11 +1023,13 @@
           var tPath = [[fromLng, fromLat], [toLng, toLat]];
           jobs.push(function () {
             return planDriving(AMap, tPath).then(function (r) {
+              if (generation !== state.routeVersion) return;
               pushPolyline(arrivedDay, r.path, color, false);
               var st = ensureStats(arrivedDay, pts.length);
               st.transferM = r.distanceM;
               st.transferSec = r.timeSec;
             }).catch(function () {
+              if (generation !== state.routeVersion) return;
               state.failedTransfers.push(prevDayIndex + '→' + arrivedDay);
               pushPolyline(arrivedDay, tPath, color, true);
             });
@@ -1015,11 +1042,13 @@
 
         jobs.push(function () {
           return planDriving(AMap, path).then(function (r) {
+            if (generation !== state.routeVersion) return;
             pushPolyline(day.dayIndex, r.path, color, false);
             var st = ensureStats(day.dayIndex, pts.length);
             st.distanceM = r.distanceM;
             st.timeSec = r.timeSec;
           }).catch(function () {
+            if (generation !== state.routeVersion) return;
             state.failedDays.push(day.dayIndex);
             pushPolyline(day.dayIndex, path, color, true);
           });
@@ -1029,15 +1058,15 @@
       prevLast = { point: pts[pts.length - 1], dayIndex: day.dayIndex };
     });
 
-    return runSequential(jobs);
+    return runSequential(jobs, generation);
   }
 
   /** 逐条执行规划任务：串行 + 全局限速，避免并发触发高德 QPS 限制；每条完成后刷新统计，里程逐步累加 */
-  function runSequential(jobs) {
+  function runSequential(jobs, generation) {
     var chain = Promise.resolve();
     jobs.forEach(function (job) {
-      chain = chain.then(job).then(function () {
-        updateTotals();
+      chain = chain.then(function () { if (generation === state.routeVersion) return job(); }).then(function () {
+        if (generation === state.routeVersion) updateTotals();
       });
     });
     return chain;
@@ -1309,6 +1338,44 @@
   }
 
   /* ---------- 主流程 ---------- */
+  function queueRoutes() {
+    var generation = state.routeVersion;
+    state.routesPending = state.markers.length > 0;
+    updateTotals();
+    if (!state.markers.length) {
+      $('routeNotice').hidden = false;
+      $('routeNotice').classList.remove('is-progress');
+      $('routeNotice').textContent = state.canEdit ? '暂无带坐标的地点，可在每日行程中点击「修改」补充位置。' : '这个行程暂无带坐标的地点。';
+      return;
+    }
+    TravelOSAmap.load(['AMap.Driving']).then(function (AMap) {
+      if (generation !== state.routeVersion) return;
+      state.AMap = AMap;
+      return addRoutes();
+    }).then(function () {
+      if (generation !== state.routeVersion) return;
+      state.routesPending = false; updateTotals();
+    }).catch(function (error) {
+      if (generation !== state.routeVersion) return;
+      state.routesPending = false; updateTotals();
+      var notice = $('routeNotice');
+      notice.hidden = false; notice.classList.remove('is-progress');
+      notice.textContent = '驾车路线暂时不可用：' + String((error && error.message) || error) + '（地图与标点不受影响）';
+    });
+  }
+  function refreshGeometry(days, placeId, saved) {
+    state.routeVersion++;
+    state.overlays.forEach(function (overlay) { state.map.remove(overlay); });
+    state.days = days;
+    state.places = {}; state.markers = []; state.polylines = []; state.overlays = [];
+    state.stats = {}; state.failedDays = []; state.failedTransfers = [];
+    if (saved) $('dayPlaceSearch').value = '';
+    state.days.forEach(function (day) {
+      if ((day.places || []).some(function (place) { return place.id === placeId; })) state.focus = day.dayIndex;
+    });
+    buildHud(); buildPanel(); addMarkers(); applyFocus(); queueRoutes();
+    if (saved) { focusPlace(placeId); $('placeSearchStatus').textContent = '地点已保存，地图已更新。'; }
+  }
   function run() {
     $('veilLoad').hidden = false;
     $('veilErr').hidden = true;
@@ -1317,8 +1384,9 @@
     var pAmap = TravelOSAmap.load([]);
     var pTrip = apiGet('/trips/' + encodeURIComponent(tripId)).catch(function (e) { return { __err: e }; });
     var pRoute = apiGet('/trips/' + encodeURIComponent(tripId) + '/route').catch(function (e) { return { __err: e }; });
+    var pDays = apiGet('/trips/' + encodeURIComponent(tripId) + '/days').catch(function (e) { return { __err: e }; });
 
-    Promise.all([pAmap, pTrip, pRoute]).then(function (out) {
+    Promise.all([pAmap, pTrip, pRoute, pDays]).then(function (out) {
       state.AMap = out[0];
       var tripRes = out[1];
       var routeRes = out[2];
@@ -1330,7 +1398,11 @@
         $('btnRetry').onclick = function () { location.href = '/trips/'; };
         return;
       }
-      state.days = (routeRes && !routeRes.__err && routeRes.route) ? routeRes.route : [];
+      var completeDays = out[3] && !out[3].__err && Array.isArray(out[3].days);
+      state.days = completeDays ? out[3].days : ((routeRes && !routeRes.__err && routeRes.route) ? routeRes.route : []);
+      state.canEdit = !!(completeDays && state.trip && state.trip.status !== 'archived'
+        && ['owner', 'admin', 'member'].includes(state.trip.currentUserRole));
+      state.routeVersion++;
 
       buildHud();
       buildPanel();
@@ -1338,37 +1410,10 @@
       createMap();
       addMarkers();
 
-      state.routesPending = state.markers.length > 0;
-      updateTotals();
-
-      if (!state.markers.length) {
-        state.routesPending = false;
-        updateTotals();
-        $('veilLoad').hidden = true;
-        $('routeNotice').hidden = false;
-        $('routeNotice').classList.remove('is-progress');
-        $('routeNotice').textContent = '这个行程还没有带坐标的地点，先去「行程安排」补充地点后再回来';
-        return;
-      }
-
       /* 地图本体已可用：先贴合标点并撤掉加载遮罩，路线在后台逐条画出来 */
-      state.map.setFitView(state.overlays, false, fitPad(), 16);
+      if (state.overlays.length) state.map.setFitView(state.overlays, false, fitPad(), 16);
       $('veilLoad').hidden = true;
-
-      TravelOSAmap.load(['AMap.Driving']).then(function (AMap) {
-        state.AMap = AMap;
-        return addRoutes();
-      }).then(function () {
-        state.routesPending = false;
-        updateTotals();
-      }).catch(function (e) {
-        state.routesPending = false;
-        updateTotals();
-        var notice = $('routeNotice');
-        notice.hidden = false;
-        notice.classList.remove('is-progress');
-        notice.textContent = '驾车路线暂时不可用：' + String((e && e.message) || e) + '（地图与标点不受影响）';
-      });
+      queueRoutes();
     }).catch(function (e) {
       var msg = String((e && e.message) || e);
       if (/Security|jsCode|INVALID_USER|白名单|domain|域名/i.test(msg)) {
